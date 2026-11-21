@@ -43,7 +43,7 @@ function montarLogin() {
         <div class="nucleo3d hero" id="nucleo"></div>
         <div class="marca">
           <h1>J.A.R.V.I.S.</h1>
-          <p>assistente pessoal · núcleo online</p>
+          <p>assistente pessoal</p>
         </div>
         <form class="cartao" id="login" novalidate>
           <div class="abas" role="tablist">

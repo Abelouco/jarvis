@@ -71,7 +71,7 @@ function Login({ pulso }: { pulso: number }) {
     <ScrollView contentContainerStyle={s.entrada} keyboardShouldPersistTaps="handled">
       <View style={{ marginVertical: -40 }}><Nucleo tamanho={300} pulso={pulso} /></View>
       <Text style={s.marca}>J.A.R.V.I.S.</Text>
-      <Text style={s.marcaSub}>ASSISTENTE PESSOAL · NÚCLEO ONLINE</Text>
+      <Text style={s.marcaSub}>ASSISTENTE PESSOAL</Text>
 
       <View style={s.cartao}>
         <View style={s.abas}>

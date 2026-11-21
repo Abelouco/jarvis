@@ -7,3 +7,7 @@ dist/
 !.env.example
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
+
+# app instalado por engano dentro do repositório
+/jarvis-desktop.exe
+/uninstall.exe
