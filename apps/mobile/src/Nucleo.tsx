@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, PixelRatio, View } from 'react-native';
 import { GLView, type ExpoWebGLRenderingContext } from 'expo-gl';
 import * as THREE from 'three';
@@ -42,7 +42,23 @@ export function Nucleo({ tamanho = 240, pulso = 0 }: { tamanho?: number; pulso?:
     [],
   );
 
+  const [semWebGL2, setSemWebGL2] = useState(false);
+
   const aoCriar = (gl: ExpoWebGLRenderingContext) => {
+    // Three.js só funciona com WebGL2 (OpenGL ES 3). Sem isso, mostra o núcleo simples.
+    if (!(gl as unknown as { supportsWebGL2?: boolean }).supportsWebGL2) {
+      setSemWebGL2(true);
+      return;
+    }
+    try {
+      iniciarCena(gl);
+    } catch (e) {
+      console.warn('[nucleo] falhou ao iniciar o 3D:', e);
+      setSemWebGL2(true);
+    }
+  };
+
+  const iniciarCena = (gl: ExpoWebGLRenderingContext) => {
     const { drawingBufferWidth: w, drawingBufferHeight: h } = gl;
     // O Three espera um <canvas>; o expo-gl só dá o contexto. Um canvas mínimo basta.
     const canvas = {
@@ -66,7 +82,28 @@ export function Nucleo({ tamanho = 240, pulso = 0 }: { tamanho?: number; pulso?:
 
   return (
     <View style={{ width: tamanho, height: tamanho }} {...arraste.panHandlers}>
-      <GLView style={{ flex: 1 }} onContextCreate={aoCriar} />
+      {semWebGL2 ? <NucleoSimples tamanho={tamanho} /> : <GLView style={{ flex: 1 }} onContextCreate={aoCriar} />}
+    </View>
+  );
+}
+
+/** Reserva para aparelhos sem WebGL2: esfera luminosa com anel. */
+function NucleoSimples({ tamanho }: { tamanho: number }) {
+  const esfera = tamanho * 0.26;
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          position: 'absolute', width: tamanho * 0.78, height: tamanho * 0.78, borderRadius: tamanho,
+          borderWidth: 1, borderColor: 'rgba(56,225,207,0.35)',
+        }}
+      />
+      <View
+        style={{
+          width: esfera, height: esfera, borderRadius: esfera, backgroundColor: '#38e1cf',
+          shadowColor: '#38e1cf', shadowOpacity: 1, shadowRadius: 24, elevation: 16, opacity: 0.85,
+        }}
+      />
     </View>
   );
 }

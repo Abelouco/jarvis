@@ -3,9 +3,20 @@
     "name": "J.A.R.V.I.S.",
     "slug": "jarvis",
     "scheme": "jarvis",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "backgroundColor": "#04060b",
+    "icon": "./assets/icon.png",
+    "runtimeVersion": { "policy": "appVersion" },
+    "android": {
+      "package": "app.jarvis.pessoal",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#04060b"
+      },
+      "edgeToEdgeEnabled": true
+    },
     "plugins": [
       "expo-sqlite",
       "expo-status-bar"
