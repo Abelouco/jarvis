@@ -1,9 +1,98 @@
-import { SUPABASE_URL } from '@jarvis/core';
+import type { JarvisEvent } from '@jarvis/core';
+import { jarvis } from './jarvis';
+import './estilo.css';
 
-document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-  <div style="height:100vh;display:grid;place-items:center;text-align:center">
-    <div>
-      <h1 style="font-weight:300;letter-spacing:.4em">J.A.R.V.I.S.</h1>
-      <p style="color:#5a6b80">Fase 0 · núcleo: ${SUPABASE_URL.replace('https://', '')}</p>
-    </div>
-  </div>`;
+const app = document.querySelector<HTMLDivElement>('#app')!;
+const pulsos: JarvisEvent[] = [];
+
+const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+async function render() {
+  const sessao = await jarvis.auth.sessao();
+  if (!sessao) return renderLogin();
+  const lista = await jarvis.tarefas.listar();
+  const { estado, ultimoErro } = jarvis.estado();
+  app.innerHTML = `
+    <main>
+      <h1>J.A.R.V.I.S.</h1>
+      <p class="sub">sync: ${estado}${ultimoErro ? ` · ${esc(ultimoErro)}` : ''}</p>
+      <form id="nova"><input name="t" placeholder="nova tarefa" autocomplete="off" /><button>+</button></form>
+      <ul>
+        ${lista.map((t) => `
+          <li data-id="${t.id}" class="${t.done_at ? 'feito' : ''}">
+            <span class="marca">${t.done_at ? '✓' : '○'}</span>${esc(t.title)}
+            <button class="apagar" title="apagar">×</button>
+          </li>`).join('') || '<li class="sub">nenhuma tarefa</li>'}
+      </ul>
+      <p class="sub">pulsos (eventos reais):</p>
+      ${pulsos.map((p) => `<p class="pulso">• ${p.kind} ${p.entity_type ?? ''} ${new Date(p.created_at).toLocaleTimeString('pt-BR')}</p>`).join('')}
+      <button id="sair" class="link">sair</button>
+    </main>`;
+
+  app.querySelector<HTMLFormElement>('#nova')!.onsubmit = async (e) => {
+    e.preventDefault();
+    const campo = (e.target as HTMLFormElement).t as HTMLInputElement;
+    if (campo.value.trim()) await jarvis.tarefas.criar(campo.value);
+  };
+  app.querySelectorAll<HTMLLIElement>('li[data-id]').forEach((li) => {
+    li.onclick = (e) => {
+      const id = li.dataset.id!;
+      if ((e.target as HTMLElement).classList.contains('apagar')) void jarvis.tarefas.apagar(id);
+      else void jarvis.tarefas.alternarConcluida(id);
+    };
+  });
+  app.querySelector<HTMLButtonElement>('#sair')!.onclick = () => void jarvis.auth.sair();
+  app.querySelector<HTMLInputElement>('#nova input')!.focus();
+}
+
+let emailEnviado: string | null = null;
+
+function renderLogin(msg = '') {
+  app.innerHTML = `
+    <main>
+      <h1>J.A.R.V.I.S.</h1>
+      <form id="login">
+        <input name="email" type="email" placeholder="seu e-mail" value="${esc(emailEnviado ?? '')}" ${emailEnviado ? 'disabled' : ''} />
+        ${emailEnviado ? '<input name="codigo" inputmode="numeric" placeholder="código do e-mail" autocomplete="one-time-code" />' : ''}
+        <button>${emailEnviado ? 'Entrar' : 'Enviar código'}</button>
+      </form>
+      <p class="erro">${esc(msg)}</p>
+    </main>`;
+  const form = app.querySelector<HTMLFormElement>('#login')!;
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (!emailEnviado) {
+        const email = (form.email as HTMLInputElement).value;
+        await jarvis.auth.enviarCodigo(email);
+        emailEnviado = email;
+        renderLogin();
+      } else {
+        await jarvis.auth.confirmarCodigo(emailEnviado, (form.codigo as HTMLInputElement).value);
+      }
+    } catch (err) {
+      renderLogin(err instanceof Error ? err.message : String(err));
+    }
+  };
+}
+
+// Redesenha quando algo muda, sem roubar o texto que está sendo digitado.
+let pendente = false;
+function agendarRender() {
+  if (pendente) return;
+  pendente = true;
+  requestAnimationFrame(() => {
+    pendente = false;
+    const digitando = document.activeElement as HTMLInputElement | null;
+    if (digitando?.tagName === 'INPUT' && digitando.value) return;
+    void render();
+  });
+}
+
+jarvis.aoMudar(agendarRender);
+jarvis.aoEvento((e) => {
+  pulsos.unshift(e);
+  pulsos.length = Math.min(pulsos.length, 5);
+  agendarRender();
+});
+void jarvis.iniciar().then(render);
