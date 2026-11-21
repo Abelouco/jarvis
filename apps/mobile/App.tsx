@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { quandoCurto, type Atividade, type Prioridade, type Task } from '@jarvis/core';
 import { jarvis } from './src/jarvis';
-import { ligarAtualizacao } from './src/atualizacao';
+import { aplicarAtualizacao, ligarAtualizacao } from './src/atualizacao';
 import { Conversa } from './src/Conversa';
 import { Nucleo, type Pulso } from './src/Nucleo';
 import type { EstadoNucleo } from '@jarvis/nucleo';
@@ -17,7 +17,8 @@ export default function App() {
   const [pulso, setPulso] = useState<Pulso>({ n: 0, forca: 1, tom: 'neutro' });
   const [estadoIA, setEstadoIA] = useState<EstadoNucleo>('repouso');
 
-  useEffect(() => ligarAtualizacao(), []);
+  const [novaVersao, setNovaVersao] = useState(false);
+  useEffect(() => ligarAtualizacao(() => setNovaVersao(true)), []);
 
   useEffect(() => {
     const ver = async () => setLogado(!!(await jarvis.auth.sessao()));
@@ -51,6 +52,12 @@ export default function App() {
           <Login pulso={pulso} />
         )}
       </KeyboardAvoidingView>
+      {novaVersao && (
+        <Pressable style={s.faixa} onPress={() => void aplicarAtualizacao()}>
+          <Text style={s.faixaTxt}>Nova versão pronta</Text>
+          <Text style={s.faixaBotao}>Atualizar</Text>
+        </Pressable>
+      )}
       <StatusBar style="light" />
     </View>
   );
@@ -293,6 +300,14 @@ function Item({ t }: { t: Task }) {
 
 const s = StyleSheet.create({
   tela: { flex: 1, backgroundColor: C.fundo },
+  faixa: {
+    position: 'absolute', left: 16, right: 16, bottom: 24, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', paddingLeft: 16, paddingRight: 6, paddingVertical: 6, borderRadius: 14,
+    backgroundColor: 'rgba(14,22,36,0.96)', borderWidth: 1, borderColor: C.bordaForte,
+    shadowColor: C.cianoForte, shadowOpacity: 0.4, shadowRadius: 16, elevation: 10,
+  },
+  faixaTxt: { color: C.texto2, fontFamily: MONO, fontSize: 12 },
+  faixaBotao: { color: C.ciano, fontWeight: '700', fontSize: 13, paddingHorizontal: 12, paddingVertical: 8 },
   grade: {
     position: 'absolute', top: -200, left: -100, right: -100, height: 520, borderRadius: 400,
     backgroundColor: 'rgba(60,196,255,0.06)',
