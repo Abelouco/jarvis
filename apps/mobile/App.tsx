@@ -30,7 +30,7 @@ export default function App() {
       <View style={s.grade} pointerEvents="none" />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         {logado === null ? (
-          <View style={s.centro}><Nucleo tamanho={96} /><ActivityIndicator color={C.ciano} style={{ marginTop: 24 }} /></View>
+          <View style={s.centro}><ActivityIndicator color={C.ciano} /></View>
         ) : logado ? (
           <Painel pulso={pulso} pulsos={pulsos} />
         ) : (
@@ -69,7 +69,7 @@ function Login({ pulso }: { pulso: number }) {
 
   return (
     <ScrollView contentContainerStyle={s.entrada} keyboardShouldPersistTaps="handled">
-      <Nucleo tamanho={128} pulso={pulso} />
+      <View style={{ marginVertical: -40 }}><Nucleo tamanho={300} pulso={pulso} /></View>
       <Text style={s.marca}>J.A.R.V.I.S.</Text>
       <Text style={s.marcaSub}>ASSISTENTE PESSOAL · NÚCLEO ONLINE</Text>
 
@@ -160,8 +160,10 @@ function Painel({ pulso, pulsos }: { pulso: number; pulsos: JarvisEvent[] }) {
         </View>
       </View>
 
+      <View style={{ alignItems: 'center', marginTop: -24, marginBottom: -28 }}>
+        <Nucleo tamanho={280} pulso={pulso} />
+      </View>
       <View style={s.saudacao}>
-        <Nucleo tamanho={76} pulso={pulso} />
         <View style={{ flex: 1 }}>
           <Text style={s.ola}>{saudacao()}.</Text>
           <Text style={s.data}>{dataHoje()}</Text>

@@ -1,80 +1,55 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, StyleSheet, View } from 'react-native';
-import { C } from './tema';
+import { PixelRatio, View } from 'react-native';
+import { GLView, type ExpoWebGLRenderingContext } from 'expo-gl';
+import * as THREE from 'three';
+import { criarNucleo, type Nucleo as Cena } from '@jarvis/nucleo';
 
-/** O núcleo: anéis girando, centro respirando e uma onda a cada evento (`pulso` muda). */
-export function Nucleo({ tamanho = 120, pulso = 0 }: { tamanho?: number; pulso?: number }) {
-  const giro = useRef(new Animated.Value(0)).current;
-  const respiro = useRef(new Animated.Value(0)).current;
-  const onda = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    const a = Animated.loop(Animated.timing(giro, { toValue: 1, duration: 18000, easing: Easing.linear, useNativeDriver: true }));
-    const b = Animated.loop(
-      Animated.sequence([
-        Animated.timing(respiro, { toValue: 1, duration: 2250, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(respiro, { toValue: 0, duration: 2250, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ]),
-    );
-    a.start();
-    b.start();
-    return () => { a.stop(); b.stop(); };
-  }, [giro, respiro]);
+/**
+ * O núcleo 3D no celular (expo-gl + Three.js, mesma cena do PC).
+ * `pulso` é um contador: cada vez que muda, o núcleo descarrega energia.
+ */
+export function Nucleo({ tamanho = 240, pulso = 0 }: { tamanho?: number; pulso?: number }) {
+  const cena = useRef<Cena | null>(null);
+  const quadro = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!pulso) return;
-    onda.setValue(0);
-    Animated.timing(onda, { toValue: 1, duration: 1100, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
-  }, [pulso, onda]);
+    if (pulso) cena.current?.pulsar();
+  }, [pulso]);
 
-  const t = tamanho;
-  const rot = giro.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-  const rotInv = giro.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-252deg'] });
-  const rotRapido = giro.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '590deg'] });
-  const escala = Animated.add(
-    respiro.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }),
-    onda.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, 0.3, 0] }),
+  useEffect(
+    () => () => {
+      if (quadro.current) cancelAnimationFrame(quadro.current);
+      cena.current?.destruir();
+      cena.current = null;
+    },
+    [],
   );
-  const anel = (inset: number, extra: object) => ({
-    position: 'absolute' as const,
-    top: t * inset, left: t * inset, right: t * inset, bottom: t * inset,
-    borderRadius: t,
-    borderWidth: 1,
-    ...extra,
-  });
+
+  const aoCriar = (gl: ExpoWebGLRenderingContext) => {
+    const { drawingBufferWidth: w, drawingBufferHeight: h } = gl;
+    // O Three espera um <canvas>; o expo-gl só dá o contexto. Um canvas mínimo basta.
+    const canvas = {
+      width: w, height: h, style: {}, clientWidth: w, clientHeight: h,
+      addEventListener: () => {}, removeEventListener: () => {}, getContext: () => gl,
+    } as unknown as HTMLCanvasElement;
+    const renderer = new THREE.WebGLRenderer({ canvas, context: gl as unknown as WebGL2RenderingContext, alpha: true, antialias: false });
+    // drawingBuffer vem em pixels físicos: passa o tamanho em pontos + a densidade real,
+    // assim o renderer volta ao mesmo buffer e as partículas ficam do tamanho certo.
+    const dpr = PixelRatio.get();
+    const n = criarNucleo(renderer, { largura: w / dpr, altura: h / dpr, dpr, densidade: 0.55 });
+    cena.current = n;
+
+    const laco = (t: number) => {
+      n.quadro(t);
+      gl.endFrameEXP();
+      quadro.current = requestAnimationFrame(laco);
+    };
+    quadro.current = requestAnimationFrame(laco);
+  };
 
   return (
-    <View style={{ width: t, height: t }}>
-      <Animated.View
-        style={[anel(0, { borderWidth: 2, borderColor: C.ciano }), {
-          opacity: onda.interpolate({ inputRange: [0, 1], outputRange: [0.8, 0] }),
-          transform: [{ scale: onda.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1.35] }) }],
-        }]}
-      />
-      <Animated.View style={[anel(0, { borderColor: C.bordaForte }), { transform: [{ rotate: rot }] }]}>
-        <View style={[s.ponto, { left: t / 2 - 3 }]} />
-      </Animated.View>
-      <Animated.View style={[anel(0.14, { borderColor: 'rgba(127,216,255,0.18)', borderStyle: 'dashed' }), { transform: [{ rotate: rotInv }] }]} />
-      <Animated.View style={[anel(0.28, { borderColor: C.bordaForte }), { transform: [{ rotate: rotRapido }] }]}>
-        <View style={[s.ponto, { left: t * 0.22 - 3, width: 4, height: 4 }]} />
-      </Animated.View>
-      <Animated.View
-        style={[anel(0.38, { borderWidth: 0, backgroundColor: C.cianoForte }), s.brilho, { transform: [{ scale: escala }] }]}
-      >
-        <View style={s.reflexo} />
-      </Animated.View>
+    <View style={{ width: tamanho, height: tamanho }}>
+      <GLView style={{ flex: 1 }} onContextCreate={aoCriar} />
     </View>
   );
 }
-
-const s = StyleSheet.create({
-  ponto: {
-    position: 'absolute', top: -3, width: 6, height: 6, borderRadius: 3,
-    backgroundColor: C.ciano, shadowColor: C.ciano, shadowOpacity: 1, shadowRadius: 6, elevation: 4,
-  },
-  brilho: { shadowColor: C.cianoForte, shadowOpacity: 0.9, shadowRadius: 18, elevation: 12 },
-  reflexo: {
-    position: 'absolute', top: '14%', left: '18%', width: '42%', height: '42%',
-    borderRadius: 999, backgroundColor: 'rgba(217,245,255,0.55)',
-  },
-});

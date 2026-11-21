@@ -1,13 +1,19 @@
 import type { JarvisEvent, Prioridade, Task } from '@jarvis/core';
 import { jarvis } from './jarvis';
 import './estilo.css';
+import { montarNucleo, type NucleoMontado } from './nucleo3d';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const $ = <T extends HTMLElement>(sel: string) => app.querySelector<T>(sel)!;
 
-const NUCLEO = `<span class="onda"></span><span class="anel"></span><span class="anel a2"></span><span class="anel a3"></span><span class="centro"></span>`;
+// Só um núcleo 3D vivo por vez (um contexto WebGL).
+let nucleo: NucleoMontado | null = null;
+function trocarNucleo(caixa: HTMLElement | null, densidade = 1) {
+  nucleo?.destruir();
+  nucleo = caixa ? montarNucleo(caixa, densidade) : null;
+}
 
 const NOME_PRIO: Record<Prioridade, string> = { alta: 'alta', media: 'média', baixa: 'baixa' };
 const NOME_EVENTO: Record<string, string> = { created: 'criada', updated: 'atualizada', deleted: 'apagada' };
@@ -36,7 +42,7 @@ function montarLogin() {
   app.innerHTML = `
     <section class="entrada">
       <div class="entrada-caixa">
-        <div class="nucleo" style="--t:132px">${NUCLEO}</div>
+        <div class="nucleo3d hero" id="nucleo"></div>
         <div class="marca">
           <h1>J.A.R.V.I.S.</h1>
           <p>assistente pessoal · núcleo online</p>
@@ -107,6 +113,7 @@ function montarLogin() {
   };
 
   aplicarModo();
+  trocarNucleo($('#nucleo'));
   (form.email as HTMLInputElement).focus();
 }
 
@@ -130,7 +137,7 @@ async function montarPainel() {
   app.innerHTML = `
     <section class="painel">
       <header class="topo">
-        <div class="nucleo" id="mini" style="--t:30px">${NUCLEO}</div>
+        <span class="sinal"></span>
         <span class="nome">J.A.R.V.I.S.</span>
         <span class="espaco"></span>
         <span class="estado" id="estado"><i></i><span></span></span>
@@ -140,7 +147,6 @@ async function montarPainel() {
         <main class="principal">
           <div class="principal-inner">
             <div class="saudacao">
-              <div class="nucleo" id="grande" style="--t:84px">${NUCLEO}</div>
               <div>
                 <h2>${saudacao()}.</h2>
                 <p>${dataHoje()}</p>
@@ -160,6 +166,7 @@ async function montarPainel() {
           </div>
         </main>
         <aside class="lateral">
+          <div class="nucleo3d lateral-nucleo" id="nucleo"></div>
           <h3>Pulsos</h3>
           <p class="legenda">Cada pulso é um evento real do núcleo. É o que vai acender o cérebro.</p>
           <ul class="pulsos" id="pulsos"></ul>
@@ -198,6 +205,7 @@ async function montarPainel() {
   };
 
   marcarPrio();
+  trocarNucleo($('#nucleo'), 0.8);
   campo.focus();
   await atualizarPainel();
   desenharPulsos();
@@ -260,13 +268,6 @@ function desenharPulsos() {
     : `<li class="pulso nada">Aguardando o primeiro evento…</li>`;
 }
 
-function pulsar() {
-  app.querySelectorAll<HTMLDivElement>('.nucleo').forEach((n) => {
-    n.classList.remove('pulsar');
-    void n.offsetWidth; // reinicia a animação
-    n.classList.add('pulsar');
-  });
-}
 
 // ======================= ligação =======================
 
@@ -284,7 +285,7 @@ jarvis.aoEvento((e) => {
   pulsos.unshift(e);
   pulsos.length = Math.min(pulsos.length, 12);
   desenharPulsos();
-  pulsar();
+  nucleo?.pulsar();
 });
 
 void jarvis.iniciar().then(decidirTela);
