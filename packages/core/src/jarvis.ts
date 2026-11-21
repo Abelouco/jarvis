@@ -2,8 +2,8 @@
 // o sync empurra o que mudou aqui e puxa o que mudou no Supabase.
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { criarCliente, ouvirEventos, type ArmazenamentoSessao } from './supabase';
-import { COLUNAS_TASKS, novoId, prepararBanco, type BancoLocal, type Valor } from './local';
-import type { JarvisEvent, Prioridade, Task } from './types';
+import { novoId, prepararBanco, TABELAS_SYNC, type BancoLocal, type TabelaSync, type Valor } from './local';
+import type { JarvisEvent, Message, Prioridade, Task } from './types';
 
 export interface OpcoesJarvis {
   db: BancoLocal;
@@ -27,6 +27,8 @@ const NOME_ENTIDADE: Record<string, string> = {
   tasks: 'Tarefa', projects: 'Projeto', reminders: 'Lembrete', habits: 'Hábito',
   habit_logs: 'Registro de hábito', memories: 'Memória', memory_links: 'Ligação de memória',
 };
+/** Entidades que aparecem em "Atividades recentes" (mensagens só fazem o cérebro pulsar). */
+const ENTIDADES_ATIVIDADE = Object.keys(NOME_ENTIDADE);
 const NOME_ACAO: Record<string, string> = { created: 'criada', updated: 'atualizada', deleted: 'apagada' };
 
 /** "14:15" se for hoje, "ontem 14:15", ou "21/11 14:15". */
@@ -160,6 +162,7 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
       await empurrar(s.user.id);
       await puxar();
       mudarEstado('parado');
+      void retomarPendente();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       mudarEstado(/fetch|network|rede/i.test(msg) ? 'offline' : 'erro', msg);
@@ -167,52 +170,61 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
   }
 
   async function empurrar(userId: string) {
-    const sujas = await db.consultar<Record<string, Valor>>(`select * from tasks where dirty = 1 limit ${LOTE}`);
+    for (const t of TABELAS_SYNC) await empurrarTabela(t, userId);
+  }
+
+  async function empurrarTabela(t: TabelaSync, userId: string) {
+    const sujas = await db.consultar<Record<string, Valor>>(`select * from ${t.nome} where dirty = 1 limit ${LOTE}`);
     if (!sujas.length) return;
     const envio = sujas.map((r) => {
       const linha: Record<string, unknown> = {};
-      for (const c of COLUNAS_TASKS) linha[c] = r[c];
+      for (const c of t.colunas) linha[c] = r[c];
       linha.user_id = userId;
-      linha.archived = !!r.archived;
+      for (const c of t.booleanas) linha[c] = !!r[c];
       delete linha.updated_at; // quem carimba é o trigger do servidor
       return linha;
     });
-    const { data, error } = await sb.from('tasks').upsert(envio, { onConflict: 'id' }).select();
+    const { data, error } = await sb.from(t.nome).upsert(envio, { onConflict: 'id' }).select();
     if (error) throw error;
     // Grava a versão do servidor e limpa a marca, só se a linha não mudou de novo enquanto subia.
     const enviadoEm = new Map(sujas.map((r) => [r.id as string, r.updated_at as string]));
-    for (const srv of (data ?? []) as Task[]) {
-      await gravarDoServidor(srv, enviadoEm.get(srv.id));
+    for (const srv of (data ?? []) as Record<string, unknown>[]) {
+      await gravarDoServidor(t, srv, enviadoEm.get(srv.id as string));
     }
   }
 
   async function puxar() {
+    for (const t of TABELAS_SYNC) await puxarTabela(t);
+    avisar();
+  }
+
+  async function puxarTabela(t: TabelaSync) {
     const [estadoRow] = await db.consultar<{ cursor: string | null }>(
-      `select cursor from sync_state where tabela = 'tasks'`,
+      `select cursor from sync_state where tabela = ?`,
+      [t.nome],
     );
     let cursor = estadoRow?.cursor ?? '1970-01-01T00:00:00Z';
     for (;;) {
       const { data, error } = await sb
-        .from('tasks')
+        .from(t.nome)
         .select('*')
         .gte('updated_at', cursor)
         .order('updated_at', { ascending: true })
         .limit(LOTE);
       if (error) throw error;
-      const linhas = (data ?? []) as Task[];
-      for (const srv of linhas) await gravarDoServidor(srv);
-      const ultimo = linhas.at(-1)?.updated_at;
+      const linhas = (data ?? []) as Record<string, unknown>[];
+      for (const srv of linhas) await gravarDoServidor(t, srv);
+      const ultimo = linhas.at(-1)?.updated_at as string | undefined;
       // Sem avanço (lote vazio ou tudo no mesmo instante): para, evita laço infinito.
       if (!ultimo || ultimo === cursor) break;
       cursor = ultimo;
       await db.executar(
-        `insert into sync_state (tabela, cursor) values ('tasks', ?)
+        `insert into sync_state (tabela, cursor) values (?, ?)
          on conflict (tabela) do update set cursor = excluded.cursor`,
-        [cursor],
+        [t.nome, cursor],
       );
       if (linhas.length < LOTE) break;
     }
-    avisar();
   }
 
   /**
@@ -220,21 +232,173 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
    * - Sem `enviadoEm`: só sobrescreve se a local não tiver mudança pendente.
    * - Com `enviadoEm`: confirmação de envio; limpa `dirty` se a local ainda é a que subiu.
    */
-  async function gravarDoServidor(srv: Task, enviadoEm?: string) {
-    const valores: Valor[] = COLUNAS_TASKS.map((c) => {
-      const v = srv[c as keyof Task] as unknown;
-      if (c === 'archived') return v ? 1 : 0;
+  async function gravarDoServidor(t: TabelaSync, srv: Record<string, unknown>, enviadoEm?: string) {
+    const valores: Valor[] = t.colunas.map((c) => {
+      const v = srv[c];
+      if (t.booleanas.includes(c)) return v ? 1 : 0;
       return (v ?? null) as Valor;
     });
-    const sets = COLUNAS_TASKS.filter((c) => c !== 'id').map((c) => `${c} = excluded.${c}`).join(', ');
-    const condicao = enviadoEm === undefined ? 'tasks.dirty = 0' : 'tasks.updated_at = ?';
+    const sets = t.colunas.filter((c) => c !== 'id').map((c) => `${c} = excluded.${c}`).join(', ');
+    const condicao = enviadoEm === undefined ? `${t.nome}.dirty = 0` : `${t.nome}.updated_at = ?`;
     await db.executar(
-      `insert into tasks (${COLUNAS_TASKS.join(', ')}, dirty)
-       values (${COLUNAS_TASKS.map(() => '?').join(', ')}, 0)
+      `insert into ${t.nome} (${t.colunas.join(', ')}, dirty)
+       values (${t.colunas.map(() => '?').join(', ')}, 0)
        on conflict (id) do update set ${sets}, dirty = 0 where ${condicao}`,
       enviadoEm === undefined ? valores : [...valores, enviadoEm],
     );
   }
+
+  // ---------- conversa (chat) ----------
+  const TABELA_MSG = TABELAS_SYNC.find((t) => t.nome === 'messages')!;
+  /** undefined = ainda não decidiu; null = conversa nova, criada no primeiro envio. */
+  let conversaAtual: string | null | undefined;
+  let pensando = false;
+  let erroChat: string | null = null;
+
+  async function idConversaAtual(): Promise<string | null> {
+    if (conversaAtual === undefined) {
+      const [c] = await db.consultar<{ id: string }>(
+        `select id from conversations where deleted_at is null order by updated_at desc limit 1`,
+      );
+      conversaAtual = c?.id ?? null;
+    }
+    return conversaAtual;
+  }
+
+  async function mensagemDeErro(error: unknown): Promise<string> {
+    const ctx = (error as { context?: unknown })?.context;
+    if (ctx instanceof Response) {
+      try {
+        const j = await ctx.clone().json();
+        if (j?.erro) return String(j.erro);
+      } catch {
+        /* resposta sem JSON */
+      }
+    }
+    const msg = error instanceof Error ? error.message : String(error);
+    return /fetch|network|rede|Failed to send/i.test(msg) ? 'Sem conexão. A mensagem ficou guardada; tente de novo.' : msg;
+  }
+
+  // ---------- pergunta sem resposta (queda, erro, app fechado no meio) ----------
+  // Se a última mensagem da conversa é do dono, ela está em aberto: o J.A.R.V.I.S. responde
+  // essa antes de qualquer outra coisa. Outro aparelho pode estar respondendo agora mesmo,
+  // então só retoma uma pergunta recente se a falha foi aqui; as antigas, sempre.
+  // A função é idempotente: se já houver resposta, devolve a mesma (nunca responde duas vezes).
+  const TEMPO_OUTRO_APARELHO = 40_000;
+  const ESPERAS_RETENTATIVA = [5_000, 15_000, 30_000, 60_000, 120_000, 300_000];
+  const falhasAqui = new Map<string, number>(); // id da pergunta -> nº de falhas nesta sessão
+  let relogioPendente: ReturnType<typeof setTimeout> | null = null;
+
+  async function perguntaEmAberto(): Promise<Message | null> {
+    const id = await idConversaAtual();
+    if (!id) return null;
+    const [ultima] = await db.consultar<Omit<Message, 'sensitive'> & { sensitive: number }>(
+      `select * from messages where conversation_id = ? and deleted_at is null
+       order by created_at desc, rowid desc limit 1`,
+      [id],
+    );
+    return ultima?.role === 'user' ? { ...ultima, sensitive: !!ultima.sensitive } : null;
+  }
+
+  function agendarRetomada(atraso: number) {
+    if (relogioPendente) clearTimeout(relogioPendente);
+    relogioPendente = setTimeout(() => {
+      relogioPendente = null;
+      void retomarPendente();
+    }, atraso);
+  }
+
+  /** Pede a resposta de uma pergunta já gravada. true = respondida. */
+  async function pedirResposta(m: Pick<Message, 'id' | 'conversation_id' | 'content'>): Promise<boolean> {
+    pensando = true;
+    erroChat = null;
+    avisar();
+    try {
+      const { data, error } = await sb.functions.invoke('ia_conversar', {
+        body: { conversation_id: m.conversation_id, message_id: m.id, text: m.content },
+      });
+      if (error) throw error;
+      if (data?.mensagem) await gravarDoServidor(TABELA_MSG, data.mensagem as Record<string, unknown>);
+      falhasAqui.delete(m.id);
+      return true;
+    } catch (e) {
+      const n = (falhasAqui.get(m.id) ?? 0) + 1;
+      falhasAqui.set(m.id, n);
+      const espera = ESPERAS_RETENTATIVA[Math.min(n - 1, ESPERAS_RETENTATIVA.length - 1)]!;
+      erroChat = `${await mensagemDeErro(e)} Tento de novo em ${Math.round(espera / 1000)} s.`;
+      agendarRetomada(espera);
+      return false;
+    } finally {
+      pensando = false;
+      avisar();
+      agendarSync(300);
+    }
+  }
+
+  /** Responde a pergunta em aberto da conversa atual, se houver. */
+  async function retomarPendente(): Promise<boolean> {
+    if (pensando || !(await auth.sessao())) return !pensando;
+    const p = await perguntaEmAberto();
+    if (!p) return true;
+    const idade = Date.now() - Date.parse(p.created_at);
+    if (!falhasAqui.has(p.id) && idade < TEMPO_OUTRO_APARELHO) {
+      // Pode ser outro aparelho respondendo agora: espera um pouco e confere de novo.
+      agendarRetomada(TEMPO_OUTRO_APARELHO - idade + 500);
+      return false;
+    }
+    return pedirResposta(p);
+  }
+
+  const chat = {
+    /** Mensagens da conversa atual, da mais antiga para a mais nova (banco local). */
+    async mensagens(): Promise<Message[]> {
+      const id = await idConversaAtual();
+      if (!id) return [];
+      const linhas = await db.consultar<Omit<Message, 'sensitive'> & { sensitive: number }>(
+        `select * from messages where conversation_id = ? and deleted_at is null order by created_at, rowid`,
+        [id],
+      );
+      return linhas.map((m) => ({ ...m, sensitive: !!m.sensitive }));
+    },
+    estado: () => ({ pensando, erro: erroChat }),
+    novaConversa() {
+      conversaAtual = null;
+      erroChat = null;
+      if (relogioPendente) clearTimeout(relogioPendente);
+      relogioPendente = null;
+      avisar();
+    },
+    /**
+     * Envia uma pergunta. Se houver outra em aberto, responde aquela primeiro.
+     * Devolve false se não deu para enviar agora (o texto deve voltar para o campo).
+     */
+    async enviar(texto: string): Promise<boolean> {
+      const limpo = texto.trim();
+      if (!limpo || pensando) return false;
+      const s = await auth.sessao();
+      if (!s) throw new Error('Faça login.');
+      const aberta = await perguntaEmAberto();
+      if (aberta && !(await pedirResposta(aberta))) return false;
+      const t = agora();
+      let conversa = await idConversaAtual();
+      if (!conversa) {
+        conversa = novoId();
+        await db.executar(
+          `insert into conversations (id, user_id, title, created_at, updated_at, dirty) values (?, ?, ?, ?, ?, 1)`,
+          [conversa, s.user.id, limpo.slice(0, 60), t, t],
+        );
+        conversaAtual = conversa;
+      }
+      const idMsg = novoId();
+      await db.executar(
+        `insert into messages (id, user_id, conversation_id, role, content, created_at, updated_at, dirty)
+         values (?, ?, ?, 'user', ?, ?, ?, 1)`,
+        [idMsg, s.user.id, conversa, limpo, t, t],
+      );
+      await pedirResposta({ id: idMsg, conversation_id: conversa, content: limpo });
+      return true;
+    },
+  };
 
   // ---------- atividades recentes (a partir da tabela events) ----------
   const MAX_ATIVIDADES = 15;
@@ -245,7 +409,7 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
     const { data, error } = await sb
       .from('events')
       .select('*')
-      .not('entity_type', 'is', null)
+      .in('entity_type', ENTIDADES_ATIVIDADE)
       .order('created_at', { ascending: false })
       .limit(MAX_ATIVIDADES);
     if (error) return; // offline: a lista começa só com o que chegar ao vivo
@@ -282,12 +446,13 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
   function ligarSync() {
     if (!canal) {
       canal = ouvirEventos(sb, (e) => {
-        if (!eventosRecentes.some((x) => x.id === e.id)) {
+        const entraNaLista = !!e.entity_type && ENTIDADES_ATIVIDADE.includes(e.entity_type);
+        if (entraNaLista && !eventosRecentes.some((x) => x.id === e.id)) {
           eventosRecentes = [e, ...eventosRecentes].slice(0, MAX_ATIVIDADES);
         }
         ouvintesEvento.forEach((f) => f(e));
         avisar();
-        if (e.entity_type === 'tasks') agendarSync(150);
+        if (e.entity_type && TABELAS_SYNC.some((t) => t.nome === e.entity_type)) agendarSync(150);
       });
       void carregarHistorico();
     }
@@ -309,6 +474,7 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
     auth,
     tarefas,
     atividades,
+    chat,
     sincronizar,
     estado: () => ({ estado, ultimoErro }),
     /** Avisa quando algo local mudou (para a tela recarregar). */

@@ -24,6 +24,20 @@ export interface Task extends Base {
   position: number;
 }
 
+export interface Conversation extends Base {
+  title: string | null;
+}
+
+export interface Message extends Base {
+  conversation_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  provider: 'groq' | 'gemini' | null;
+  model: string | null;
+  latency_ms: number | null;
+  sensitive: boolean;
+}
+
 export interface JarvisEvent {
   id: number;
   user_id: string;

@@ -1,8 +1,9 @@
-import { quandoCurto, type Prioridade, type Task } from '@jarvis/core';
+import { quandoCurto, type Message, type Prioridade, type Task } from '@jarvis/core';
 import { jarvis } from './jarvis';
 import './estilo.css';
 import { montarNucleo, type NucleoMontado } from './nucleo3d';
 import { ligarAtualizacao } from './atualizacao';
+import { montarControlesJanela } from './janela';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const esc = (s: string) =>
@@ -36,6 +37,7 @@ let modoCriar = false;
 
 function montarLogin() {
   app.innerHTML = `
+    <div class="faixa-arrastar" data-tauri-drag-region></div>
     <section class="entrada">
       <div class="entrada-caixa">
         <div class="nucleo3d hero" id="nucleo"></div>
@@ -119,6 +121,17 @@ let prioridade: Prioridade = 'media';
 // Ids já desenhados: só os novos entram com animação.
 let atividadesVistas = new Set<number>();
 
+type Aba = 'conversa' | 'tarefas';
+const lerAba = (): Aba => {
+  try {
+    return localStorage.getItem('jarvis.aba') === 'tarefas' ? 'tarefas' : 'conversa';
+  } catch {
+    return 'conversa';
+  }
+};
+let aba: Aba = lerAba();
+let qtdMensagensDesenhadas = -1;
+
 function saudacao() {
   const h = new Date().getHours();
   return h < 5 ? 'Boa madrugada' : h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
@@ -133,10 +146,10 @@ async function montarPainel() {
   const email = (await jarvis.auth.sessao())?.user.email ?? '';
   app.innerHTML = `
     <section class="painel">
-      <header class="topo">
+      <header class="topo" data-tauri-drag-region>
         <span class="sinal"></span>
-        <span class="nome">J.A.R.V.I.S.</span>
-        <span class="espaco"></span>
+        <span class="nome" data-tauri-drag-region>J.A.R.V.I.S.</span>
+        <span class="espaco" data-tauri-drag-region></span>
         <span class="estado" id="estado"><i></i><span></span></span>
         <button class="conta" id="sair" title="${esc(email)}">Sair</button>
       </header>
@@ -150,6 +163,22 @@ async function montarPainel() {
                 <div class="resumo" id="resumo"></div>
               </div>
             </div>
+            <nav class="abas-painel" id="abas">
+              <button type="button" data-aba="conversa">Conversa</button>
+              <button type="button" data-aba="tarefas">Tarefas</button>
+            </nav>
+            <div class="vista" id="vista-conversa">
+              <div class="chat" id="chat"></div>
+              <div class="chat-rodape">
+                <p class="aviso" id="erro-chat"></p>
+                <form class="nova falar" id="falar">
+                  <input name="m" placeholder="Fale com o J.A.R.V.I.S." autocomplete="off" maxlength="4000" />
+                  <button type="button" class="nova-conversa" id="nova-conversa" title="Começar outra conversa">nova</button>
+                  <button class="adicionar" title="Enviar (Enter)">↑</button>
+                </form>
+              </div>
+            </div>
+            <div class="vista" id="vista-tarefas">
             <form class="nova" id="nova">
               <input name="t" placeholder="O que precisa ser feito?" autocomplete="off" />
               <div class="prios">
@@ -160,6 +189,7 @@ async function montarPainel() {
               <button class="adicionar" title="Adicionar (Enter)">+</button>
             </form>
             <div id="listas"></div>
+            </div>
           </div>
         </main>
         <aside class="lateral">
@@ -200,9 +230,51 @@ async function montarPainel() {
     else if (alvo.closest('.check')) void jarvis.tarefas.alternarConcluida(id);
   };
 
+  // ---------- conversa ----------
+  const falar = $<HTMLFormElement>('#falar');
+  const campoFala = falar.m as HTMLInputElement;
+  falar.onsubmit = (e) => {
+    e.preventDefault();
+    const texto = campoFala.value.trim();
+    if (!texto || jarvis.chat.estado().pensando) return;
+    campoFala.value = '';
+    // Se não deu para enviar (havia uma pergunta em aberto e ela falhou), o texto volta.
+    void jarvis.chat.enviar(texto).then((ok) => {
+      if (!ok && !campoFala.value) campoFala.value = texto;
+    });
+  };
+  $<HTMLButtonElement>('#nova-conversa').onclick = () => {
+    jarvis.chat.novaConversa();
+    campoFala.focus();
+  };
+
+  // ---------- abas ----------
+  const mostrarAba = () => {
+    $<HTMLElement>('#abas').querySelectorAll<HTMLButtonElement>('button').forEach((b) =>
+      b.classList.toggle('ativa', b.dataset.aba === aba),
+    );
+    $<HTMLDivElement>('#vista-conversa').hidden = aba !== 'conversa';
+    $<HTMLDivElement>('#vista-tarefas').hidden = aba !== 'tarefas';
+    (aba === 'conversa' ? campoFala : campo).focus();
+  };
+  $<HTMLElement>('#abas').onclick = (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-aba]');
+    if (!b) return;
+    aba = b.dataset.aba as Aba;
+    try {
+      localStorage.setItem('jarvis.aba', aba);
+    } catch {
+      /* sem armazenamento: só não lembra a aba */
+    }
+    qtdMensagensDesenhadas = -1;
+    mostrarAba();
+    void desenharChat();
+  };
+
   marcarPrio();
   trocarNucleo($('#nucleo'), 0.8);
-  campo.focus();
+  qtdMensagensDesenhadas = -1;
+  mostrarAba();
   atividadesVistas = new Set();
   await atualizarPainel();
 }
@@ -249,6 +321,32 @@ async function atualizarPainel() {
   el.querySelector('span')!.textContent = NOME_ESTADO[estado];
 
   await desenharAtividades();
+  await desenharChat();
+}
+
+function itemMensagem(m: Message) {
+  const meta = m.role === 'assistant' && m.provider
+    ? `<div class="meta">${esc(m.provider)}${m.latency_ms ? ` · ${(m.latency_ms / 1000).toFixed(1)} s` : ''}</div>`
+    : '';
+  return `<div class="msg" data-r="${m.role}"><div class="texto">${esc(m.content)}</div>${meta}</div>`;
+}
+
+async function desenharChat() {
+  const msgs = await jarvis.chat.mensagens();
+  if (tela !== 'painel') return;
+  const { pensando, erro } = jarvis.chat.estado();
+  const chat = $<HTMLDivElement>('#chat');
+  chat.innerHTML = msgs.length || pensando
+    ? msgs.map(itemMensagem).join('') + (pensando ? `<div class="msg pensando" data-r="assistant"><i></i><i></i><i></i></div>` : '')
+    : `<div class="vazio"><strong>Às suas ordens.</strong>Pergunte qualquer coisa.</div>`;
+  $<HTMLParagraphElement>('#erro-chat').textContent = erro ?? '';
+  // Desce até a última mensagem quando chega algo novo.
+  const qtd = msgs.length + (pensando ? 1 : 0);
+  if (qtd !== qtdMensagensDesenhadas && aba === 'conversa') {
+    qtdMensagensDesenhadas = qtd;
+    const rolagem = chat.closest<HTMLElement>('.principal');
+    if (rolagem) rolagem.scrollTop = rolagem.scrollHeight;
+  }
 }
 
 async function desenharAtividades() {
@@ -286,5 +384,6 @@ jarvis.aoMudar(() => {
 // Cada evento real faz o núcleo pulsar; a lista de atividades se redesenha pelo aoMudar.
 jarvis.aoEvento(() => nucleo?.pulsar());
 
+montarControlesJanela();
 void jarvis.iniciar().then(decidirTela);
 ligarAtualizacao();

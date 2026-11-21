@@ -1,11 +1,12 @@
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import {
   ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView,
   StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { quandoCurto, type Atividade, type Prioridade, type Task } from '@jarvis/core';
 import { jarvis } from './src/jarvis';
+import { Conversa } from './src/Conversa';
 import { Nucleo } from './src/Nucleo';
 import { C, COR_PRIO, MONO, NOME_PRIO } from './src/tema';
 
@@ -123,6 +124,9 @@ function Painel({ pulso }: { pulso: number }) {
   const [prio, setPrio] = useState<Prioridade>('media');
   const [sync, setSync] = useState(jarvis.estado());
   const [atividades, setAtividades] = useState<Atividade[]>([]);
+  const [aba, setAba] = useState<'conversa' | 'tarefas'>('conversa');
+  const rolagem = useRef<ComponentRef<typeof ScrollView>>(null);
+  const descer = useCallback(() => rolagem.current?.scrollToEnd({ animated: true }), []);
 
   const recarregar = useCallback(async () => {
     setLista(await jarvis.tarefas.listar());
@@ -146,7 +150,7 @@ function Painel({ pulso }: { pulso: number }) {
   };
 
   return (
-    <ScrollView contentContainerStyle={s.painel} keyboardShouldPersistTaps="handled">
+    <ScrollView ref={rolagem} contentContainerStyle={s.painel} keyboardShouldPersistTaps="handled">
       <View style={s.topo}>
         <Text style={s.topoNome}>J.A.R.V.I.S.</Text>
         <View style={{ flex: 1 }} />
@@ -171,6 +175,16 @@ function Painel({ pulso }: { pulso: number }) {
         </View>
       </View>
 
+      <View style={s.abasPainel}>
+        {(['conversa', 'tarefas'] as const).map((a) => (
+          <Pressable key={a} style={[s.aba, aba === a && s.abaAtiva]} onPress={() => setAba(a)}>
+            <Text style={[s.abaTxt, aba === a && { color: C.ciano }]}>{a === 'conversa' ? 'Conversa' : 'Tarefas'}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {aba === 'conversa' ? <Conversa aoCrescer={descer} /> : (
+      <>
       <View style={s.nova}>
         <TextInput
           style={s.novaCampo} placeholder="O que precisa ser feito?" placeholderTextColor={C.apagado}
@@ -222,6 +236,8 @@ function Painel({ pulso }: { pulso: number }) {
           </View>
         ))}
       </View>
+      </>
+      )}
 
       <Pressable style={s.sair} onPress={() => void jarvis.auth.sair()}>
         <Text style={s.sairTxt}>Sair da conta</Text>
@@ -274,6 +290,7 @@ const s = StyleSheet.create({
     alignSelf: 'stretch', marginTop: 30, padding: 20, borderRadius: 20,
     backgroundColor: C.vidro, borderWidth: 1, borderColor: C.borda,
   },
+  abasPainel: { flexDirection: 'row', padding: 4, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.3)', borderWidth: 1, borderColor: C.borda, marginBottom: 18 },
   abas: { flexDirection: 'row', padding: 4, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.3)', marginBottom: 20 },
   aba: { flex: 1, paddingVertical: 10, borderRadius: 9, alignItems: 'center' },
   abaAtiva: { backgroundColor: 'rgba(127,216,255,0.12)', borderWidth: 1, borderColor: C.bordaForte },

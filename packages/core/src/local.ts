@@ -14,6 +14,26 @@ export const COLUNAS_TASKS = [
   'done_at', 'archived', 'position', 'created_at', 'updated_at', 'deleted_at',
 ] as const;
 
+export const COLUNAS_CONVERSATIONS = ['id', 'user_id', 'title', 'created_at', 'updated_at', 'deleted_at'] as const;
+
+export const COLUNAS_MESSAGES = [
+  'id', 'user_id', 'conversation_id', 'role', 'content', 'provider', 'model', 'latency_ms',
+  'sensitive', 'created_at', 'updated_at', 'deleted_at',
+] as const;
+
+/** Tabelas que sincronizam com o Supabase, na ordem de envio (pais antes dos filhos). */
+export interface TabelaSync {
+  nome: string;
+  colunas: readonly string[];
+  /** Colunas boolean no Supabase e 0/1 no SQLite. */
+  booleanas: readonly string[];
+}
+export const TABELAS_SYNC: readonly TabelaSync[] = [
+  { nome: 'tasks', colunas: COLUNAS_TASKS, booleanas: ['archived'] },
+  { nome: 'conversations', colunas: COLUNAS_CONVERSATIONS, booleanas: [] },
+  { nome: 'messages', colunas: COLUNAS_MESSAGES, booleanas: ['sensitive'] },
+];
+
 export const SCHEMA_LOCAL = [
   `create table if not exists tasks (
     id text primary key,
@@ -33,6 +53,33 @@ export const SCHEMA_LOCAL = [
     dirty integer not null default 0
   )`,
   `create index if not exists tasks_dirty_idx on tasks (dirty)`,
+  `create table if not exists conversations (
+    id text primary key,
+    user_id text,
+    title text,
+    created_at text not null,
+    updated_at text not null,
+    deleted_at text,
+    dirty integer not null default 0
+  )`,
+  `create index if not exists conversations_dirty_idx on conversations (dirty)`,
+  `create table if not exists messages (
+    id text primary key,
+    user_id text,
+    conversation_id text not null,
+    role text not null,
+    content text not null,
+    provider text,
+    model text,
+    latency_ms integer,
+    sensitive integer not null default 0,
+    created_at text not null,
+    updated_at text not null,
+    deleted_at text,
+    dirty integer not null default 0
+  )`,
+  `create index if not exists messages_dirty_idx on messages (dirty)`,
+  `create index if not exists messages_conversa_idx on messages (conversation_id, created_at)`,
   `create table if not exists sync_state (tabela text primary key, cursor text)`,
 ];
 
