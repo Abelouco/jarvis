@@ -28,8 +28,7 @@ export default function App() {
 
 function Login() {
   const [email, setEmail] = useState('');
-  const [codigo, setCodigo] = useState('');
-  const [enviado, setEnviado] = useState(false);
+  const [senha, setSenha] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
@@ -44,23 +43,16 @@ function Login() {
     <View style={s.caixa}>
       <TextInput
         style={s.campo} placeholder="seu e-mail" placeholderTextColor={C.apagado}
-        autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail}
-        editable={!enviado}
+        autoCapitalize="none" autoComplete="email" keyboardType="email-address"
+        value={email} onChangeText={setEmail}
       />
-      {enviado && (
-        <TextInput
-          style={s.campo} placeholder="código do e-mail" placeholderTextColor={C.apagado}
-          keyboardType="number-pad" value={codigo} onChangeText={setCodigo}
-        />
-      )}
-      <Pressable
-        style={s.botao} disabled={ocupado}
-        onPress={() => rodar(async () => {
-          if (!enviado) { await jarvis.auth.enviarCodigo(email); setEnviado(true); }
-          else await jarvis.auth.confirmarCodigo(email, codigo);
-        })}
-      >
-        <Text style={s.botaoTxt}>{ocupado ? '...' : enviado ? 'Entrar' : 'Enviar código'}</Text>
+      <TextInput
+        style={s.campo} placeholder="senha" placeholderTextColor={C.apagado}
+        secureTextEntry autoComplete="current-password" value={senha} onChangeText={setSenha}
+        onSubmitEditing={() => rodar(() => jarvis.auth.entrar(email, senha))}
+      />
+      <Pressable style={s.botao} disabled={ocupado} onPress={() => rodar(() => jarvis.auth.entrar(email, senha))}>
+        <Text style={s.botaoTxt}>{ocupado ? '...' : 'Entrar'}</Text>
       </Pressable>
       {msg && <Text style={s.erro}>{msg}</Text>}
     </View>

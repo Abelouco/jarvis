@@ -48,19 +48,11 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
     });
   }
 
-  // ---------- login (só código no e-mail; contas novas ficam desligadas no Supabase) ----------
+  // ---------- login (e-mail e senha; a conta do dono é criada no painel e cadastros ficam desligados) ----------
   const auth = {
-    async enviarCodigo(email: string) {
-      const { error } = await sb.auth.signInWithOtp({ email: email.trim().toLowerCase() });
-      if (error) throw error;
-    },
-    async confirmarCodigo(email: string, codigo: string) {
-      const { error } = await sb.auth.verifyOtp({
-        email: email.trim().toLowerCase(),
-        token: codigo.trim(),
-        type: 'email',
-      });
-      if (error) throw error;
+    async entrar(email: string, senha: string) {
+      const { error } = await sb.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: senha });
+      if (error) throw new Error(error.message === 'Invalid login credentials' ? 'E-mail ou senha incorretos.' : error.message);
     },
     async sessao(): Promise<Session | null> {
       return (await sb.auth.getSession()).data.session;

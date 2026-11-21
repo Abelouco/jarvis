@@ -45,31 +45,25 @@ async function render() {
   app.querySelector<HTMLInputElement>('#nova input')!.focus();
 }
 
-let emailEnviado: string | null = null;
+let ultimoEmail = '';
 
 function renderLogin(msg = '') {
   app.innerHTML = `
     <main>
       <h1>J.A.R.V.I.S.</h1>
       <form id="login">
-        <input name="email" type="email" placeholder="seu e-mail" value="${esc(emailEnviado ?? '')}" ${emailEnviado ? 'disabled' : ''} />
-        ${emailEnviado ? '<input name="codigo" inputmode="numeric" placeholder="código do e-mail" autocomplete="one-time-code" />' : ''}
-        <button>${emailEnviado ? 'Entrar' : 'Enviar código'}</button>
+        <input name="email" type="email" placeholder="seu e-mail" autocomplete="email" value="${esc(ultimoEmail)}" />
+        <input name="senha" type="password" placeholder="senha" autocomplete="current-password" />
+        <button>Entrar</button>
       </form>
       <p class="erro">${esc(msg)}</p>
     </main>`;
   const form = app.querySelector<HTMLFormElement>('#login')!;
   form.onsubmit = async (e) => {
     e.preventDefault();
+    ultimoEmail = (form.email as HTMLInputElement).value;
     try {
-      if (!emailEnviado) {
-        const email = (form.email as HTMLInputElement).value;
-        await jarvis.auth.enviarCodigo(email);
-        emailEnviado = email;
-        renderLogin();
-      } else {
-        await jarvis.auth.confirmarCodigo(emailEnviado, (form.codigo as HTMLInputElement).value);
-      }
+      await jarvis.auth.entrar(ultimoEmail, (form.senha as HTMLInputElement).value);
     } catch (err) {
       renderLogin(err instanceof Error ? err.message : String(err));
     }
