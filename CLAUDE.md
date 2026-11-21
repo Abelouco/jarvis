@@ -25,13 +25,19 @@ Assistente de IA pessoal do dono deste repositório, no PC (Windows) e no celula
 - Datas `AAAA-MM-DD`, horas `HH:MM`, fuso `America/Sao_Paulo`.
 - Respostas das ferramentas em camadas: resumo, fatos estruturados, texto pronto, ids.
 
+## Como rodar e publicar
+- PC (dev): `pnpm desktop` (Tauri + Vite na porta 1420).
+- Celular: app Android instalado (.apk do EAS, perfil `preview`). Mudança só de JS/tela → `npx.cmd eas-cli@latest update --channel preview --environment preview --message "..." --non-interactive` (chega sem reinstalar). Mudança nativa (plugin, permissão, módulo novo) → novo `eas build -p android --profile preview`.
+- Release do Android usa R8: módulo nativo do Expo que quebrar no .apk pode precisar de regra em `extraProguardRules` (app.json, plugin expo-build-properties).
+- Comandos globais/EAS rodam numa aba do Terminal com `npm.cmd`/`pnpm.cmd`/`npx.cmd` (o shell do Claude isola o AppData).
+
 ## Ambiente do dono
 - Windows. C: é HD antigo e quase cheio; o projeto fica em `D:\JARVIS` (HD externo) até chegar um SSD. Evite baixar modelos de IA locais grandes.
 - Orçamento: zero por enquanto. Sempre que uma ferramenta, plugin, MCP ou skill puder economizar tokens ou melhorar o resultado, sugira.
 
 ## Roteiro
-- Fase 0 (atual): núcleo e sync. Feito: schema no Supabase. Próximo: monorepo, login (e-mail e senha, conta criada pelo próprio app; dados isolados por RLS), banco local + sync, primeiro teste ponta a ponta (cria tarefa no celular → aparece no PC → evento chega).
-- Fase 1: conversa por chat e voz, roteador rápido/inteligente, memória.
+- Fase 0 (concluída em 2026-11-21): schema no Supabase, monorepo, login (e-mail e senha, conta criada pelo próprio app; RLS), banco local + sync, núcleo 3D compartilhado, .apk Android via EAS (com EAS Update) e teste ponta a ponta aprovado (tarefa criada no celular aparece no PC e o evento chega).
+- Fase 1 (atual): conversa por chat e voz, roteador rápido/inteligente, memória. Pendente herdado da Fase 0: instalador do Windows com auto-update (Tauri updater + GitHub Releases).
 - Fase 2: paridade com o Néctar (tarefas, lembretes, projetos, hábitos, conhecimento, painel do dia).
 - Fase 3: proatividade (eventos, canais externos, silêncio e teto de avisos).
 - Fase 4: ações no mundo (computador, calendário, e-mail), finanças e saúde opcionais.
