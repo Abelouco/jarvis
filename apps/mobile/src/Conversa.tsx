@@ -89,7 +89,7 @@ function Balao({ m }: { m: Message }) {
         <RespostaMd texto={m.content} />
       </View>
       <Pressable onPress={() => compartilharTexto(m.content)} hitSlop={8} style={s.copiarTudo}>
-        <Text style={s.copiarTudoTxt}>⧉  Copiar resposta</Text>
+        <Text style={s.copiarTudoTxt}>Copiar resposta</Text>
       </Pressable>
     </View>
   );
