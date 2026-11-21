@@ -49,16 +49,16 @@ body::before {
 
 /* ---------- janela sem a moldura do Windows ---------- */
 .controles-janela {
-  position: fixed; top: 0; right: 0; z-index: 60; height: 61px; padding: 0 10px;
-  display: flex; align-items: center; gap: 2px;
+  position: fixed; top: 0; right: 0; z-index: 60; height: 40px;
+  display: flex; align-items: stretch;
 }
 .controles-janela button {
-  width: 38px; height: 30px; display: grid; place-items: center;
-  border: 0; border-radius: 8px; background: none; color: var(--texto-2); transition: 0.15s;
+  width: 46px; display: grid; place-items: center;
+  border: 0; border-radius: 0; background: none; color: var(--texto-2); transition: background 0.12s, color 0.12s;
 }
-.controles-janela svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.1; }
-.controles-janela button:hover { background: rgba(127, 216, 255, 0.1); color: var(--ciano); }
-.controles-janela button.fechar:hover { background: rgba(255, 107, 129, 0.16); color: var(--alta); }
+.controles-janela svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.1; }
+.controles-janela button:hover { background: rgba(127, 216, 255, 0.1); color: var(--texto); }
+.controles-janela button.fechar:hover { background: #c42b1c; color: #fff; }
 .sem-moldura .topo { padding-right: 150px; }
 .faixa-arrastar { position: fixed; top: 0; left: 0; right: 0; height: 48px; z-index: 50; }
 .sem-moldura { border: 1px solid rgba(127, 216, 255, 0.08); }
