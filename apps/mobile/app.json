@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "J.A.R.V.I.S.",
+    "name": "J.A.R.V.I.S",
     "slug": "jarvis",
     "scheme": "jarvis",
     "version": "0.1.0",
@@ -8,7 +8,9 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#04060b",
     "icon": "./assets/icon.png",
-    "runtimeVersion": { "policy": "appVersion" },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "android": {
       "package": "app.jarvis.pessoal",
       "adaptiveIcon": {
@@ -19,6 +21,16 @@
     "plugins": [
       "expo-sqlite",
       "expo-status-bar"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "63dbb886-9144-4ba1-b977-b167bdd0bda4"
+      }
+    },
+    "owner": "stoner031",
+    "updates": {
+      "url": "https://u.expo.dev/63dbb886-9144-4ba1-b977-b167bdd0bda4"
+    },
+    "ios": {}
   }
 }
