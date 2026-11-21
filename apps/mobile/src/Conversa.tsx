@@ -84,11 +84,6 @@ function Balao({ m }: { m: Message }) {
   return (
     <View style={s.ele}>
       <Text style={s.txt} selectable>{m.content}</Text>
-      {m.provider ? (
-        <Text style={s.meta}>
-          {m.provider}{m.latency_ms ? ` · ${(m.latency_ms / 1000).toFixed(1)} s` : ''}
-        </Text>
-      ) : null}
     </View>
   );
 }
@@ -119,7 +114,6 @@ const s = StyleSheet.create({
   },
   ele: { alignSelf: 'flex-start', maxWidth: '90%', paddingLeft: 12, paddingVertical: 2, borderLeftWidth: 2, borderLeftColor: C.cianoForte },
   txt: { color: C.texto, fontSize: 15, lineHeight: 22 },
-  meta: { color: C.apagado, fontFamily: MONO, fontSize: 10, letterSpacing: 0.8, marginTop: 4 },
   ponto: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.ciano },
   erro: { color: C.erro, fontSize: 13, marginTop: 14 },
   campoCaixa: {

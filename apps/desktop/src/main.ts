@@ -325,10 +325,7 @@ async function atualizarPainel() {
 }
 
 function itemMensagem(m: Message) {
-  const meta = m.role === 'assistant' && m.provider
-    ? `<div class="meta">${esc(m.provider)}${m.latency_ms ? ` · ${(m.latency_ms / 1000).toFixed(1)} s` : ''}</div>`
-    : '';
-  return `<div class="msg" data-r="${m.role}"><div class="texto">${esc(m.content)}</div>${meta}</div>`;
+  return `<div class="msg" data-r="${m.role}"><div class="texto">${esc(m.content)}</div></div>`;
 }
 
 async function desenharChat() {
