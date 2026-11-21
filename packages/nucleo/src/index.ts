@@ -321,9 +321,21 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
   // ---------- estado ----------
   let pulso = 0;
   let ultimo = 0;
-  // Giro feito pela pessoa (radianos) e velocidade para a inércia.
-  const giro = { x: 0, y: 0 };
+  // Giro feito pela pessoa: orientação livre (quaternion, estilo trackball), sem limite
+  // em nenhum eixo. `vel` é a velocidade angular (rad/s) em torno dos eixos da tela, para a inércia.
+  const orientacao = new THREE.Quaternion();
   const vel = { x: 0, y: 0 };
+  const EIXO_X = new THREE.Vector3(1, 0, 0);
+  const EIXO_Y = new THREE.Vector3(0, 1, 0);
+  const qPasso = new THREE.Quaternion();
+  const qOscila = new THREE.Quaternion();
+  const eOscila = new THREE.Euler();
+  /** Gira a orientação em torno dos eixos da tela (sempre relativo ao que a pessoa vê). */
+  function girar(ax: number, ay: number) {
+    if (ay) orientacao.premultiply(qPasso.setFromAxisAngle(EIXO_Y, ay));
+    if (ax) orientacao.premultiply(qPasso.setFromAxisAngle(EIXO_X, ax));
+    orientacao.normalize();
+  }
   let segurando = false;
   let ultimoArraste = 0;
   const RAD_POR_PX = 0.008;
@@ -340,15 +352,14 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
 
       if (!segurando) {
         // inércia: continua girando e desacelera
-        giro.x += vel.x * dt;
-        giro.y += vel.y * dt;
+        girar(vel.x * dt, vel.y * dt);
         const atrito = Math.exp(-dt * 2.4);
         vel.x *= atrito;
         vel.y *= atrito;
       }
-      giro.x = Math.max(-1.3, Math.min(1.3, giro.x)); // não deixa capotar de cabeça para baixo
-      conjunto.rotation.x = 0.12 + Math.sin(t * 0.21) * 0.08 + giro.x;
-      conjunto.rotation.y = Math.sin(t * 0.17) * 0.12 + giro.y;
+      // leve oscilação viva por cima da orientação escolhida pela pessoa
+      qOscila.setFromEuler(eOscila.set(0.12 + Math.sin(t * 0.21) * 0.08, Math.sin(t * 0.17) * 0.12, 0));
+      conjunto.quaternion.multiplyQuaternions(orientacao, qOscila);
 
       for (const c of campos) c.pts.rotation.z += c.giro * dt * (1 + pulso * 3);
 
@@ -367,8 +378,7 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
       const intervalo = Math.min(0.1, Math.max(0.008, agora - ultimoArraste));
       ultimoArraste = agora;
       segurando = true;
-      giro.y += dx * RAD_POR_PX;
-      giro.x += dy * RAD_POR_PX;
+      girar(dy * RAD_POR_PX, dx * RAD_POR_PX);
       // velocidade suavizada, para a inércia sair natural ao soltar
       vel.y = vel.y * 0.6 + ((dx * RAD_POR_PX) / intervalo) * 0.4;
       vel.x = vel.x * 0.6 + ((dy * RAD_POR_PX) / intervalo) * 0.4;

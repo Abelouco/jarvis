@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "laboratorio-nucleo",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@jarvis/desktop", "exec", "vite", "--port", "1430"],
+      "port": 1430
+    }
+  ]
+}
