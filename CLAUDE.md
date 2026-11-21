@@ -30,7 +30,7 @@ Assistente de IA pessoal do dono deste repositório, no PC (Windows) e no celula
 - Orçamento: zero por enquanto. Sempre que uma ferramenta, plugin, MCP ou skill puder economizar tokens ou melhorar o resultado, sugira.
 
 ## Roteiro
-- Fase 0 (atual): núcleo e sync. Feito: schema no Supabase. Próximo: monorepo, login (só o dono), banco local + sync, primeiro teste ponta a ponta (cria tarefa no celular → aparece no PC → evento chega).
+- Fase 0 (atual): núcleo e sync. Feito: schema no Supabase. Próximo: monorepo, login (e-mail e senha, conta criada pelo próprio app; dados isolados por RLS), banco local + sync, primeiro teste ponta a ponta (cria tarefa no celular → aparece no PC → evento chega).
 - Fase 1: conversa por chat e voz, roteador rápido/inteligente, memória.
 - Fase 2: paridade com o Néctar (tarefas, lembretes, projetos, hábitos, conhecimento, painel do dia).
 - Fase 3: proatividade (eventos, canais externos, silêncio e teto de avisos).

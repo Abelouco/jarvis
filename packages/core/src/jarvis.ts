@@ -48,8 +48,15 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
     });
   }
 
-  // ---------- login (e-mail e senha; a conta do dono é criada no painel e cadastros ficam desligados) ----------
+  // ---------- login (e-mail e senha; a conta é criada pelo próprio app) ----------
   const auth = {
+    /** Cria a conta. Devolve true se já entrou; false se o Supabase exige confirmar o e-mail. */
+    async criarConta(email: string, senha: string): Promise<boolean> {
+      if (senha.length < 6) throw new Error('A senha precisa ter pelo menos 6 caracteres.');
+      const { data, error } = await sb.auth.signUp({ email: email.trim().toLowerCase(), password: senha });
+      if (error) throw new Error(error.message === 'User already registered' ? 'Esse e-mail já tem conta. Use Entrar.' : error.message);
+      return !!data.session;
+    },
     async entrar(email: string, senha: string) {
       const { error } = await sb.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: senha });
       if (error) throw new Error(error.message === 'Invalid login credentials' ? 'E-mail ou senha incorretos.' : error.message);

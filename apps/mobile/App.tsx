@@ -29,7 +29,14 @@ export default function App() {
 function Login() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
+  const [criando, setCriando] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+
+  const enviar = () => rodar(async () => {
+    if (!criando) return jarvis.auth.entrar(email, senha);
+    const entrou = await jarvis.auth.criarConta(email, senha);
+    if (!entrou) { setCriando(false); setMsg('Conta criada. Confirme pelo link no seu e-mail e depois entre.'); }
+  });
   const [ocupado, setOcupado] = useState(false);
 
   const rodar = async (f: () => Promise<void>) => {
@@ -48,11 +55,16 @@ function Login() {
       />
       <TextInput
         style={s.campo} placeholder="senha" placeholderTextColor={C.apagado}
-        secureTextEntry autoComplete="current-password" value={senha} onChangeText={setSenha}
-        onSubmitEditing={() => rodar(() => jarvis.auth.entrar(email, senha))}
+        secureTextEntry autoComplete={criando ? 'new-password' : 'current-password'}
+        value={senha} onChangeText={setSenha} onSubmitEditing={enviar}
       />
-      <Pressable style={s.botao} disabled={ocupado} onPress={() => rodar(() => jarvis.auth.entrar(email, senha))}>
-        <Text style={s.botaoTxt}>{ocupado ? '...' : 'Entrar'}</Text>
+      <Pressable style={s.botao} disabled={ocupado} onPress={enviar}>
+        <Text style={s.botaoTxt}>{ocupado ? '...' : criando ? 'Criar conta' : 'Entrar'}</Text>
+      </Pressable>
+      <Pressable onPress={() => { setCriando(!criando); setMsg(null); }}>
+        <Text style={[s.sub, { textAlign: 'center', marginTop: 6 }]}>
+          {criando ? 'Já tenho conta: entrar' : 'Não tem conta? Criar conta'}
+        </Text>
       </Pressable>
       {msg && <Text style={s.erro}>{msg}</Text>}
     </View>

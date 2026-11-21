@@ -46,6 +46,7 @@ async function render() {
 }
 
 let ultimoEmail = '';
+let criando = false;
 
 function renderLogin(msg = '') {
   app.innerHTML = `
@@ -53,17 +54,29 @@ function renderLogin(msg = '') {
       <h1>J.A.R.V.I.S.</h1>
       <form id="login">
         <input name="email" type="email" placeholder="seu e-mail" autocomplete="email" value="${esc(ultimoEmail)}" />
-        <input name="senha" type="password" placeholder="senha" autocomplete="current-password" />
-        <button>Entrar</button>
+        <input name="senha" type="password" placeholder="senha" autocomplete="${criando ? 'new-password' : 'current-password'}" />
+        <button>${criando ? 'Criar conta' : 'Entrar'}</button>
       </form>
+      <button id="alternar" class="link">${criando ? 'Já tenho conta: entrar' : 'Não tem conta? Criar conta'}</button>
       <p class="erro">${esc(msg)}</p>
     </main>`;
   const form = app.querySelector<HTMLFormElement>('#login')!;
+  app.querySelector<HTMLButtonElement>('#alternar')!.onclick = () => {
+    ultimoEmail = (form.email as HTMLInputElement).value;
+    criando = !criando;
+    renderLogin();
+  };
   form.onsubmit = async (e) => {
     e.preventDefault();
     ultimoEmail = (form.email as HTMLInputElement).value;
+    const senha = (form.senha as HTMLInputElement).value;
     try {
-      await jarvis.auth.entrar(ultimoEmail, (form.senha as HTMLInputElement).value);
+      if (!criando) return await jarvis.auth.entrar(ultimoEmail, senha);
+      const entrou = await jarvis.auth.criarConta(ultimoEmail, senha);
+      if (!entrou) {
+        criando = false;
+        renderLogin('Conta criada. Confirme pelo link no seu e-mail e depois entre.');
+      }
     } catch (err) {
       renderLogin(err instanceof Error ? err.message : String(err));
     }
