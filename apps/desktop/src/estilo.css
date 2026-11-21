@@ -384,9 +384,10 @@ input { font: inherit; }
 .md-btn:hover { background: rgba(127, 216, 255, 0.1); color: var(--ciano); }
 .md-btn.copiado { color: var(--baixa); }
 .md-btn.copiado span::after { content: ' ✓'; }
-.msg-acoes { display: flex; gap: 4px; margin-top: 6px; opacity: 0; transition: opacity 0.15s; }
-.msg:hover .msg-acoes, .msg:last-child .msg-acoes { opacity: 1; }
-.md-copiar-tudo { margin-left: -7px; color: var(--apagado); }
+.msg-acoes { align-self: flex-start; display: flex; gap: 4px; margin-top: -4px; opacity: 0; transition: opacity 0.15s; }
+.msg-acoes.nova { animation: entrar 0.25s ease-out; }
+.msg:hover + .msg-acoes, .msg-acoes:hover, .msg-acoes:last-child { opacity: 1; }
+.md-copiar-tudo { color: var(--apagado); }
 
 .md-sobreposto { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 48px 24px; background: rgba(2, 4, 8, 0.72); backdrop-filter: blur(6px); animation: entrar 0.18s ease-out; }
 .md-janela { width: min(760px, 100%); max-height: 100%; display: flex; flex-direction: column; border: 1px solid var(--borda-forte); border-radius: 16px; background: #0a1220; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6); overflow: hidden; }

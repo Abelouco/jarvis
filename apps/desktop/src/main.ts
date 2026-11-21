@@ -355,8 +355,9 @@ function itemMensagem(m: Message, nova: boolean) {
   if (m.role === 'user') {
     return `<div class="${classe}" data-r="user"><div class="texto">${esc(m.content)}</div></div>`;
   }
-  return `<div class="${classe}" data-r="assistant"><div class="md">${respostaHtml(m.content)}</div>`
-    + `<div class="msg-acoes">${botaoCopiarResposta(m.content)}</div></div>`;
+  // O botão fica fora da mensagem, logo abaixo dela.
+  return `<div class="${classe}" data-r="assistant"><div class="md">${respostaHtml(m.content)}</div></div>`
+    + `<div class="msg-acoes${nova ? ' nova' : ''}">${botaoCopiarResposta(m.content)}</div>`;
 }
 
 async function desenharChat() {
@@ -382,7 +383,8 @@ async function desenharChat() {
     qtdMensagensDesenhadas = qtd;
     const rolagem = chat.closest<HTMLElement>('.principal');
     // Resposta nova: rola até o começo dela (respostas longas se leem de cima para baixo).
-    const ultima = chat.lastElementChild as HTMLElement | null;
+    const todas = chat.querySelectorAll<HTMLElement>('.msg');
+    const ultima = todas[todas.length - 1] ?? null;
     if (rolagem && ultima) {
       const alvo = ultima.dataset.r === 'assistant' && !ultima.classList.contains('pensando')
         ? ultima.offsetTop - 24

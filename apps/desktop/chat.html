@@ -47,7 +47,7 @@
       ].join('\n');
       const chat = document.getElementById('chat');
       chat.innerHTML = `<div class="msg" data-r="user"><div class="texto">Compare Python e TypeScript</div></div>`
-        + `<div class="msg" data-r="assistant"><div class="md">${respostaHtml(exemplo)}</div><div class="msg-acoes">${botaoCopiarResposta(exemplo)}</div></div>`;
+        + `<div class="msg" data-r="assistant"><div class="md">${respostaHtml(exemplo)}</div></div><div class="msg-acoes">${botaoCopiarResposta(exemplo)}</div>`;
       chat.onclick = async (e) => {
         const c = e.target.closest('[data-copiar]');
         if (c && (await copiar(textosCopiaveis[+c.dataset.copiar]))) marcarCopiado(c);

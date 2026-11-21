@@ -78,7 +78,7 @@ export function respostaHtml(texto: string): string {
 /** Botão de copiar a resposta inteira (texto como a IA escreveu). */
 export function botaoCopiarResposta(texto: string): string {
   const n = guardar(texto);
-  return `<button type="button" class="md-btn md-copiar-tudo" data-copiar="${n}" title="Copiar resposta">${ICONE_COPIAR}<span>Copiar</span></button>`;
+  return `<button type="button" class="md-btn md-copiar-tudo" data-copiar="${n}" title="Copiar a resposta inteira">${ICONE_COPIAR}<span>Copiar resposta</span></button>`;
 }
 
 export async function copiar(texto: string): Promise<boolean> {

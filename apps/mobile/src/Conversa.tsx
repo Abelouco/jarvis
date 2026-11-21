@@ -82,11 +82,14 @@ function Balao({ m }: { m: Message }) {
       </View>
     );
   }
+  // O botão fica fora da mensagem, logo abaixo dela.
   return (
-    <View style={s.ele}>
-      <RespostaMd texto={m.content} />
+    <View>
+      <View style={s.ele}>
+        <RespostaMd texto={m.content} />
+      </View>
       <Pressable onPress={() => compartilharTexto(m.content)} hitSlop={8} style={s.copiarTudo}>
-        <Text style={s.copiarTudoTxt}>COPIAR</Text>
+        <Text style={s.copiarTudoTxt}>⧉  Copiar resposta</Text>
       </Pressable>
     </View>
   );
@@ -116,8 +119,8 @@ const s = StyleSheet.create({
     borderRadius: 14, borderBottomRightRadius: 4, backgroundColor: 'rgba(60,196,255,0.12)',
     borderWidth: 1, borderColor: C.bordaForte,
   },
-  copiarTudo: { alignSelf: 'flex-start', marginTop: 2, paddingVertical: 4 },
-  copiarTudoTxt: { color: C.apagado, fontFamily: MONO, fontSize: 10, letterSpacing: 1 },
+  copiarTudo: { alignSelf: 'flex-start', marginTop: 4, paddingVertical: 4 },
+  copiarTudoTxt: { color: C.apagado, fontSize: 12 },
   ele: { alignSelf: 'stretch', maxWidth: '100%', paddingLeft: 12, paddingVertical: 2, borderLeftWidth: 2, borderLeftColor: C.cianoForte },
   txt: { color: C.texto, fontSize: 15, lineHeight: 22 },
   ponto: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.ciano },
