@@ -20,7 +20,15 @@
     },
     "plugins": [
       "expo-sqlite",
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraProguardRules": "-keep class expo.modules.gl.** { *; }\n-keepclassmembers class * extends expo.modules.kotlin.views.ExpoView { <init>(...); }"
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {
