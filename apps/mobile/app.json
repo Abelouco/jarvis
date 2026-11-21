@@ -1,4 +1,4 @@
-{
+﻿{
   "expo": {
     "name": "J.A.R.V.I.S.",
     "slug": "jarvis",
@@ -6,7 +6,9 @@
     "version": "0.0.1",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
-    "plugins": ["expo-sqlite"]
+    "plugins": [
+      "expo-sqlite",
+      "expo-status-bar"
+    ]
   }
 }
