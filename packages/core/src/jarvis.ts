@@ -237,12 +237,12 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
     /** Avisa quando algo local mudou (para a tela recarregar). */
     aoMudar(f: Ouvinte) {
       ouvintes.add(f);
-      return () => ouvintes.delete(f);
+      return () => { ouvintes.delete(f); };
     },
     /** Cada evento real do núcleo (o cérebro vai pulsar com isso). */
     aoEvento(f: (e: JarvisEvent) => void) {
       ouvintesEvento.add(f);
-      return () => ouvintesEvento.delete(f);
+      return () => { ouvintesEvento.delete(f); };
     },
   };
 }
