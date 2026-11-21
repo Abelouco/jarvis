@@ -12,12 +12,11 @@
   </head>
   <body>
     <div id="caixa"></div>
-    <p id="dica">LABORATÓRIO · clique ou espaço = pulso</p>
+    <p id="dica">LABORATÓRIO · arraste = girar · espaço = pulso</p>
     <script type="module">
       import { montarNucleo } from '/src/nucleo3d.ts';
       const n = montarNucleo(document.getElementById('caixa'));
       window.pulsar = (f) => n.pulsar(f);
-      addEventListener('click', () => n.pulsar());
       addEventListener('keydown', (e) => e.code === 'Space' && n.pulsar());
     </script>
   </body>

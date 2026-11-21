@@ -17,8 +17,10 @@ export interface Nucleo {
   quadro(tempo: number): void;
   /** Descarga de energia; chamada a cada evento real. */
   pulsar(forca?: number): void;
-  /** Inclina o conjunto para um ponto (-1..1), ex.: posição do mouse. */
-  olhar(x: number, y: number): void;
+  /** Gira o núcleo pelo arraste (dx, dy em pixels desde o último movimento). */
+  arrastar(dx: number, dy: number): void;
+  /** Fim do arraste: o giro continua por inércia e desacelera. */
+  soltar(): void;
   redimensionar(largura: number, altura: number, dpr?: number): void;
   destruir(): void;
 }
@@ -319,8 +321,12 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
   // ---------- estado ----------
   let pulso = 0;
   let ultimo = 0;
-  const alvo = { x: 0, y: 0 };
-  const atual = { x: 0, y: 0 };
+  // Giro feito pela pessoa (radianos) e velocidade para a inércia.
+  const giro = { x: 0, y: 0 };
+  const vel = { x: 0, y: 0 };
+  let segurando = false;
+  let ultimoArraste = 0;
+  const RAD_POR_PX = 0.008;
 
   return {
     quadro(tempo) {
@@ -332,10 +338,17 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
       uComuns.uTempo!.value = t;
       uComuns.uPulso!.value = pulso;
 
-      atual.x += (alvo.x - atual.x) * Math.min(1, dt * 3);
-      atual.y += (alvo.y - atual.y) * Math.min(1, dt * 3);
-      conjunto.rotation.x = 0.12 + Math.sin(t * 0.21) * 0.08 + atual.y * 0.45;
-      conjunto.rotation.y = Math.sin(t * 0.17) * 0.12 + atual.x * 0.55;
+      if (!segurando) {
+        // inércia: continua girando e desacelera
+        giro.x += vel.x * dt;
+        giro.y += vel.y * dt;
+        const atrito = Math.exp(-dt * 2.4);
+        vel.x *= atrito;
+        vel.y *= atrito;
+      }
+      giro.x = Math.max(-1.3, Math.min(1.3, giro.x)); // não deixa capotar de cabeça para baixo
+      conjunto.rotation.x = 0.12 + Math.sin(t * 0.21) * 0.08 + giro.x;
+      conjunto.rotation.y = Math.sin(t * 0.17) * 0.12 + giro.y;
 
       for (const c of campos) c.pts.rotation.z += c.giro * dt * (1 + pulso * 3);
 
@@ -349,9 +362,22 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
     pulsar(forca = 1) {
       pulso = Math.min(1.6, pulso + forca);
     },
-    olhar(x, y) {
-      alvo.x = Math.max(-1, Math.min(1, x));
-      alvo.y = Math.max(-1, Math.min(1, y));
+    arrastar(dx, dy) {
+      const agora = Date.now() / 1000;
+      const intervalo = Math.min(0.1, Math.max(0.008, agora - ultimoArraste));
+      ultimoArraste = agora;
+      segurando = true;
+      giro.y += dx * RAD_POR_PX;
+      giro.x += dy * RAD_POR_PX;
+      // velocidade suavizada, para a inércia sair natural ao soltar
+      vel.y = vel.y * 0.6 + ((dx * RAD_POR_PX) / intervalo) * 0.4;
+      vel.x = vel.x * 0.6 + ((dy * RAD_POR_PX) / intervalo) * 0.4;
+    },
+    soltar() {
+      segurando = false;
+      const max = 6;
+      vel.x = Math.max(-max, Math.min(max, vel.x));
+      vel.y = Math.max(-max, Math.min(max, vel.y));
     },
     redimensionar(largura, altura, novoDpr) {
       if (novoDpr) {

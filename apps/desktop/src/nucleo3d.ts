@@ -26,13 +26,28 @@ export function montarNucleo(caixa: HTMLElement, densidade = 1): NucleoMontado {
   });
   obs.observe(caixa);
 
-  const aoMover = (e: PointerEvent) => {
-    const r = caixa.getBoundingClientRect();
-    const x = (e.clientX - (r.left + r.width / 2)) / (window.innerWidth / 2);
-    const y = (e.clientY - (r.top + r.height / 2)) / (window.innerHeight / 2);
-    nucleo.olhar(x, y);
+  // Girar arrastando, como um modelo 3D. Fora do arraste ele não segue o mouse.
+  canvas.style.cursor = 'grab';
+  canvas.style.touchAction = 'none';
+  let ultimo: { x: number; y: number } | null = null;
+  canvas.addEventListener('pointerdown', (e) => {
+    ultimo = { x: e.clientX, y: e.clientY };
+    canvas.setPointerCapture(e.pointerId);
+    canvas.style.cursor = 'grabbing';
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!ultimo) return;
+    nucleo.arrastar(e.clientX - ultimo.x, e.clientY - ultimo.y);
+    ultimo = { x: e.clientX, y: e.clientY };
+  });
+  const aoSoltar = () => {
+    if (!ultimo) return;
+    ultimo = null;
+    nucleo.soltar();
+    canvas.style.cursor = 'grab';
   };
-  window.addEventListener('pointermove', aoMover);
+  canvas.addEventListener('pointerup', aoSoltar);
+  canvas.addEventListener('pointercancel', aoSoltar);
 
   let quadro = requestAnimationFrame(function laco(t) {
     nucleo.quadro(t);
@@ -43,7 +58,6 @@ export function montarNucleo(caixa: HTMLElement, densidade = 1): NucleoMontado {
     pulsar: (f) => nucleo.pulsar(f),
     destruir() {
       cancelAnimationFrame(quadro);
-      window.removeEventListener('pointermove', aoMover);
       obs.disconnect();
       nucleo.destruir();
       renderer.dispose();

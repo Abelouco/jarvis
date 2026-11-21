@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { PixelRatio, View } from 'react-native';
+import { useEffect, useMemo, useRef } from 'react';
+import { PanResponder, PixelRatio, View } from 'react-native';
 import { GLView, type ExpoWebGLRenderingContext } from 'expo-gl';
 import * as THREE from 'three';
 import { criarNucleo, type Nucleo as Cena } from '@jarvis/nucleo';
@@ -15,6 +15,23 @@ export function Nucleo({ tamanho = 240, pulso = 0 }: { tamanho?: number; pulso?:
   useEffect(() => {
     if (pulso) cena.current?.pulsar();
   }, [pulso]);
+
+  // Girar com o dedo, como um modelo 3D. Enquanto arrasta, a tela não rola.
+  const arraste = useMemo(() => {
+    let antes = { x: 0, y: 0 };
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => { antes = { x: 0, y: 0 }; },
+      onPanResponderMove: (_e, g) => {
+        cena.current?.arrastar(g.dx - antes.x, g.dy - antes.y);
+        antes = { x: g.dx, y: g.dy };
+      },
+      onPanResponderRelease: () => cena.current?.soltar(),
+      onPanResponderTerminate: () => cena.current?.soltar(),
+    });
+  }, []);
 
   useEffect(
     () => () => {
@@ -48,7 +65,7 @@ export function Nucleo({ tamanho = 240, pulso = 0 }: { tamanho?: number; pulso?:
   };
 
   return (
-    <View style={{ width: tamanho, height: tamanho }}>
+    <View style={{ width: tamanho, height: tamanho }} {...arraste.panHandlers}>
       <GLView style={{ flex: 1 }} onContextCreate={aoCriar} />
     </View>
   );
