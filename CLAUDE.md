@@ -27,6 +27,7 @@ Assistente de IA pessoal do dono deste repositório, no PC (Windows) e no celula
 
 ## Como rodar e publicar
 - PC (dev): `pnpm desktop` (Tauri + Vite na porta 1420).
+- PC (release): `pnpm.cmd release:pc X.Y.Z` numa aba do Terminal, com tudo commitado. Sobe a versão, cria a tag e envia; o GitHub Actions (`release-pc.yml`) gera o .exe assinado e o `latest.json` no GitHub Releases, e o app instalado se atualiza sozinho. Chave do updater em `C:\Users\abeld\.tauri\jarvis-updater.key` (secrets `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` no GitHub); só a pública fica no `tauri.conf.json`.
 - Celular: app Android instalado (.apk do EAS, perfil `preview`). Mudança só de JS/tela → `npx.cmd eas-cli@latest update --channel preview --environment preview --message "..." --non-interactive` (chega sem reinstalar). Mudança nativa (plugin, permissão, módulo novo) → novo `eas build -p android --profile preview`.
 - Release do Android usa R8: módulo nativo do Expo que quebrar no .apk pode precisar de regra em `extraProguardRules` (app.json, plugin expo-build-properties).
 - Comandos globais/EAS rodam numa aba do Terminal com `npm.cmd`/`pnpm.cmd`/`npx.cmd` (o shell do Claude isola o AppData).
@@ -37,7 +38,7 @@ Assistente de IA pessoal do dono deste repositório, no PC (Windows) e no celula
 
 ## Roteiro
 - Fase 0 (concluída em 2026-11-21): schema no Supabase, monorepo, login (e-mail e senha, conta criada pelo próprio app; RLS), banco local + sync, núcleo 3D compartilhado, .apk Android via EAS (com EAS Update) e teste ponta a ponta aprovado (tarefa criada no celular aparece no PC e o evento chega).
-- Fase 1 (atual): conversa por chat e voz, roteador rápido/inteligente, memória. Pendente herdado da Fase 0: instalador do Windows com auto-update (Tauri updater + GitHub Releases).
+- Fase 1 (atual): conversa por chat e voz, roteador rápido/inteligente, memória. Etapa 0 (instalador do Windows com auto-update) feita.
 - Fase 2: paridade com o Néctar (tarefas, lembretes, projetos, hábitos, conhecimento, painel do dia).
 - Fase 3: proatividade (eventos, canais externos, silêncio e teto de avisos).
 - Fase 4: ações no mundo (computador, calendário, e-mail), finanças e saúde opcionais.
