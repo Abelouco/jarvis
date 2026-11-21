@@ -27,11 +27,16 @@ export interface TabelaSync {
   colunas: readonly string[];
   /** Colunas boolean no Supabase e 0/1 no SQLite. */
   booleanas: readonly string[];
+  /** Colunas que só o servidor escreve (o app nunca sobe, para não apagar o que a IA marcou). */
+  somenteServidor?: readonly string[];
 }
 export const TABELAS_SYNC: readonly TabelaSync[] = [
   { nome: 'tasks', colunas: COLUNAS_TASKS, booleanas: ['archived'] },
   { nome: 'conversations', colunas: COLUNAS_CONVERSATIONS, booleanas: [] },
-  { nome: 'messages', colunas: COLUNAS_MESSAGES, booleanas: ['sensitive'] },
+  {
+    nome: 'messages', colunas: COLUNAS_MESSAGES, booleanas: ['sensitive'],
+    somenteServidor: ['sensitive', 'provider', 'model', 'latency_ms'],
+  },
 ];
 
 export const SCHEMA_LOCAL = [

@@ -12,6 +12,9 @@ export interface OpcoesJarvis {
 
 export type EstadoSync = 'parado' | 'sincronizando' | 'offline' | 'erro';
 
+/** O que a IA está fazendo agora (vai ganhar 'agindo' e 'permissao' com as ferramentas). */
+export type EstadoIA = 'repouso' | 'pensando' | 'agindo' | 'permissao';
+
 type Ouvinte = () => void;
 
 export interface Atividade {
@@ -181,6 +184,7 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
       for (const c of t.colunas) linha[c] = r[c];
       linha.user_id = userId;
       for (const c of t.booleanas) linha[c] = !!r[c];
+      for (const c of t.somenteServidor ?? []) delete linha[c];
       delete linha.updated_at; // quem carimba é o trigger do servidor
       return linha;
     });
@@ -446,6 +450,14 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
   function ligarSync() {
     if (!canal) {
       canal = ouvirEventos(sb, (e) => {
+        // Outro aparelho pediu algo à IA: o cérebro mostra "pensando" aqui também, até a resposta chegar.
+        if (e.kind === 'thinking') {
+          pensandoRemotoAte = Date.now() + 60_000;
+          if (relogioRemoto) clearTimeout(relogioRemoto);
+          relogioRemoto = setTimeout(avisar, 60_500);
+        } else if (e.kind === 'created' && e.entity_type === 'messages' && pensandoRemotoAte) {
+          pensandoRemotoAte = 0;
+        }
         const entraNaLista = !!e.entity_type && ENTIDADES_ATIVIDADE.includes(e.entity_type);
         if (entraNaLista && !eventosRecentes.some((x) => x.id === e.id)) {
           eventosRecentes = [e, ...eventosRecentes].slice(0, MAX_ATIVIDADES);
@@ -459,6 +471,16 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
     relogio ??= setInterval(() => void sincronizar(), 60_000);
     agendarSync(0);
   }
+
+  // ---------- estado da IA (o que o cérebro mostra) ----------
+  let pensandoRemotoAte = 0;
+  let relogioRemoto: ReturnType<typeof setTimeout> | null = null;
+  const ia = {
+    /** 'pensando' enquanto este aparelho ou outro espera uma resposta da IA. */
+    estado(): EstadoIA {
+      return pensando || pensandoRemotoAte > Date.now() ? 'pensando' : 'repouso';
+    },
+  };
 
   function desligarSync() {
     if (canal) void sb.removeChannel(canal);
@@ -475,6 +497,7 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
     tarefas,
     atividades,
     chat,
+    ia,
     sincronizar,
     estado: () => ({ estado, ultimoErro }),
     /** Avisa quando algo local mudou (para a tela recarregar). */

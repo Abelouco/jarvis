@@ -3,6 +3,7 @@ import { jarvis } from './jarvis';
 import './estilo.css';
 import { montarNucleo, type NucleoMontado } from './nucleo3d';
 import { ligarAtualizacao } from './atualizacao';
+import { abrirExpandido, botaoCopiarResposta, copiar, marcarCopiado, respostaHtml, textosCopiaveis } from './markdown';
 import { montarControlesJanela } from './janela';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -131,6 +132,11 @@ const lerAba = (): Aba => {
 };
 let aba: Aba = lerAba();
 let qtdMensagensDesenhadas = -1;
+// Só redesenha quando algo mudou de verdade (redesenhar tudo a cada evento fazia a tela piscar).
+let assinaturaChat = '';
+let assinaturaListas = '';
+let assinaturaAtividades = '';
+let mensagensVistas = new Set<string>();
 
 function saudacao() {
   const h = new Date().getHours();
@@ -243,6 +249,20 @@ async function montarPainel() {
       if (!ok && !campoFala.value) campoFala.value = texto;
     });
   };
+  $<HTMLDivElement>('#chat').onclick = async (e) => {
+    const alvo = e.target as HTMLElement;
+    const bCopiar = alvo.closest<HTMLButtonElement>('[data-copiar]');
+    if (bCopiar) {
+      const texto = textosCopiaveis[Number(bCopiar.dataset.copiar)];
+      if (texto !== undefined && (await copiar(texto))) marcarCopiado(bCopiar);
+      return;
+    }
+    const bExpandir = alvo.closest<HTMLButtonElement>('[data-expandir]');
+    if (bExpandir) {
+      const texto = textosCopiaveis[Number(bExpandir.dataset.expandir)];
+      if (texto !== undefined) abrirExpandido(bExpandir.dataset.titulo ?? 'Texto', texto);
+    }
+  };
   $<HTMLButtonElement>('#nova-conversa').onclick = () => {
     jarvis.chat.novaConversa();
     campoFala.focus();
@@ -274,6 +294,8 @@ async function montarPainel() {
   marcarPrio();
   trocarNucleo($('#nucleo'), 0.8);
   qtdMensagensDesenhadas = -1;
+  assinaturaChat = assinaturaListas = assinaturaAtividades = '';
+  mensagensVistas = new Set();
   mostrarAba();
   atividadesVistas = new Set();
   await atualizarPainel();
@@ -301,7 +323,7 @@ async function atualizarPainel() {
     ? `${abertas.length} pendente${abertas.length > 1 ? 's' : ''} · ${feitas.length} concluída${feitas.length === 1 ? '' : 's'}`
     : feitas.length ? 'Tudo em dia.' : 'Nada na fila ainda.';
 
-  $<HTMLDivElement>('#listas').innerHTML = lista.length
+  const htmlListas = lista.length
     ? `
       <section class="secao">
         <h3>Pendentes <b>${abertas.length}</b></h3>
@@ -313,6 +335,10 @@ async function atualizarPainel() {
         <ul class="lista">${feitas.map(itemTarefa).join('')}</ul>
       </section>` : ''}`
     : `<div class="vazio"><strong>Nenhuma tarefa por aqui.</strong>Escreva acima e aperte Enter.</div>`;
+  if (htmlListas !== assinaturaListas) {
+    assinaturaListas = htmlListas;
+    $<HTMLDivElement>('#listas').innerHTML = htmlListas;
+  }
 
   const { estado, ultimoErro } = jarvis.estado();
   const el = $<HTMLSpanElement>('#estado');
@@ -324,31 +350,54 @@ async function atualizarPainel() {
   await desenharChat();
 }
 
-function itemMensagem(m: Message) {
-  return `<div class="msg" data-r="${m.role}"><div class="texto">${esc(m.content)}</div></div>`;
+function itemMensagem(m: Message, nova: boolean) {
+  const classe = `msg${nova ? ' nova' : ''}`;
+  if (m.role === 'user') {
+    return `<div class="${classe}" data-r="user"><div class="texto">${esc(m.content)}</div></div>`;
+  }
+  return `<div class="${classe}" data-r="assistant"><div class="md">${respostaHtml(m.content)}</div>`
+    + `<div class="msg-acoes">${botaoCopiarResposta(m.content)}</div></div>`;
 }
 
 async function desenharChat() {
   const msgs = await jarvis.chat.mensagens();
   if (tela !== 'painel') return;
   const { pensando, erro } = jarvis.chat.estado();
+  const assinatura = `${pensando}|${erro}|` + msgs.map((m) => `${m.id}:${m.content.length}`).join(',');
+  if (assinatura === assinaturaChat) return;
+  assinaturaChat = assinatura;
+
   const chat = $<HTMLDivElement>('#chat');
+  const primeiraVez = mensagensVistas.size === 0;
+  textosCopiaveis.length = 0;
   chat.innerHTML = msgs.length || pensando
-    ? msgs.map(itemMensagem).join('') + (pensando ? `<div class="msg pensando" data-r="assistant"><i></i><i></i><i></i></div>` : '')
+    ? msgs.map((m) => itemMensagem(m, !primeiraVez && !mensagensVistas.has(m.id))).join('')
+      + (pensando ? `<div class="msg pensando nova" data-r="assistant"><i></i><i></i><i></i></div>` : '')
     : `<div class="vazio"><strong>Às suas ordens.</strong>Pergunte qualquer coisa.</div>`;
+  mensagensVistas = new Set(msgs.map((m) => m.id));
   $<HTMLParagraphElement>('#erro-chat').textContent = erro ?? '';
   // Desce até a última mensagem quando chega algo novo.
   const qtd = msgs.length + (pensando ? 1 : 0);
   if (qtd !== qtdMensagensDesenhadas && aba === 'conversa') {
     qtdMensagensDesenhadas = qtd;
     const rolagem = chat.closest<HTMLElement>('.principal');
-    if (rolagem) rolagem.scrollTop = rolagem.scrollHeight;
+    // Resposta nova: rola até o começo dela (respostas longas se leem de cima para baixo).
+    const ultima = chat.lastElementChild as HTMLElement | null;
+    if (rolagem && ultima) {
+      const alvo = ultima.dataset.r === 'assistant' && !ultima.classList.contains('pensando')
+        ? ultima.offsetTop - 24
+        : rolagem.scrollHeight;
+      rolagem.scrollTop = alvo;
+    }
   }
 }
 
 async function desenharAtividades() {
   const itens = await jarvis.atividades.listar();
   if (tela !== 'painel') return;
+  const assinatura = itens.map((a) => `${a.id}:${a.detalhe ?? ''}`).join(',') + `|${jarvis.atividades.carregado()}`;
+  if (assinatura === assinaturaAtividades) return;
+  assinaturaAtividades = assinatura;
   const primeiraVez = atividadesVistas.size === 0;
   $<HTMLUListElement>('#atividades').innerHTML = itens.length
     ? itens
@@ -374,12 +423,24 @@ jarvis.aoMudar(() => {
   agendado = true;
   requestAnimationFrame(() => {
     agendado = false;
+    nucleo?.definirEstado(estadoDoNucleo());
     void decidirTela().then(atualizarPainel);
   });
 });
 
-// Cada evento real faz o núcleo pulsar; a lista de atividades se redesenha pelo aoMudar.
-jarvis.aoEvento(() => nucleo?.pulsar());
+// O núcleo mostra o que a IA está fazendo (estado contínuo) e cada evento real vira uma descarga:
+// verde = algo criado, vermelho = algo apagado, neutro = mudança ou pensamento.
+function estadoDoNucleo() {
+  const ia = jarvis.ia.estado();
+  if (ia !== 'repouso') return ia;
+  return jarvis.chat.estado().erro ? 'erro' : 'repouso';
+}
+jarvis.aoEvento((e) => {
+  if (e.kind === 'deleted') nucleo?.pulsar(1, 'apagado');
+  else if (e.kind === 'created' && e.entity_type !== 'messages' && e.entity_type !== 'conversations') nucleo?.pulsar(0.8, 'criado');
+  else if (e.kind === 'thinking') nucleo?.pulsar(0.5);
+  else nucleo?.pulsar(0.35);
+});
 
 montarControlesJanela();
 void jarvis.iniciar().then(decidirTela);

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Laboratório do chat</title>
+  </head>
+  <body>
+    <div id="app" style="overflow-y: auto; padding: 32px 48px">
+      <div style="max-width: 720px; margin: 0 auto"><div class="chat" id="chat"></div></div>
+    </div>
+    <script type="module">
+      import './src/estilo.css';
+      import { respostaHtml, botaoCopiarResposta, textosCopiaveis, copiar, marcarCopiado, abrirExpandido } from './src/markdown.ts';
+      const exemplo = [
+        '## Python vs. TypeScript para um app pessoal',
+        '',
+        'Para o **seu caso**, a escolha depende de *onde* o app vai rodar. Veja `npm` e `pip`.',
+        '',
+        '| Característica | Python | TypeScript |',
+        '|---|---|---|',
+        '| Tipagem | Dinâmica (type hints) | **Estática** |',
+        '| Desktop | Tkinter, PyQt | Electron, Tauri |',
+        '| Receita anual | — | +R$ 4 a 9 bilhões |',
+        '',
+        '### Quando escolher Python',
+        '1. **Automação** – scripts, APIs, bots.',
+        '2. **Data Science** – pandas, NumPy.',
+        '   - inclusive notebooks',
+        '3. Backend com Django.',
+        '',
+        '> **Atenção:** o desempenho cai em tarefas pesadas de CPU.',
+        '',
+        '```bash',
+        'python -m venv .venv',
+        'pip install flask',
+        '```',
+        '',
+        '```texto Mensagem para o time',
+        'Pessoal, decidi usar TypeScript no app pessoal.',
+        '',
+        'Motivo: tipagem estática e um código só para PC e celular.',
+        '```',
+        '',
+        '---',
+        '**Recomendação:** TypeScript, porque o J.A.R.V.I.S. já é todo em TS.',
+      ].join('\n');
+      const chat = document.getElementById('chat');
+      chat.innerHTML = `<div class="msg" data-r="user"><div class="texto">Compare Python e TypeScript</div></div>`
+        + `<div class="msg" data-r="assistant"><div class="md">${respostaHtml(exemplo)}</div><div class="msg-acoes">${botaoCopiarResposta(exemplo)}</div></div>`;
+      chat.onclick = async (e) => {
+        const c = e.target.closest('[data-copiar]');
+        if (c && (await copiar(textosCopiaveis[+c.dataset.copiar]))) marcarCopiado(c);
+        const x = e.target.closest('[data-expandir]');
+        if (x) abrirExpandido(x.dataset.titulo, textosCopiaveis[+x.dataset.expandir]);
+      };
+    </script>
+  </body>
+</html>

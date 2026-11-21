@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { Message } from '@jarvis/core';
 import { jarvis } from './jarvis';
+import { compartilharTexto, RespostaMd } from './Markdown';
 import { C, MONO } from './tema';
 
 export function Conversa({ aoCrescer }: { aoCrescer: () => void }) {
@@ -83,7 +84,10 @@ function Balao({ m }: { m: Message }) {
   }
   return (
     <View style={s.ele}>
-      <Text style={s.txt} selectable>{m.content}</Text>
+      <RespostaMd texto={m.content} />
+      <Pressable onPress={() => compartilharTexto(m.content)} hitSlop={8} style={s.copiarTudo}>
+        <Text style={s.copiarTudoTxt}>COPIAR</Text>
+      </Pressable>
     </View>
   );
 }
@@ -112,7 +116,9 @@ const s = StyleSheet.create({
     borderRadius: 14, borderBottomRightRadius: 4, backgroundColor: 'rgba(60,196,255,0.12)',
     borderWidth: 1, borderColor: C.bordaForte,
   },
-  ele: { alignSelf: 'flex-start', maxWidth: '90%', paddingLeft: 12, paddingVertical: 2, borderLeftWidth: 2, borderLeftColor: C.cianoForte },
+  copiarTudo: { alignSelf: 'flex-start', marginTop: 2, paddingVertical: 4 },
+  copiarTudoTxt: { color: C.apagado, fontFamily: MONO, fontSize: 10, letterSpacing: 1 },
+  ele: { alignSelf: 'stretch', maxWidth: '100%', paddingLeft: 12, paddingVertical: 2, borderLeftWidth: 2, borderLeftColor: C.cianoForte },
   txt: { color: C.texto, fontSize: 15, lineHeight: 22 },
   ponto: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.ciano },
   erro: { color: C.erro, fontSize: 13, marginTop: 14 },

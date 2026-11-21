@@ -8,20 +8,34 @@ import { quandoCurto, type Atividade, type Prioridade, type Task } from '@jarvis
 import { jarvis } from './src/jarvis';
 import { ligarAtualizacao } from './src/atualizacao';
 import { Conversa } from './src/Conversa';
-import { Nucleo } from './src/Nucleo';
+import { Nucleo, type Pulso } from './src/Nucleo';
+import type { EstadoNucleo } from '@jarvis/nucleo';
 import { C, COR_PRIO, MONO, NOME_PRIO } from './src/tema';
 
 export default function App() {
   const [logado, setLogado] = useState<boolean | null>(null);
-  const [pulso, setPulso] = useState(0);
+  const [pulso, setPulso] = useState<Pulso>({ n: 0, forca: 1, tom: 'neutro' });
+  const [estadoIA, setEstadoIA] = useState<EstadoNucleo>('repouso');
 
   useEffect(() => ligarAtualizacao(), []);
 
   useEffect(() => {
     const ver = async () => setLogado(!!(await jarvis.auth.sessao()));
     void jarvis.iniciar().then(ver);
-    const a = jarvis.aoMudar(() => void ver());
-    const b = jarvis.aoEvento(() => setPulso((n) => n + 1));
+    // O núcleo mostra o que a IA está fazendo; cada evento real vira uma descarga
+    // (verde = criado, vermelho = apagado, neutro = mudança ou pensamento).
+    const a = jarvis.aoMudar(() => {
+      void ver();
+      const ia = jarvis.ia.estado();
+      setEstadoIA(ia !== 'repouso' ? ia : jarvis.chat.estado().erro ? 'erro' : 'repouso');
+    });
+    const b = jarvis.aoEvento((e) => {
+      const conversa = e.entity_type === 'messages' || e.entity_type === 'conversations';
+      const [forca, tom]: [number, Pulso['tom']] = e.kind === 'deleted' ? [1, 'apagado']
+        : e.kind === 'created' && !conversa ? [0.8, 'criado']
+          : e.kind === 'thinking' ? [0.5, 'neutro'] : [0.35, 'neutro'];
+      setPulso((p) => ({ n: p.n + 1, forca, tom }));
+    });
     return () => { a(); b(); };
   }, []);
 
@@ -32,7 +46,7 @@ export default function App() {
         {logado === null ? (
           <View style={s.centro}><ActivityIndicator color={C.ciano} /></View>
         ) : logado ? (
-          <Painel pulso={pulso} />
+          <Painel pulso={pulso} estado={estadoIA} />
         ) : (
           <Login pulso={pulso} />
         )}
@@ -44,7 +58,7 @@ export default function App() {
 
 // ======================= login =======================
 
-function Login({ pulso }: { pulso: number }) {
+function Login({ pulso }: { pulso: Pulso }) {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [criando, setCriando] = useState(false);
@@ -121,7 +135,7 @@ function dataHoje() {
   return d.charAt(0).toUpperCase() + d.slice(1);
 }
 
-function Painel({ pulso }: { pulso: number }) {
+function Painel({ pulso, estado }: { pulso: Pulso; estado: EstadoNucleo }) {
   const [lista, setLista] = useState<Task[]>([]);
   const [novo, setNovo] = useState('');
   const [prio, setPrio] = useState<Prioridade>('media');
@@ -164,7 +178,7 @@ function Painel({ pulso }: { pulso: number }) {
       </View>
 
       <View style={{ alignItems: 'center', marginTop: -24, marginBottom: -28 }}>
-        <Nucleo tamanho={280} pulso={pulso} />
+        <Nucleo tamanho={280} pulso={pulso} estado={estado} />
       </View>
       <View style={s.saudacao}>
         <View style={{ flex: 1 }}>

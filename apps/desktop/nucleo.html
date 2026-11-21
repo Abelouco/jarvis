@@ -12,12 +12,19 @@
   </head>
   <body>
     <div id="caixa"></div>
-    <p id="dica">LABORATÓRIO · arraste = girar · espaço = pulso</p>
+    <p id="dica">LABORATÓRIO · arraste = girar · espaço = pulso · 1 repouso · 2 pensando · 3 agindo · 4 permissão · 5 erro · C criado · A apagado</p>
     <script type="module">
       import { montarNucleo } from '/src/nucleo3d.ts';
       const n = montarNucleo(document.getElementById('caixa'));
-      window.pulsar = (f) => n.pulsar(f);
-      addEventListener('keydown', (e) => e.code === 'Space' && n.pulsar());
+      window.pulsar = (f, tom) => n.pulsar(f, tom);
+      window.estado = (e) => n.definirEstado(e);
+      const ESTADOS = { Digit1: 'repouso', Digit2: 'pensando', Digit3: 'agindo', Digit4: 'permissao', Digit5: 'erro' };
+      addEventListener('keydown', (e) => {
+        if (e.code === 'Space') n.pulsar();
+        if (ESTADOS[e.code]) n.definirEstado(ESTADOS[e.code]);
+        if (e.code === 'KeyC') n.pulsar(0.9, 'criado');
+        if (e.code === 'KeyA') n.pulsar(1, 'apagado');
+      });
     </script>
   </body>
 </html>

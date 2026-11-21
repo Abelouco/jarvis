@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { criarNucleo, type Nucleo } from '@jarvis/nucleo';
+import { criarNucleo, type EstadoNucleo, type Nucleo, type TomPulso } from '@jarvis/nucleo';
 
 export interface NucleoMontado {
-  pulsar(forca?: number): void;
+  pulsar(forca?: number, tom?: TomPulso): void;
+  definirEstado(estado: EstadoNucleo): void;
   destruir(): void;
 }
 
@@ -55,7 +56,8 @@ export function montarNucleo(caixa: HTMLElement, densidade = 1): NucleoMontado {
   });
 
   return {
-    pulsar: (f) => nucleo.pulsar(f),
+    pulsar: (f, tom) => nucleo.pulsar(f, tom),
+    definirEstado: (e) => nucleo.definirEstado(e),
     destruir() {
       cancelAnimationFrame(quadro);
       obs.disconnect();

@@ -12,11 +12,23 @@ export interface OpcoesNucleo {
   densidade?: number;
 }
 
+/**
+ * O que o J.A.R.V.I.S. está fazendo. O núcleo muda de cor, ritmo e velocidade aos poucos.
+ * repouso: teal calmo · pensando: azul, giro rápido e pulsação contínua · agindo: violeta
+ * permissao: âmbar, respiração lenta e forte (esperando o dono) · erro: vermelho apagado
+ */
+export type EstadoNucleo = 'repouso' | 'pensando' | 'agindo' | 'permissao' | 'erro';
+
+/** Cor da descarga de um evento: criado (verde), apagado (vermelho), neutro (a cor do estado). */
+export type TomPulso = 'neutro' | 'criado' | 'apagado';
+
 export interface Nucleo {
   /** Desenha um quadro. `tempo` em milissegundos (requestAnimationFrame). */
   quadro(tempo: number): void;
   /** Descarga de energia; chamada a cada evento real. */
-  pulsar(forca?: number): void;
+  pulsar(forca?: number, tom?: TomPulso): void;
+  /** Estado contínuo (fica até mudar). */
+  definirEstado(estado: EstadoNucleo): void;
   /** Gira o núcleo pelo arraste (dx, dy em pixels desde o último movimento). */
   arrastar(dx: number, dy: number): void;
   /** Fim do arraste: o giro continua por inércia e desacelera. */
@@ -27,6 +39,33 @@ export interface Nucleo {
 
 const TEAL = new THREE.Color('#38e1cf');
 const CIANO = new THREE.Color('#7fd8ff');
+
+interface Perfil {
+  cor: THREE.Color;
+  /** quanto a cor do estado toma conta (0 = cores normais) */
+  mistura: number;
+  /** velocidade do "tempo" interno (ruído, giro) */
+  velocidade: number;
+  /** energia contínua (brilho e abertura dos filamentos) */
+  energia: number;
+  /** batidas por segundo da pulsação contínua (0 = sem) */
+  ritmo: number;
+  /** força da pulsação contínua */
+  batida: number;
+}
+
+const PERFIS: Record<EstadoNucleo, Perfil> = {
+  repouso: { cor: TEAL, mistura: 0, velocidade: 1, energia: 0, ritmo: 0, batida: 0 },
+  pensando: { cor: new THREE.Color('#7aa8ff'), mistura: 0.78, velocidade: 2.6, energia: 0.22, ritmo: 1.7, batida: 0.22 },
+  agindo: { cor: new THREE.Color('#b58cff'), mistura: 0.74, velocidade: 1.9, energia: 0.18, ritmo: 1.1, batida: 0.16 },
+  permissao: { cor: new THREE.Color('#ffc56b'), mistura: 0.88, velocidade: 0.55, energia: 0.1, ritmo: 0.45, batida: 0.32 },
+  erro: { cor: new THREE.Color('#ff6b81'), mistura: 0.7, velocidade: 0.7, energia: 0.04, ritmo: 0, batida: 0 },
+};
+
+const COR_TOM: Record<Exclude<TomPulso, 'neutro'>, THREE.Color> = {
+  criado: new THREE.Color('#6be3b0'),
+  apagado: new THREE.Color('#ff6b81'),
+};
 
 // ---------- campos (anéis de filamentos) ----------
 
@@ -81,6 +120,8 @@ void main() {
 const PONTO_FRAG = /* glsl */ `
 uniform vec3 uCor;
 uniform vec3 uCor2;
+uniform vec3 uTinta;
+uniform float uMistura;
 uniform float uOpacidade;
 varying float vAlfa;
 varying float vBrilho;
@@ -89,7 +130,9 @@ void main() {
   if (d > 0.5) discard;
   float a = smoothstep(0.5, 0.0, d);
   a *= a;
-  vec3 cor = mix(uCor, uCor2, clamp(vBrilho - 0.6, 0.0, 1.0)) * (0.7 + vBrilho * 0.55);
+  vec3 base = mix(uCor, uTinta, uMistura);
+  vec3 claro = mix(uCor2, mix(uCor2, uTinta, 0.55), uMistura);
+  vec3 cor = mix(base, claro, clamp(vBrilho - 0.6, 0.0, 1.0)) * (0.7 + vBrilho * 0.55);
   gl_FragColor = vec4(cor, a * vAlfa * uOpacidade);
 }
 `;
@@ -205,7 +248,9 @@ void main() {
 }
 `;
 const BRILHO_FRAG = /* glsl */ `
-uniform vec3 uCor;
+uniform vec3 uCorBase;
+uniform vec3 uTinta;
+uniform float uMistura;
 uniform float uPulso;
 uniform float uTempo;
 varying vec2 vUv;
@@ -215,7 +260,7 @@ void main() {
   float halo = pow(max(0.0, 1.0 - d), 4.0);
   float resp = 0.85 + 0.15 * sin(uTempo * 1.4);
   float a = (nucleo * 0.28 + halo * 0.22) * resp * (1.0 + uPulso * 1.8);
-  gl_FragColor = vec4(uCor, a);
+  gl_FragColor = vec4(mix(uCorBase, uTinta, uMistura), a);
 }
 `;
 
@@ -235,6 +280,8 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
     uTempo: { value: 0 },
     uPulso: { value: 0 },
     uDpr: { value: dpr },
+    uTinta: { value: TEAL.clone() },
+    uMistura: { value: 0 },
   };
 
   const conjunto = new THREE.Group();
@@ -312,7 +359,10 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
     new THREE.ShaderMaterial({
       vertexShader: BRILHO_VERT,
       fragmentShader: BRILHO_FRAG,
-      uniforms: { uCor: { value: TEAL }, uPulso: uComuns.uPulso!, uTempo: uComuns.uTempo! },
+      uniforms: {
+        uCorBase: { value: TEAL }, uPulso: uComuns.uPulso!, uTempo: uComuns.uTempo!,
+        uTinta: uComuns.uTinta!, uMistura: uComuns.uMistura!,
+      },
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     }),
   );
@@ -321,6 +371,16 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
   // ---------- estado ----------
   let pulso = 0;
   let ultimo = 0;
+  // Estado contínuo: os valores atuais andam suavemente até o perfil do estado.
+  let alvo: Perfil = PERFIS.repouso;
+  const atual = { cor: TEAL.clone(), mistura: 0, velocidade: 1, energia: 0, ritmo: 0, batida: 0 };
+  let tempoInterno = 0;
+  let fase = 0;
+  // Cor da última descarga (verde = criado, vermelho = apagado), some sozinha.
+  const corTom = TEAL.clone();
+  let tom = 0;
+  const tinta = uComuns.uTinta!.value as THREE.Color;
+  const corArestas = (arestas.material as THREE.LineBasicMaterial).color;
   // Giro feito pela pessoa: orientação livre (quaternion, estilo trackball), sem limite
   // em nenhum eixo. `vel` é a velocidade angular (rad/s) em torno dos eixos da tela, para a inércia.
   const orientacao = new THREE.Quaternion();
@@ -347,8 +407,28 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
       ultimo = t;
 
       pulso *= Math.exp(-dt * 1.9);
-      uComuns.uTempo!.value = t;
-      uComuns.uPulso!.value = pulso;
+      tom *= Math.exp(-dt * 1.4);
+
+      // aproxima do estado alvo (~0,6 s para mudar de humor)
+      const k = 1 - Math.exp(-dt * 3.2);
+      atual.cor.lerp(alvo.cor, k);
+      atual.mistura += (alvo.mistura - atual.mistura) * k;
+      atual.velocidade += (alvo.velocidade - atual.velocidade) * k;
+      atual.energia += (alvo.energia - atual.energia) * k;
+      atual.ritmo += (alvo.ritmo - atual.ritmo) * k;
+      atual.batida += (alvo.batida - atual.batida) * k;
+
+      tempoInterno += dt * atual.velocidade;
+      fase += dt * atual.ritmo * Math.PI * 2;
+      // batida contínua: sobe rápido e desce devagar, como um coração
+      const batida = atual.batida * Math.pow(0.5 + 0.5 * Math.sin(fase), 3);
+      const energiaTotal = pulso + atual.energia + batida;
+
+      tinta.copy(atual.cor).lerp(corTom, Math.min(1, tom));
+      uComuns.uMistura!.value = Math.max(atual.mistura, Math.min(0.85, tom));
+      uComuns.uTempo!.value = tempoInterno;
+      uComuns.uPulso!.value = energiaTotal;
+      corArestas.copy(TEAL).lerp(tinta, uComuns.uMistura!.value as number);
 
       if (!segurando) {
         // inércia: continua girando e desacelera
@@ -361,17 +441,24 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
       qOscila.setFromEuler(eOscila.set(0.12 + Math.sin(t * 0.21) * 0.08, Math.sin(t * 0.17) * 0.12, 0));
       conjunto.quaternion.multiplyQuaternions(orientacao, qOscila);
 
-      for (const c of campos) c.pts.rotation.z += c.giro * dt * (1 + pulso * 3);
+      for (const c of campos) c.pts.rotation.z += c.giro * dt * atual.velocidade * (1 + pulso * 3);
 
-      esfera.rotation.y += dt * (0.25 + pulso * 1.5);
-      esfera.rotation.x += dt * 0.07;
-      esfera.scale.setScalar(1 + pulso * 0.14 + Math.sin(t * 1.4) * 0.015);
-      (arestas.material as THREE.LineBasicMaterial).opacity = 0.42 + pulso * 0.4;
+      esfera.rotation.y += dt * (0.25 * atual.velocidade + pulso * 1.5);
+      esfera.rotation.x += dt * 0.07 * atual.velocidade;
+      esfera.scale.setScalar(1 + energiaTotal * 0.14 + Math.sin(t * 1.4) * 0.015);
+      (arestas.material as THREE.LineBasicMaterial).opacity = 0.42 + energiaTotal * 0.4;
 
       renderer.render(cena, camera);
     },
-    pulsar(forca = 1) {
+    pulsar(forca = 1, tomPulso: TomPulso = 'neutro') {
       pulso = Math.min(1.6, pulso + forca);
+      if (tomPulso !== 'neutro') {
+        corTom.copy(COR_TOM[tomPulso]);
+        tom = 1;
+      }
+    },
+    definirEstado(estado) {
+      alvo = PERFIS[estado] ?? PERFIS.repouso;
     },
     arrastar(dx, dy) {
       const agora = Date.now() / 1000;

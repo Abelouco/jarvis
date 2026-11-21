@@ -2,19 +2,33 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, PixelRatio, View } from 'react-native';
 import { GLView, type ExpoWebGLRenderingContext } from 'expo-gl';
 import * as THREE from 'three';
-import { criarNucleo, type Nucleo as Cena } from '@jarvis/nucleo';
+import { criarNucleo, type EstadoNucleo, type Nucleo as Cena, type TomPulso } from '@jarvis/nucleo';
+
+/** Uma descarga do núcleo: `n` muda a cada evento. */
+export interface Pulso {
+  n: number;
+  forca: number;
+  tom: TomPulso;
+}
 
 /**
  * O núcleo 3D no celular (expo-gl + Three.js, mesma cena do PC).
- * `pulso` é um contador: cada vez que muda, o núcleo descarrega energia.
+ * `pulso`: cada vez que `n` muda, o núcleo descarrega energia (com a cor do evento).
+ * `estado`: o que a IA está fazendo agora (pensando, esperando permissão...).
  */
-export function Nucleo({ tamanho = 240, pulso = 0 }: { tamanho?: number; pulso?: number }) {
+export function Nucleo({ tamanho = 240, pulso, estado = 'repouso' }: { tamanho?: number; pulso?: Pulso; estado?: EstadoNucleo }) {
   const cena = useRef<Cena | null>(null);
   const quadro = useRef<number | null>(null);
+  const estadoAtual = useRef(estado);
 
   useEffect(() => {
-    if (pulso) cena.current?.pulsar();
+    if (pulso?.n) cena.current?.pulsar(pulso.forca, pulso.tom);
   }, [pulso]);
+
+  useEffect(() => {
+    estadoAtual.current = estado;
+    cena.current?.definirEstado(estado);
+  }, [estado]);
 
   // Girar com o dedo, como um modelo 3D. Enquanto arrasta, a tela não rola.
   const arraste = useMemo(() => {
@@ -71,6 +85,7 @@ export function Nucleo({ tamanho = 240, pulso = 0 }: { tamanho?: number; pulso?:
     const dpr = PixelRatio.get();
     const n = criarNucleo(renderer, { largura: w / dpr, altura: h / dpr, dpr, densidade: 0.55 });
     cena.current = n;
+    n.definirEstado(estadoAtual.current);
 
     const laco = (t: number) => {
       n.quadro(t);

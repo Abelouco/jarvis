@@ -1,50 +1,15 @@
 // J.A.R.V.I.S. · Edge Function `ia_conversar`
-// Recebe a mensagem do dono, guarda no banco (RLS do próprio usuário), chama a IA
+// Recebe a mensagem do dono, guarda no banco (RLS do próprio usuário), escolhe o caminho
+// (rápido = Groq, inteligente = Gemini Flash), troca de provedor quando um bate o limite
 // e devolve a resposta já gravada. As chaves de IA ficam só nos secrets do Supabase.
 //
-// Secrets: GROQ_API_KEY (obrigatório), GROQ_MODEL (opcional).
-// Etapa 2 acrescenta o roteador (Gemini Flash) e a troca automática no limite.
-import { createClient } from 'npm:@supabase/supabase-js@2';
+// Secrets: GROQ_API_KEY, GEMINI_API_KEY (opcionais um do outro), GROQ_MODEL e GEMINI_MODEL (opcionais).
+// Regra de ouro: conteúdo sensível nunca vai para o Gemini grátis (pode treinar com os dados).
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { avaliarSensibilidade } from './sensivel.ts';
+import { escolherRota, type Rota } from './rota.ts';
+import { conversar, temChave, type MensagemIA, type NomeProvedor } from './provedores.ts';
 
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODELOS_URL = 'https://api.groq.com/openai/v1/models';
-// Ordem de preferência para conversa. O Groq aposenta modelos com frequência, então a
-// função consulta a lista dos disponíveis e usa o primeiro desta lista que existir.
-// GROQ_MODEL (secret opcional) fura a fila.
-const PREFERIDOS = [
-  Deno.env.get('GROQ_MODEL'),
-  'openai/gpt-oss-120b',
-  'llama-3.3-70b-versatile',
-  'meta-llama/llama-4-maverick-17b-128e-instruct',
-  'qwen/qwen3-32b',
-  'openai/gpt-oss-20b',
-  'meta-llama/llama-4-scout-17b-16e-instruct',
-  'llama-3.1-8b-instant',
-].filter((m): m is string => !!m);
-// Modelos que não são de conversa (áudio, moderação etc.).
-const NAO_CHAT = /whisper|tts|playai|orpheus|guard|prompt-guard|distil|compound|allam/i;
-let modeloEmCache: { id: string; ate: number } | null = null;
-
-async function escolherModelo(chave: string, forcarRecarga = false): Promise<string> {
-  if (!forcarRecarga && modeloEmCache && modeloEmCache.ate > Date.now()) return modeloEmCache.id;
-  let id = PREFERIDOS[0] ?? 'llama-3.1-8b-instant';
-  try {
-    const r = await fetch(GROQ_MODELOS_URL, {
-      headers: { Authorization: `Bearer ${chave}` },
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (r.ok) {
-      const lista: string[] = ((await r.json())?.data ?? [])
-        .filter((m: { active?: boolean }) => m.active !== false)
-        .map((m: { id: string }) => m.id);
-      id = PREFERIDOS.find((m) => lista.includes(m)) ?? lista.find((m) => !NAO_CHAT.test(m)) ?? id;
-    }
-  } catch {
-    /* sem a lista: tenta o preferido mesmo */
-  }
-  modeloEmCache = { id, ate: Date.now() + 6 * 60 * 60 * 1000 };
-  return id;
-}
 const MAX_TEXTO = 4000;
 const HISTORICO = 20;
 
@@ -59,19 +24,56 @@ const responder = (status: number, corpo: unknown) =>
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function promptSistema() {
+function promptSistema(rota: Rota) {
   const agora = new Date().toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   });
   return [
-    'Você é o J.A.R.V.I.S., assistente pessoal do seu dono. Fale sempre em português do Brasil.',
+    'Você é o J.A.R.V.I.S., assistente pessoal e co-piloto do seu dono: ajuda a pensar, decidir e agir. Fale sempre em português do Brasil.',
     'J.A.R.V.I.S. significa "Just a Rather Very Intelligent System". Explique isso se perguntarem sobre o seu nome.',
-    'Tom: calmo, confiante, um pouco distante e elegante; direto ao ponto, sem bajulação.',
-    'Respostas curtas por padrão (1 a 4 frases); só se estenda quando pedirem detalhe.',
+    'Tom: calmo, confiante, um pouco distante e elegante; direto ao ponto, sem bajulação e sem enrolação.',
+    rota === 'inteligente'
+      ? 'Este pedido pede raciocínio: aprofunde o necessário, com estrutura clara.'
+      : 'Respostas curtas por padrão (1 a 4 frases); só se estenda quando pedirem detalhe.',
+    '',
+    'Formatação (Markdown; o app desenha tudo, então use-a sempre que ajudar a ler):',
+    '- Resposta curta: texto direto, sem títulos.',
+    '- Resposta longa: seções com "## Título" e subtópicos com "### Título".',
+    '- Passos e sequências: lista numerada. Itens soltos: lista com "-".',
+    '- Comparações, números, prós e contras lado a lado, efeitos, cronogramas: tabela Markdown.',
+    '- **Negrito** no que importa: valores, prazos, a decisão.',
+    '- Código ou comandos: bloco ``` com a linguagem (```bash, ```python...).',
+    '- Texto para o dono copiar e usar (mensagem, e-mail, post, legenda, documento, roteiro, prompt): coloque SÓ esse texto dentro de um bloco que abre com ```texto seguido de um título curto na mesma linha (ex.: ```texto E-mail para o síndico) e fecha com ```. Fora do bloco, no máximo 1 ou 2 frases.',
+    '- Contas: mostre a conta em uma linha e o resultado em negrito.',
+    '- Alerta importante: linha começando com "> ".',
+    '',
+    'Como co-piloto: vá direto ao que resolve. Em decisões, termine com "**Recomendação:**" e o porquê em uma frase.',
+    'Quando houver o que fazer, termine com "**Próximos passos:**" em lista numerada curta. Pergunte só o indispensável.',
     'Se não souber algo, diga. Nunca invente fatos sobre o dono.',
     `Agora é ${agora} (fuso America/Sao_Paulo). Datas no formato AAAA-MM-DD quando precisar ser exato.`,
   ].join('\n');
+}
+
+const hojeSP = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+
+/** Conta uma chamada (e os tokens) do provedor no dia. */
+async function registrarUso(sb: SupabaseClient, userId: string, provedor: NomeProvedor, tokens: number) {
+  const day = hojeSP();
+  const { data } = await sb.from('ai_usage').select('requests, tokens')
+    .eq('day', day).eq('provider', provedor).maybeSingle();
+  await sb.from('ai_usage').upsert(
+    { user_id: userId, day, provider: provedor, requests: (data?.requests ?? 0) + 1, tokens: (data?.tokens ?? 0) + tokens },
+    { onConflict: 'user_id,day,provider' },
+  );
+}
+
+/** Marca o provedor como sem cota até daqui a `segundos`. */
+async function bloquear(sb: SupabaseClient, userId: string, provedor: NomeProvedor, segundos: number) {
+  await sb.from('ai_usage').upsert(
+    { user_id: userId, day: hojeSP(), provider: provedor, blocked_until: new Date(Date.now() + segundos * 1000).toISOString() },
+    { onConflict: 'user_id,day,provider' },
+  );
 }
 
 Deno.serve(async (req) => {
@@ -88,6 +90,7 @@ Deno.serve(async (req) => {
   });
   const { data: u, error: erroUser } = await sb.auth.getUser(authorization.replace(/^Bearer\s+/i, ''));
   if (erroUser || !u.user) return responder(401, { erro: 'Sessão inválida. Entre de novo.' });
+  const userId = u.user.id;
 
   let corpo: { conversation_id?: string; message_id?: string; text?: string };
   try {
@@ -101,17 +104,22 @@ Deno.serve(async (req) => {
   if (!texto) return responder(400, { erro: 'Mensagem vazia.' });
   if (texto.length > MAX_TEXTO) return responder(400, { erro: `Mensagem longa demais (máx. ${MAX_TEXTO} caracteres).` });
 
-  const chave = Deno.env.get('GROQ_API_KEY');
-  if (!chave) return responder(503, { erro: 'A chave do Groq ainda não foi configurada no Supabase.' });
+  if (!temChave('groq') && !temChave('gemini')) {
+    return responder(503, { erro: 'Nenhuma chave de IA configurada no Supabase (GROQ_API_KEY / GEMINI_API_KEY).' });
+  }
+
+  const sens = avaliarSensibilidade(texto);
 
   // Idempotente: se o app já sincronizou a conversa/mensagem, não duplica.
   const conv = await sb.from('conversations')
     .upsert({ id: corpo.conversation_id, title: texto.slice(0, 60) }, { onConflict: 'id', ignoreDuplicates: true });
   if (conv.error) return responder(500, { erro: conv.error.message });
   const msg = await sb.from('messages')
-    .upsert({ id: corpo.message_id, conversation_id: corpo.conversation_id, role: 'user', content: texto },
+    .upsert({ id: corpo.message_id, conversation_id: corpo.conversation_id, role: 'user', content: texto, sensitive: sens.sensivel },
       { onConflict: 'id', ignoreDuplicates: true });
   if (msg.error) return responder(500, { erro: msg.error.message });
+  // Se o app subiu a pergunta antes (sem a marca), marca agora.
+  if (sens.sensivel) await sb.from('messages').update({ sensitive: true }).eq('id', corpo.message_id);
 
   // A pergunta como está no servidor (o horário dela define o que vem "antes" e "depois").
   const pergunta = await sb.from('messages')
@@ -135,59 +143,76 @@ Deno.serve(async (req) => {
 
   // Histórico até a pergunta (inclusive): a resposta é sempre para ela, mesmo se chegou outra depois.
   const hist = await sb.from('messages')
-    .select('role, content')
+    .select('role, content, sensitive')
     .eq('conversation_id', corpo.conversation_id)
     .is('deleted_at', null)
     .lte('created_at', pergunta.data.created_at)
     .order('created_at', { ascending: false })
     .limit(HISTORICO);
   if (hist.error) return responder(500, { erro: hist.error.message });
-  const mensagens = [
-    { role: 'system', content: promptSistema() },
-    ...(hist.data ?? []).reverse().map((m) => ({ role: m.role, content: m.content })),
+  const historico = (hist.data ?? []).reverse();
+
+  // O histórico inteiro vai junto na chamada: se qualquer parte for sensível, a conversa toda é.
+  const conversaSensivel = sens.sensivel
+    || historico.some((m) => m.sensitive || avaliarSensibilidade(m.content).sensivel);
+  const rota = escolherRota(texto);
+  const ordem: NomeProvedor[] = conversaSensivel
+    ? ['groq'] // nunca Gemini
+    : rota === 'inteligente' ? ['gemini', 'groq'] : ['groq', 'gemini'];
+
+  const mensagens: MensagemIA[] = [
+    { role: 'system', content: promptSistema(rota) },
+    ...historico.map((m) => ({ role: m.role, content: m.content })),
   ];
 
+  const { data: bloqueios } = await sb.from('ai_usage')
+    .select('provider, blocked_until')
+    .gt('blocked_until', new Date().toISOString());
+  const bloqueadoAte = new Map((bloqueios ?? []).map((b) => [b.provider as NomeProvedor, b.blocked_until as string]));
+
   const inicio = Date.now();
-  const chamar = (modelo: string) =>
-    fetch(GROQ_URL, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: modelo, messages: mensagens, temperature: 0.6, max_tokens: 1024,
-        // Modelos que "pensam" antes: pouco raciocínio (resposta rápida) e sem o pensamento no texto.
-        ...(/gpt-oss/.test(modelo) ? { reasoning_effort: 'low' } : {}),
-        ...(/qwen3|deepseek-r1/.test(modelo) ? { reasoning_format: 'hidden' } : {}),
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
-  let modelo = await escolherModelo(chave);
-  let resposta: Response;
-  try {
-    resposta = await chamar(modelo);
-    // Modelo aposentado no meio do caminho: recarrega a lista e tenta uma vez de novo.
-    if (resposta.status === 404 || resposta.status === 400) {
-      const corpoErro = await resposta.clone().text();
-      if (/model_not_found|decommissioned|does not exist/i.test(corpoErro)) {
-        modelo = await escolherModelo(chave, true);
-        resposta = await chamar(modelo);
-      }
+  const erros: string[] = [];
+  let menorEspera = 0;
+  let resposta: { provedor: NomeProvedor; texto: string; modelo: string } | null = null;
+  for (const provedor of ordem) {
+    if (!temChave(provedor)) continue;
+    const ate = bloqueadoAte.get(provedor);
+    if (ate) {
+      const seg = Math.ceil((Date.parse(ate) - Date.now()) / 1000);
+      menorEspera = menorEspera ? Math.min(menorEspera, seg) : seg;
+      erros.push(`${provedor} sem cota por mais ${seg} s`);
+      continue;
     }
-  } catch (e) {
-    return responder(504, { erro: `A IA não respondeu a tempo (${e instanceof Error ? e.message : e}).` });
+    const r = await conversar(provedor, mensagens);
+    if (r.ok) {
+      resposta = { provedor, texto: r.texto, modelo: r.modelo };
+      await registrarUso(sb, userId, provedor, r.tokens);
+      break;
+    }
+    erros.push(r.erro);
+    console.warn('ia_conversar: provedor falhou, tentando o próximo', { provedor, rota, erro: r.erro });
+    if (r.limite) {
+      await bloquear(sb, userId, provedor, r.esperarSeg);
+      menorEspera = menorEspera ? Math.min(menorEspera, r.esperarSeg) : r.esperarSeg;
+    }
   }
-  if (resposta.status === 429) return responder(429, { erro: 'Limite do Groq atingido. Tente de novo em instantes.' });
-  if (!resposta.ok) {
-    const detalhe = (await resposta.text()).slice(0, 300);
-    return responder(502, { erro: `Erro do Groq (${resposta.status}): ${detalhe}` });
+
+  if (!resposta) {
+    console.error('ia_conversar sem resposta', { rota, conversaSensivel, erros });
+    const espera = menorEspera ? ` Tente de novo em ${menorEspera < 90 ? `${menorEspera} s` : `${Math.ceil(menorEspera / 60)} min`}.` : '';
+    const erro = conversaSensivel && menorEspera
+      ? `O Groq está sem cota agora e esta conversa tem assunto sensível, então não envio para o Gemini.${espera}`
+      : menorEspera
+        ? `As IAs estão sem cota no momento.${espera}`
+        : `Não consegui resposta da IA (${erros.join('; ')}).`;
+    return responder(menorEspera ? 429 : 502, { erro });
   }
-  const json = await resposta.json();
-  const conteudo: string = json?.choices?.[0]?.message?.content?.trim() || '…';
-  const latencia = Date.now() - inicio;
 
   const salva = await sb.from('messages')
     .insert({
-      conversation_id: corpo.conversation_id, role: 'assistant', content: conteudo,
-      provider: 'groq', model: json?.model ?? modelo, latency_ms: latencia,
+      conversation_id: corpo.conversation_id, role: 'assistant', content: resposta.texto,
+      provider: resposta.provedor, model: resposta.modelo, latency_ms: Date.now() - inicio,
+      route: rota, sensitive: conversaSensivel,
     })
     .select()
     .single();
