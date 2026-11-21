@@ -57,6 +57,11 @@ function iniciaBloco(linhas: string[], i: number): boolean {
     || (l.includes('|') && i + 1 < linhas.length && RE_SEPARADOR.test(linhas[i + 1]!));
 }
 
+/** Texto para colar: sem marcas de negrito/itálico que a IA às vezes deixa escapar. */
+function limparTexto(s: string): string {
+  return s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1').replace(/^#{1,6}\s+/gm, '');
+}
+
 export function lerMarkdown(texto: string): Bloco[] {
   return blocos(texto.replace(/\r\n?/g, '\n').split('\n'));
 }
@@ -79,7 +84,7 @@ function blocos(linhas: string[]): Bloco[] {
       while (i < linhas.length && !linhas[i]!.trim().startsWith(marca[0]!.repeat(3))) corpo.push(linhas[i++]!);
       i++;
       const conteudo = corpo.join('\n').replace(/\s+$/, '');
-      if (LANG_TEXTO.test(lang)) out.push({ t: 'texto', titulo: resto || 'Texto', texto: conteudo });
+      if (LANG_TEXTO.test(lang)) out.push({ t: 'texto', titulo: resto || 'Texto', texto: limparTexto(conteudo) });
       else out.push({ t: 'codigo', lang: lang.toLowerCase(), texto: conteudo });
       continue;
     }

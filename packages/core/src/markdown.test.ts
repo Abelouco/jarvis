@@ -41,6 +41,11 @@ test('código e bloco para copiar', () => {
   assert.deepEqual(b[1], { t: 'texto', titulo: 'E-mail ao cliente', texto: 'Olá, tudo bem?\n\nAbraço' });
 });
 
+test('cartão de texto sai limpo para colar', () => {
+  const b = lerMarkdown('```texto Convite\nChurrasco no **sábado**, às **13h**.\n```');
+  assert.deepEqual(b[0], { t: 'texto', titulo: 'Convite', texto: 'Churrasco no sábado, às 13h.' });
+});
+
 test('cerca sem fechar (resposta cortada) não quebra', () => {
   const b = lerMarkdown('Veja:\n```python\nprint(1)');
   assert.deepEqual(b.map((x) => x.t), ['par', 'codigo']);

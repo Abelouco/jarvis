@@ -63,6 +63,8 @@ const PROVEDORES: Record<NomeProvedor, Provedor> = {
 };
 
 const cacheModelo = new Map<NomeProvedor, { id: string; ate: number }>();
+/** Modelos disponíveis na conta (para achar um substituto quando o escolhido está sobrecarregado). */
+const cacheLista = new Map<NomeProvedor, string[]>();
 
 export function temChave(nome: NomeProvedor): boolean {
   return !!PROVEDORES[nome].chave();
@@ -82,6 +84,7 @@ async function escolherModelo(p: Provedor, chave: string, recarregar = false): P
       const lista: string[] = ((await r.json())?.data ?? [])
         .filter((m: { active?: boolean }) => m.active !== false)
         .map((m: { id: string }) => String(m.id).replace(/^models\//, ''));
+      cacheLista.set(p.nome, lista);
       id = pref.find((m) => lista.includes(m))
         ?? lista.find((m) => p.serve(m) && !p.naoChat.test(m))
         ?? id;
@@ -129,6 +132,24 @@ export async function conversar(nome: NomeProvedor, mensagens: MensagemIA[]): Pr
     }
   } catch (e) {
     return { ok: false, limite: false, esperarSeg: 0, erro: `${nome}/${modelo} não respondeu a tempo (${e instanceof Error ? e.message : e})` };
+  }
+
+  // Sobrecarregado (503/500/529): tenta uma vez outro modelo do mesmo provedor.
+  if (r.status === 503 || r.status === 500 || r.status === 529) {
+    const lista = cacheLista.get(nome) ?? [];
+    const outro = p.preferidos().find((m) => m !== modelo && lista.includes(m))
+      ?? lista.find((m) => m !== modelo && p.serve(m) && !p.naoChat.test(m));
+    if (outro) {
+      try {
+        const r2 = await chamar(outro);
+        if (r2.ok || r2.status === 429) {
+          r = r2;
+          modelo = outro;
+        }
+      } catch {
+        /* segue com o erro do primeiro */
+      }
+    }
   }
 
   if (r.status === 429) {

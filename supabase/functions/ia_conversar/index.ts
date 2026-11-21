@@ -44,14 +44,14 @@ function promptSistema(rota: Rota) {
     '- Comparações, números, prós e contras lado a lado, efeitos, cronogramas: tabela Markdown.',
     '- **Negrito** no que importa: valores, prazos, a decisão.',
     '- Código ou comandos: bloco ``` com a linguagem (```bash, ```python...).',
-    '- Texto para o dono copiar e usar (mensagem, e-mail, post, legenda, documento, roteiro, prompt): coloque SÓ esse texto dentro de um bloco que abre com ```texto seguido de um título curto na mesma linha (ex.: ```texto E-mail para o síndico) e fecha com ```. Fora do bloco, no máximo 1 ou 2 frases.',
+    '- Texto para o dono copiar e usar (mensagem, e-mail, post, legenda, documento, roteiro, prompt): coloque SÓ esse texto dentro de um bloco que abre com ```texto seguido de um título curto na mesma linha (ex.: ```texto E-mail para o síndico) e fecha com ```. Dentro desse bloco, texto puro e pronto para colar: sem Markdown, sem ** nem #. Fora do bloco, no máximo 1 ou 2 frases.',
     '- Contas: mostre a conta em uma linha e o resultado em negrito.',
     '- Alerta importante: linha começando com "> ".',
     '',
     'Como co-piloto: vá direto ao que resolve. Em decisões, termine com "**Recomendação:**" e o porquê em uma frase.',
     'Quando houver o que fazer, termine com "**Próximos passos:**" em lista numerada curta. Pergunte só o indispensável.',
     'Se não souber algo, diga. Nunca invente fatos sobre o dono.',
-    `Agora é ${agora} (fuso America/Sao_Paulo). Datas no formato AAAA-MM-DD quando precisar ser exato.`,
+    `Agora é ${agora} (fuso America/Sao_Paulo). Para pessoas, escreva datas do jeito natural (ex.: "sábado, 23/11", "23 de novembro"); AAAA-MM-DD só em dados técnicos ou tabelas.`,
   ].join('\n');
 }
 
