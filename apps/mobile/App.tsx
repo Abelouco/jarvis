@@ -4,7 +4,7 @@ import {
   ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView,
   StyleSheet, Text, TextInput, View,
 } from 'react-native';
-import type { JarvisEvent, Prioridade, Task } from '@jarvis/core';
+import { quandoCurto, type Atividade, type Prioridade, type Task } from '@jarvis/core';
 import { jarvis } from './src/jarvis';
 import { Nucleo } from './src/Nucleo';
 import { C, COR_PRIO, MONO, NOME_PRIO } from './src/tema';
@@ -12,16 +12,12 @@ import { C, COR_PRIO, MONO, NOME_PRIO } from './src/tema';
 export default function App() {
   const [logado, setLogado] = useState<boolean | null>(null);
   const [pulso, setPulso] = useState(0);
-  const [pulsos, setPulsos] = useState<JarvisEvent[]>([]);
 
   useEffect(() => {
     const ver = async () => setLogado(!!(await jarvis.auth.sessao()));
     void jarvis.iniciar().then(ver);
     const a = jarvis.aoMudar(() => void ver());
-    const b = jarvis.aoEvento((e) => {
-      setPulsos((p) => [e, ...p].slice(0, 8));
-      setPulso((n) => n + 1);
-    });
+    const b = jarvis.aoEvento(() => setPulso((n) => n + 1));
     return () => { a(); b(); };
   }, []);
 
@@ -32,7 +28,7 @@ export default function App() {
         {logado === null ? (
           <View style={s.centro}><ActivityIndicator color={C.ciano} /></View>
         ) : logado ? (
-          <Painel pulso={pulso} pulsos={pulsos} />
+          <Painel pulso={pulso} />
         ) : (
           <Login pulso={pulso} />
         )}
@@ -108,8 +104,6 @@ function Login({ pulso }: { pulso: number }) {
 
 // ======================= painel =======================
 
-const NOME_EVENTO: Record<string, string> = { created: 'criada', updated: 'atualizada', deleted: 'apagada' };
-const NOME_ENTIDADE: Record<string, string> = { tasks: 'Tarefa', projects: 'Projeto', reminders: 'Lembrete', habits: 'Hábito', memories: 'Memória' };
 const NOME_ESTADO = { parado: 'sincronizado', sincronizando: 'sincronizando', offline: 'offline', erro: 'erro no sync' };
 const COR_ESTADO = { parado: C.baixa, sincronizando: C.media, offline: C.apagado, erro: C.erro };
 const PESO: Record<Prioridade, number> = { alta: 0, media: 1, baixa: 2 };
@@ -123,15 +117,17 @@ function dataHoje() {
   return d.charAt(0).toUpperCase() + d.slice(1);
 }
 
-function Painel({ pulso, pulsos }: { pulso: number; pulsos: JarvisEvent[] }) {
+function Painel({ pulso }: { pulso: number }) {
   const [lista, setLista] = useState<Task[]>([]);
   const [novo, setNovo] = useState('');
   const [prio, setPrio] = useState<Prioridade>('media');
   const [sync, setSync] = useState(jarvis.estado());
+  const [atividades, setAtividades] = useState<Atividade[]>([]);
 
   const recarregar = useCallback(async () => {
     setLista(await jarvis.tarefas.listar());
     setSync(jarvis.estado());
+    setAtividades(await jarvis.atividades.listar());
   }, []);
 
   useEffect(() => {
@@ -211,16 +207,18 @@ function Painel({ pulso, pulsos }: { pulso: number; pulsos: JarvisEvent[] }) {
         </>
       )}
 
-      <Secao titulo="PULSOS" qtd={pulsos.length} />
-      <Text style={s.legenda}>Cada pulso é um evento real do núcleo.</Text>
+      <Secao titulo="ATIVIDADES RECENTES" qtd={atividades.length} />
       <View style={s.linhaTempo}>
-        {pulsos.length === 0 ? (
-          <Text style={s.legenda}>Aguardando o primeiro evento…</Text>
-        ) : pulsos.map((p, i) => (
-          <View key={p.id} style={s.pulso}>
-            <View style={[s.pulsoPonto, i === 0 && { backgroundColor: C.ciano }]} />
-            <Text style={s.pulsoTxt}>{NOME_ENTIDADE[p.entity_type ?? ''] ?? p.entity_type} {NOME_EVENTO[p.kind] ?? p.kind}</Text>
-            <Text style={s.pulsoHora}>{new Date(p.created_at).toLocaleTimeString('pt-BR')}</Text>
+        {atividades.length === 0 ? (
+          <Text style={s.legenda}>{jarvis.atividades.carregado() ? 'Nenhuma atividade ainda.' : 'Carregando…'}</Text>
+        ) : atividades.map((a, i) => (
+          <View key={a.id} style={s.atividade}>
+            <View style={[s.atividadePonto, i === 0 && { backgroundColor: C.ciano }]} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.atividadeTxt}>{a.texto}</Text>
+              {a.detalhe ? <Text style={s.atividadeDetalhe} numberOfLines={1}>{a.detalhe}</Text> : null}
+            </View>
+            <Text style={s.atividadeHora}>{quandoCurto(a.quando)}</Text>
           </View>
         ))}
       </View>
@@ -332,10 +330,11 @@ const s = StyleSheet.create({
   vazioTxt: { color: C.apagado },
   legenda: { color: C.texto2, fontSize: 12.5, marginBottom: 12 },
   linhaTempo: { borderLeftWidth: 1, borderLeftColor: C.borda, paddingLeft: 16, marginLeft: 4 },
-  pulso: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  pulsoPonto: { position: 'absolute', left: -20.5, width: 8, height: 8, borderRadius: 4, borderWidth: 1.5, borderColor: C.ciano, backgroundColor: C.fundo },
-  pulsoTxt: { color: C.texto, fontSize: 13.5, flex: 1 },
-  pulsoHora: { color: C.apagado, fontFamily: MONO, fontSize: 11 },
+  atividade: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  atividadePonto: { position: 'absolute', left: -20.5, width: 8, height: 8, borderRadius: 4, borderWidth: 1.5, borderColor: C.ciano, backgroundColor: C.fundo },
+  atividadeTxt: { color: C.texto, fontSize: 13.5 },
+  atividadeDetalhe: { color: C.texto2, fontSize: 12.5, marginTop: 1 },
+  atividadeHora: { color: C.apagado, fontFamily: MONO, fontSize: 11 },
   sair: { alignSelf: 'center', marginTop: 32, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: C.borda },
   sairTxt: { color: C.texto2, fontSize: 12.5 },
 });

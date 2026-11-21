@@ -1,4 +1,4 @@
-import type { JarvisEvent, Prioridade, Task } from '@jarvis/core';
+import { quandoCurto, type Prioridade, type Task } from '@jarvis/core';
 import { jarvis } from './jarvis';
 import './estilo.css';
 import { montarNucleo, type NucleoMontado } from './nucleo3d';
@@ -16,11 +16,6 @@ function trocarNucleo(caixa: HTMLElement | null, densidade = 1) {
 }
 
 const NOME_PRIO: Record<Prioridade, string> = { alta: 'alta', media: 'média', baixa: 'baixa' };
-const NOME_EVENTO: Record<string, string> = { created: 'criada', updated: 'atualizada', deleted: 'apagada' };
-const NOME_ENTIDADE: Record<string, string> = {
-  tasks: 'Tarefa', projects: 'Projeto', reminders: 'Lembrete', habits: 'Hábito',
-  habit_logs: 'Registro de hábito', memories: 'Memória', memory_links: 'Ligação de memória',
-};
 const NOME_ESTADO = { parado: 'sincronizado', sincronizando: 'sincronizando', offline: 'offline', erro: 'erro no sync' };
 
 let tela: 'login' | 'painel' | null = null;
@@ -120,7 +115,8 @@ function montarLogin() {
 // ======================= painel =======================
 
 let prioridade: Prioridade = 'media';
-const pulsos: JarvisEvent[] = [];
+// Ids já desenhados: só os novos entram com animação.
+let atividadesVistas = new Set<number>();
 
 function saudacao() {
   const h = new Date().getHours();
@@ -167,9 +163,8 @@ async function montarPainel() {
         </main>
         <aside class="lateral">
           <div class="nucleo3d lateral-nucleo" id="nucleo"></div>
-          <h3>Pulsos</h3>
-          <p class="legenda">Cada pulso é um evento real do núcleo. É o que vai acender o cérebro.</p>
-          <ul class="pulsos" id="pulsos"></ul>
+          <h3>Atividades recentes</h3>
+          <ul class="atividades" id="atividades"></ul>
         </aside>
       </div>
     </section>`;
@@ -207,8 +202,8 @@ async function montarPainel() {
   marcarPrio();
   trocarNucleo($('#nucleo'), 0.8);
   campo.focus();
+  atividadesVistas = new Set();
   await atualizarPainel();
-  desenharPulsos();
 }
 
 function itemTarefa(t: Task) {
@@ -251,21 +246,27 @@ async function atualizarPainel() {
   el.dataset.e = estado;
   el.title = ultimoErro ?? '';
   el.querySelector('span')!.textContent = NOME_ESTADO[estado];
+
+  await desenharAtividades();
 }
 
-function desenharPulsos() {
+async function desenharAtividades() {
+  const itens = await jarvis.atividades.listar();
   if (tela !== 'painel') return;
-  $<HTMLUListElement>('#pulsos').innerHTML = pulsos.length
-    ? pulsos
+  const primeiraVez = atividadesVistas.size === 0;
+  $<HTMLUListElement>('#atividades').innerHTML = itens.length
+    ? itens
         .map(
-          (p) => `
-      <li class="pulso">
-        <div class="o-que">${NOME_ENTIDADE[p.entity_type ?? ''] ?? esc(p.entity_type ?? 'Evento')} ${NOME_EVENTO[p.kind] ?? esc(p.kind)}</div>
-        <div class="quando">${new Date(p.created_at).toLocaleTimeString('pt-BR')}</div>
+          (a) => `
+      <li class="atividade ${!primeiraVez && !atividadesVistas.has(a.id) ? 'nova' : ''}">
+        <div class="o-que">${esc(a.texto)}</div>
+        ${a.detalhe ? `<div class="detalhe">${esc(a.detalhe)}</div>` : ''}
+        <div class="quando">${quandoCurto(a.quando)}</div>
       </li>`,
         )
         .join('')
-    : `<li class="pulso nada">Aguardando o primeiro evento…</li>`;
+    : `<li class="atividade nada">${jarvis.atividades.carregado() ? 'Nenhuma atividade ainda.' : 'Carregando…'}</li>`;
+  atividadesVistas = new Set(itens.map((a) => a.id));
 }
 
 
@@ -281,11 +282,7 @@ jarvis.aoMudar(() => {
   });
 });
 
-jarvis.aoEvento((e) => {
-  pulsos.unshift(e);
-  pulsos.length = Math.min(pulsos.length, 12);
-  desenharPulsos();
-  nucleo?.pulsar();
-});
+// Cada evento real faz o núcleo pulsar; a lista de atividades se redesenha pelo aoMudar.
+jarvis.aoEvento(() => nucleo?.pulsar());
 
 void jarvis.iniciar().then(decidirTela);

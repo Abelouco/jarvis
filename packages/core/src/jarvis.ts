@@ -14,6 +14,33 @@ export type EstadoSync = 'parado' | 'sincronizando' | 'offline' | 'erro';
 
 type Ouvinte = () => void;
 
+export interface Atividade {
+  id: number;
+  /** Ex.: "Tarefa criada". */
+  texto: string;
+  /** Nome do item, quando ele existe no banco local. */
+  detalhe: string | null;
+  quando: string;
+}
+
+const NOME_ENTIDADE: Record<string, string> = {
+  tasks: 'Tarefa', projects: 'Projeto', reminders: 'Lembrete', habits: 'Hábito',
+  habit_logs: 'Registro de hábito', memories: 'Memória', memory_links: 'Ligação de memória',
+};
+const NOME_ACAO: Record<string, string> = { created: 'criada', updated: 'atualizada', deleted: 'apagada' };
+
+/** "14:15" se for hoje, "ontem 14:15", ou "21/11 14:15". */
+export function quandoCurto(iso: string, agoraRef = new Date()): string {
+  const d = new Date(iso);
+  const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const dia = (x: Date) => x.toDateString();
+  if (dia(d) === dia(agoraRef)) return hora;
+  const ontem = new Date(agoraRef);
+  ontem.setDate(ontem.getDate() - 1);
+  if (dia(d) === dia(ontem)) return `ontem ${hora}`;
+  return `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${hora}`;
+}
+
 const agora = () => new Date().toISOString();
 const LOTE = 500;
 
@@ -209,12 +236,60 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
     );
   }
 
+  // ---------- atividades recentes (a partir da tabela events) ----------
+  const MAX_ATIVIDADES = 15;
+  let eventosRecentes: JarvisEvent[] = [];
+  let historicoCarregado = false;
+
+  async function carregarHistorico() {
+    const { data, error } = await sb
+      .from('events')
+      .select('*')
+      .not('entity_type', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(MAX_ATIVIDADES);
+    if (error) return; // offline: a lista começa só com o que chegar ao vivo
+    const vistos = new Set(eventosRecentes.map((e) => e.id));
+    eventosRecentes = [...eventosRecentes, ...((data ?? []) as JarvisEvent[]).filter((e) => !vistos.has(e.id))]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, MAX_ATIVIDADES);
+    historicoCarregado = true;
+    avisar();
+  }
+
+  const atividades = {
+    /** As últimas coisas que aconteceram, já em texto, com o nome do item (vem do banco local). */
+    async listar(): Promise<Atividade[]> {
+      const ids = eventosRecentes.filter((e) => e.entity_type === 'tasks' && e.entity_id).map((e) => e.entity_id!);
+      const titulos = new Map<string, string>();
+      if (ids.length) {
+        const linhas = await db.consultar<{ id: string; title: string }>(
+          `select id, title from tasks where id in (${ids.map(() => '?').join(', ')})`,
+          ids,
+        );
+        for (const l of linhas) titulos.set(l.id, l.title);
+      }
+      return eventosRecentes.map((e) => ({
+        id: e.id,
+        texto: `${NOME_ENTIDADE[e.entity_type ?? ''] ?? 'Item'} ${NOME_ACAO[e.kind] ?? e.kind}`,
+        detalhe: (e.entity_id && titulos.get(e.entity_id)) || null,
+        quando: e.created_at,
+      }));
+    },
+    carregado: () => historicoCarregado,
+  };
+
   function ligarSync() {
     if (!canal) {
       canal = ouvirEventos(sb, (e) => {
+        if (!eventosRecentes.some((x) => x.id === e.id)) {
+          eventosRecentes = [e, ...eventosRecentes].slice(0, MAX_ATIVIDADES);
+        }
         ouvintesEvento.forEach((f) => f(e));
+        avisar();
         if (e.entity_type === 'tasks') agendarSync(150);
       });
+      void carregarHistorico();
     }
     relogio ??= setInterval(() => void sincronizar(), 60_000);
     agendarSync(0);
@@ -223,6 +298,8 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
   function desligarSync() {
     if (canal) void sb.removeChannel(canal);
     canal = null;
+    eventosRecentes = [];
+    historicoCarregado = false;
     if (relogio) clearInterval(relogio);
     relogio = null;
   }
@@ -231,6 +308,7 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
     iniciar,
     auth,
     tarefas,
+    atividades,
     sincronizar,
     estado: () => ({ estado, ultimoErro }),
     /** Avisa quando algo local mudou (para a tela recarregar). */

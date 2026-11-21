@@ -242,27 +242,28 @@ input { font: inherit; }
 .vazio { text-align: center; padding: 48px 20px; color: var(--apagado); }
 .vazio strong { display: block; color: var(--texto-2); font-weight: 500; margin-bottom: 4px; }
 
-/* ---------- coluna de pulsos ---------- */
+/* ---------- coluna de atividades recentes ---------- */
 .lateral {
   border-left: 1px solid var(--borda);
   background: rgba(4, 6, 11, 0.45);
   padding: 28px 22px;
   overflow-y: auto;
 }
-.lateral h3 { margin: 0 0 4px; font-family: var(--mono); font-weight: 400; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--apagado); }
-.lateral .legenda { margin: 0 0 20px; font-size: 12.5px; color: var(--texto-2); line-height: 1.5; }
-.pulsos { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 1px solid var(--borda); display: flex; flex-direction: column; gap: 16px; }
-.pulso { position: relative; animation: entrar 0.3s ease-out; }
-.pulso::before {
+.lateral h3 { margin: 0 0 18px; font-family: var(--mono); font-weight: 400; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--apagado); }
+.atividades { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 1px solid var(--borda); display: flex; flex-direction: column; gap: 14px; }
+.atividade { position: relative; }
+.atividade.nova { animation: entrar 0.3s ease-out; }
+.atividade::before {
   content: ''; position: absolute; left: -18.5px; top: 5px;
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--fundo); border: 1.5px solid var(--ciano);
 }
-.pulso:first-child::before { background: var(--ciano); box-shadow: 0 0 10px var(--ciano); }
-.pulso .o-que { font-size: 13.5px; }
-.pulso .quando { font-family: var(--mono); font-size: 11px; color: var(--apagado); margin-top: 2px; }
-.pulsos .nada { color: var(--apagado); font-size: 13px; }
-.pulsos .nada::before { display: none; }
+.atividade:first-child::before { background: var(--ciano); box-shadow: 0 0 10px var(--ciano); }
+.atividade .o-que { font-size: 13.5px; }
+.atividade .detalhe { font-size: 12.5px; color: var(--texto-2); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atividade .quando { font-family: var(--mono); font-size: 11px; color: var(--apagado); margin-top: 2px; }
+.atividades .nada { color: var(--apagado); font-size: 13px; }
+.atividades .nada::before { display: none; }
 
 @media (max-width: 860px) {
   .corpo { grid-template-columns: 1fr; }
