@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { quandoCurto, type Atividade, type Prioridade, type Task } from '@jarvis/core';
 import { jarvis } from './src/jarvis';
+import { ligarAtualizacao } from './src/atualizacao';
 import { Conversa } from './src/Conversa';
 import { Nucleo } from './src/Nucleo';
 import { C, COR_PRIO, MONO, NOME_PRIO } from './src/tema';
@@ -13,6 +14,8 @@ import { C, COR_PRIO, MONO, NOME_PRIO } from './src/tema';
 export default function App() {
   const [logado, setLogado] = useState<boolean | null>(null);
   const [pulso, setPulso] = useState(0);
+
+  useEffect(() => ligarAtualizacao(), []);
 
   useEffect(() => {
     const ver = async () => setLogado(!!(await jarvis.auth.sessao()));
