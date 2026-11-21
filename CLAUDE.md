@@ -28,7 +28,7 @@ Assistente de IA pessoal do dono deste repositório, no PC (Windows) e no celula
 ## Como rodar e publicar
 - PC (dev): `pnpm desktop` (Tauri + Vite na porta 1420).
 - PC (release): `pnpm.cmd release:pc X.Y.Z` numa aba do Terminal, com tudo commitado. Sobe a versão, cria a tag e envia; o GitHub Actions (`release-pc.yml`) gera o .exe assinado e o `latest.json` no GitHub Releases, e o app instalado se atualiza sozinho. Chave do updater em `C:\Users\abeld\.tauri\jarvis-updater.key` (secrets `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` no GitHub); só a pública fica no `tauri.conf.json`.
-- Celular: app Android instalado (.apk do EAS, perfil `preview`). Mudança só de JS/tela → `npx.cmd eas-cli@latest update --channel preview --environment preview --message "..." --non-interactive` (chega sem reinstalar). Mudança nativa (plugin, permissão, módulo novo) → novo `eas build -p android --profile preview`.
+- Celular: app Android instalado (.apk do EAS, perfil `preview`). Comandos do EAS rodam **dentro de `apps\mobile`** (na raiz ele cria um `app.json` vazio e falha). Mudança só de JS/tela → `npx.cmd eas-cli@latest update --channel preview --environment preview --message "..." --non-interactive` (chega sem reinstalar). Mudança nativa (plugin, permissão, módulo novo) → novo `eas build -p android --profile preview`.
 - Release do Android usa R8: módulo nativo do Expo que quebrar no .apk pode precisar de regra em `extraProguardRules` (app.json, plugin expo-build-properties).
 - Comandos globais/EAS rodam numa aba do Terminal com `npm.cmd`/`pnpm.cmd`/`npx.cmd` (o shell do Claude isola o AppData).
 
