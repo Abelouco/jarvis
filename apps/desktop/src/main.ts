@@ -2,6 +2,7 @@ import { quandoCurto, type Prioridade, type Task } from '@jarvis/core';
 import { jarvis } from './jarvis';
 import './estilo.css';
 import { montarNucleo, type NucleoMontado } from './nucleo3d';
+import { ligarAtualizacao } from './atualizacao';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const esc = (s: string) =>
@@ -286,3 +287,4 @@ jarvis.aoMudar(() => {
 jarvis.aoEvento(() => nucleo?.pulsar());
 
 void jarvis.iniciar().then(decidirTela);
+ligarAtualizacao();

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "JARVIS",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "identifier": "com.jarvis.desktop",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -10,8 +10,42 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{ "title": "J.A.R.V.I.S.", "width": 1180, "height": 780, "minWidth": 420, "minHeight": 560, "backgroundColor": "#04060b" }],
-    "security": { "csp": null }
+    "windows": [
+      {
+        "title": "J.A.R.V.I.S.",
+        "width": 1180,
+        "height": 780,
+        "minWidth": 420,
+        "minHeight": 560,
+        "backgroundColor": "#04060b"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
   },
-  "bundle": { "active": true, "targets": ["nsis"], "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"] }
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUzMDk2RTgyRUZEMjIzNDMKUldSREk5THZnbTRKVXpMOFJIa0d0c2IrajExdlNWemJOeWliMGR3SlZWOG9iN0JCNjdBRUpFaFAK",
+      "endpoints": [
+        "https://github.com/Abelouco/jarvis/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
 }
