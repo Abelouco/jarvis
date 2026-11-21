@@ -28,9 +28,14 @@ writeFileSync(conf, JSON.stringify(json, null, 2) + '\n');
 const cargo = 'apps/desktop/src-tauri/Cargo.toml';
 writeFileSync(cargo, readFileSync(cargo, 'utf8').replace(/^version = ".*"$/m, `version = "${versao}"`));
 
+const lock = 'apps/desktop/src-tauri/Cargo.lock';
+writeFileSync(lock, readFileSync(lock, 'utf8').replace(
+  /(name = "jarvis-desktop"\r?\nversion = )".*"/, `$1"${versao}"`,
+));
+
 // Se a versão já era essa, não há o que commitar: segue direto para a tag.
 if (execSync('git status --porcelain').toString().trim()) {
-  rodar(`git add ${conf} ${cargo}`);
+  rodar(`git add ${conf} ${cargo} ${lock}`);
   rodar(`git commit -m "PC v${versao}"`);
 }
 rodar(`git tag v${versao}`);
