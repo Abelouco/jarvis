@@ -1,0 +1,14 @@
+{
+  "name": "jarvis",
+  "private": true,
+  "packageManager": "pnpm@10.34.9",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "mobile": "pnpm --filter @jarvis/mobile start",
+    "desktop": "pnpm --filter @jarvis/desktop tauri dev",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.0"
+  }
+}

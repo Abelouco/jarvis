@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.expo/
+*.log
+.env
+.env.*
+!.env.example
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
