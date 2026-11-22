@@ -1,4 +1,5 @@
 // Pesquisa na web pelo Tavily (grátis: 1.000 créditos/mês, sem cartão). Secret: TAVILY_API_KEY.
+// Busca básica = 1 crédito (a avançada custaria 2). Cada pergunta faz 2 buscas básicas = 2 créditos.
 // Os serviços grátis do Gemini e do Groq não oferecem busca na conta gratuita, então a busca
 // é feita aqui e a IA só escreve a resposta a partir dos trechos encontrados.
 import type { Fonte, MensagemIA } from './provedores.ts';
@@ -14,7 +15,7 @@ export function temBusca(): boolean {
   return !!Deno.env.get('TAVILY_API_KEY');
 }
 
-async function tavily(consulta: string, profunda: boolean): Promise<Trecho[]> {
+async function tavily(consulta: string): Promise<Trecho[]> {
   const chave = Deno.env.get('TAVILY_API_KEY');
   if (!chave) return [];
   const r = await fetch('https://api.tavily.com/search', {
@@ -22,7 +23,7 @@ async function tavily(consulta: string, profunda: boolean): Promise<Trecho[]> {
     headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       query: consulta.slice(0, 380),
-      search_depth: profunda ? 'advanced' : 'basic',
+      search_depth: 'basic',
       max_results: 6,
       include_answer: false,
       include_raw_content: false,
@@ -66,10 +67,11 @@ async function consultas(historico: MensagemIA[]): Promise<string[]> {
   return [pergunta];
 }
 
-/** Faz as buscas e junta os trechos (sem repetir endereço). */
-export async function buscar(historico: MensagemIA[]): Promise<Trecho[]> {
+/** Faz as buscas e junta os trechos (sem repetir endereço). `creditos` = buscas que deram certo. */
+export async function buscar(historico: MensagemIA[]): Promise<{ trechos: Trecho[]; creditos: number }> {
   const qs = await consultas(historico);
-  const resultados = await Promise.allSettled(qs.map((q, i) => tavily(q, i === qs.length - 1)));
+  const resultados = await Promise.allSettled(qs.map((q) => tavily(q)));
+  const creditos = resultados.filter((r) => r.status === 'fulfilled').length;
   const vistos = new Set<string>();
   const trechos: Trecho[] = [];
   for (const r of resultados) {
@@ -83,7 +85,7 @@ export async function buscar(historico: MensagemIA[]): Promise<Trecho[]> {
       trechos.push(t);
     }
   }
-  return trechos.slice(0, 10);
+  return { trechos: trechos.slice(0, 10), creditos };
 }
 
 /** Bloco com os trechos numerados, para a IA responder só com base neles. */

@@ -31,7 +31,7 @@ const responder = (status: number, corpo: unknown) =>
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function promptSistema(rota: Rota, pesquisando = false) {
+function promptSistema(rota: Rota, pesquisando = false, nosDeMemoria = 0) {
   const agora = new Date().toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
@@ -77,6 +77,16 @@ function promptSistema(rota: Rota, pesquisando = false) {
     'Quando houver o que fazer, termine com "**Próximos passos:**" em lista numerada curta. Pergunte só o indispensável.',
     'Se não souber algo, diga. Nunca invente fatos sobre o dono nem detalhes do mundo (jogos, produtos, versões, regras, números): sem certeza, diga que não tem certeza.',
     'Você tem memória de longo prazo: o app guarda sozinho fatos e preferências do dono depois de cada conversa, e o que você já sabe aparece abaixo. Se o dono pedir para lembrar ou esquecer algo, confirme em uma frase que vai fazer isso.',
+    '',
+    'Seu núcleo (o "cérebro" 3D que aparece no app). Explique quando o dono perguntar, com estes fatos (é tudo real, nada é enfeite):',
+    '- Esfera geodésica no centro: é você. Gira mais rápido e brilha mais quando você trabalha.',
+    '- Anéis de filamentos de partículas em volta: o seu campo de atividade. Ondulam o tempo todo e se abrem e aceleram quando você pensa, pesquisa ou age.',
+    '- Pontos de luz presos à esfera por linhas finas: as memórias que você guardou sobre o dono, um nó por memória. Os mais importantes brilham mais e ficam mais perto do centro; a posição de cada nó é fixa (vem da própria memória). Quando o dono esquece uma memória, o nó some.',
+    '- Partículas soltas no fundo: só ambiente.',
+    '- Pulsos (descargas rápidas): cada um é um evento real no banco de dados. Verde = algo foi criado (tarefa, memória...); vermelho = algo foi apagado; branco/neutro = uma mudança ou você começando a pensar.',
+    '- Cor contínua do núcleo = seu estado: verde-água em repouso; azul pulsando como um coração = pensando; violeta = pesquisando na internet ou agindo; âmbar com respiração lenta = esperando a permissão do dono; vermelho apagado = deu erro.',
+    '- O dono pode girar o núcleo em qualquer direção, arrastando com o mouse ou com o dedo.',
+    `- Agora o seu núcleo tem ${nosDeMemoria} ${nosDeMemoria === 1 ? 'nó' : 'nós'} de memória.`,
     `Agora é ${agora} (fuso America/Sao_Paulo). Para pessoas, escreva datas do jeito natural (ex.: "sábado, 23/11", "23 de novembro"); AAAA-MM-DD só em dados técnicos ou tabelas.`,
   ].join('\n');
 }
@@ -101,13 +111,15 @@ function fontesCitadas(texto: string, todas: Fonte[]): { texto: string; fontes: 
 
 const hojeSP = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 
-/** Conta uma chamada (e os tokens) do provedor no dia. */
-async function registrarUso(sb: SupabaseClient, userId: string, provedor: NomeProvedor, tokens: number) {
+/** Conta chamadas e tokens do provedor no dia (no Tavily: buscas e créditos gastos). */
+async function registrarUso(
+  sb: SupabaseClient, userId: string, provedor: NomeProvedor | 'tavily', tokens: number, chamadas = 1,
+) {
   const day = hojeSP();
   const { data } = await sb.from('ai_usage').select('requests, tokens')
     .eq('day', day).eq('provider', provedor).maybeSingle();
   await sb.from('ai_usage').upsert(
-    { user_id: userId, day, provider: provedor, requests: (data?.requests ?? 0) + 1, tokens: (data?.tokens ?? 0) + tokens },
+    { user_id: userId, day, provider: provedor, requests: (data?.requests ?? 0) + chamadas, tokens: (data?.tokens ?? 0) + tokens },
     { onConflict: 'user_id,day,provider' },
   );
 }
@@ -207,9 +219,11 @@ Deno.serve(async (req) => {
   // Memória: o que ele já sabe e que tem a ver com a pergunta. Sensível nunca vai para o Gemini.
   const memorias = await lembrar(sb, texto).catch(() => []);
   const conversa: MensagemIA[] = historico.map((m) => ({ role: m.role, content: m.content }));
+  const { count: nosDeMemoria } = await sb.from('memories')
+    .select('id', { count: 'exact', head: true }).is('deleted_at', null);
   const sistemaPara = (provedor: NomeProvedor, pesquisando = false) => {
     const bloco = blocoMemoria(memorias, provedor === 'gemini' || pesquisando);
-    return promptSistema(rota, pesquisando) + (bloco ? `\n\n${bloco}` : '');
+    return promptSistema(rota, pesquisando, nosDeMemoria ?? 0) + (bloco ? `\n\n${bloco}` : '');
   };
   const mensagensPara = (provedor: NomeProvedor): MensagemIA[] => [
     { role: 'system', content: sistemaPara(provedor) },
@@ -231,10 +245,11 @@ Deno.serve(async (req) => {
   if (rota === 'pesquisa' && !conversaSensivel && temBusca()) {
     // Avisa os aparelhos: o chat mostra "Pesquisando na internet…" e o núcleo fica violeta.
     await sb.from('events').insert({ kind: 'searching', payload: { conversation_id: corpo.conversation_id } });
-    const trechos = await buscar(conversa).catch((e) => {
+    const { trechos, creditos } = await buscar(conversa).catch((e) => {
       erros.push(`busca: ${e instanceof Error ? e.message : e}`);
-      return [];
+      return { trechos: [], creditos: 0 };
     });
+    if (creditos) await registrarUso(sb, userId, 'tavily', creditos, creditos);
     if (trechos.length) {
       for (const provedor of ['groq', 'gemini'] as NomeProvedor[]) {
         if (!temChave(provedor) || bloqueadoAte.get(provedor)) continue;

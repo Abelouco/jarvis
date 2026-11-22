@@ -24,6 +24,8 @@ const NOME_PROPRIO = /\s(?:[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}\d'’-]+\s+){1,4}[A
 // Não precisa de busca:
 const TRIVIAL = /^(oi+|ola|opa|e ai|eai|hey|bom dia|boa tarde|boa noite|obrigad\w*|valeu|vlw|ok|okay|beleza|blz|show|perfeito|otimo|legal|tudo bem|td bem|tchau|ate mais|ate logo|sim|nao|isso|entendi|certo)\b/;
 const SOBRE_JARVIS = /\b(quem e voce|quem (e|sao) vc|seu nome|o que voce (faz|sabe|pode)|voce (consegue|pode|sabe|lembra)|o que significa jarvis|j\.?a\.?r\.?v\.?i\.?s\.? significa)\b/;
+// Perguntas sobre o núcleo 3D do próprio J.A.R.V.I.S. (não sobre física em geral).
+const SOBRE_O_NUCLEO = /\b(nucleo|seu cerebro|(esses?|essas?|os|as|cada) (nos|no|pulsos?|filamentos?|aneis|anel|linhas|pontos|particulas)\b|nos de memoria|por que (a esfera|o nucleo|voce) (ficou|esta|mudou|piscou|pulsou)|(ficou|esta|mudou para) (azul|violeta|roxo|roxa|ambar|vermelho|vermelha|verde)|essa cor)\b/;
 const AGORA = /\b(que horas|que dia e hoje|data de hoje|que dia da semana)\b/;
 const SOBRE_O_DONO = /\b(meu nome|eu sou|eu (trabalho|estudo|moro|gosto|prefiro|tenho|quero|preciso|vou)|me (lembre|lembra)|lembr\w*|esquec\w*|minha (semana|rotina|agenda|vida|casa|familia|tarefa|lista|meta|dieta)|meu (dia|mes|plano|objetivo|treino|projeto))\b/;
 const CRIATIVO = /\b(escrev\w*|redij\w*|redig\w*|reescrev\w*|cri[ea] (um|uma) (texto|mensagem|poema|historia|post|legenda|email|e-mail|carta|roteiro|discurso)|traduz\w*|melhor[ea] (este|esse|o) texto|corrij\w*|revis\w* (este|esse|o) texto)\b/;
@@ -37,7 +39,7 @@ export function escolherRota(texto: string): Rota {
   const palavras = t.split(/\s+/).filter(Boolean).length;
 
   if (PEDE_BUSCA.test(t)) return 'pesquisa';
-  if ((TRIVIAL.test(t) && palavras <= 6) || SOBRE_JARVIS.test(t) || AGORA.test(t)) return 'rapido';
+  if ((TRIVIAL.test(t) && palavras <= 6) || SOBRE_JARVIS.test(t) || SOBRE_O_NUCLEO.test(t) || AGORA.test(t)) return 'rapido';
   if (FATO_DO_MUNDO.test(t) || NOME_PROPRIO.test(` ${texto.trim()}`.replace(/^\s*\S+/, ' '))) return 'pesquisa';
   if (CRIATIVO.test(t) || SOBRE_O_DONO.test(t)) {
     return PEDE_RACIOCINIO.test(t) || t.length > 300 ? 'inteligente' : 'rapido';
