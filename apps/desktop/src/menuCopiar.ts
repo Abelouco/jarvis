@@ -50,6 +50,13 @@ export function ligarMenuCopiar(chat: HTMLElement, respostaInteira: (msg: HTMLEl
     const selecao = getSelection()?.toString().trim();
     if (selecao) itens.push({ rotulo: 'Copiar seleção', texto: selecao });
 
+    // Trecho destacado (código inline): copia só ele, como no Claude.
+    const inline = alvo.closest<HTMLElement>('code');
+    if (inline && !inline.closest('pre')) {
+      destacado = inline;
+      itens.unshift({ rotulo: `Copiar “${(inline.textContent ?? '').slice(0, 40)}${(inline.textContent ?? '').length > 40 ? '…' : ''}”`, texto: inline.textContent ?? '' });
+    }
+
     const codigo = alvo.closest<HTMLElement>('.md-codigo, .md-comando');
     const cartaoTexto = alvo.closest<HTMLElement>('.md-texto');
     const trecho = alvo.closest<HTMLElement>('li, p, td, th, blockquote, h2, h3, h4, h5, .texto');
@@ -60,7 +67,7 @@ export function ligarMenuCopiar(chat: HTMLElement, respostaInteira: (msg: HTMLEl
       destacado = cartaoTexto;
       itens.push({ rotulo: 'Copiar texto do cartão', texto: textoDe(cartaoTexto.querySelector('.md-texto-corpo') ?? cartaoTexto) });
     } else if (trecho && msg.contains(trecho)) {
-      destacado = trecho.closest<HTMLElement>('tr') ?? trecho;
+      destacado ??= trecho.closest<HTMLElement>('tr') ?? trecho;
       const linhaTabela = trecho.closest('tr');
       itens.push({
         rotulo: linhaTabela ? 'Copiar esta linha' : trecho.matches('li') ? 'Copiar este item' : 'Copiar este trecho',

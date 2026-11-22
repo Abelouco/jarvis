@@ -58,7 +58,7 @@ const PROVEDORES: Record<NomeProvedor, Provedor> = {
     naoChat: /image|tts|audio|live|embedding|vision|lite|thinking-exp|learnlm|gemma/i,
     serve: (id) => /flash/i.test(id),
     extras: () => ({ reasoning_effort: 'low' }),
-    timeoutMs: 30_000,
+    timeoutMs: 20_000,
   },
 };
 
@@ -215,32 +215,31 @@ export async function pesquisarGemini(sistema: string, historico: MensagemIA[]):
         tools: [{ google_search: {} }],
         generationConfig: { temperature: 0.3, maxOutputTokens: 2500 },
       }),
-      signal: AbortSignal.timeout(45_000),
+      signal: AbortSignal.timeout(25_000),
     });
 
-  let modelo = await escolherModelo(p, chave);
-  let r: Response;
-  try {
-    r = await chamar(modelo);
-    if (r.status === 503 || r.status === 500 || r.status === 529 || r.status === 404) {
-      const lista = cacheLista.get('gemini') ?? [];
-      const outro = p.preferidos().find((m) => m !== modelo && lista.includes(m));
-      if (outro) {
-        const r2 = await chamar(outro);
-        if (r2.ok || r2.status === 429) {
-          r = r2;
-          modelo = outro;
-        }
+  // A busca grátis do Google não vale para todo modelo: tenta os que têm cota grátis de busca.
+  await escolherModelo(p, chave); // preenche a lista de modelos da conta
+  const lista = cacheLista.get('gemini') ?? [];
+  const candidatos = [Deno.env.get('GEMINI_MODELO_BUSCA'), 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
+    .filter((m): m is string => !!m && (!lista.length || lista.includes(m)));
+  let modelo = candidatos[0] ?? 'gemini-2.5-flash';
+  let r: Response | null = null;
+  const erros: string[] = [];
+  for (const m of candidatos.length ? candidatos : [modelo]) {
+    try {
+      const tentativa = await chamar(m);
+      if (tentativa.ok) {
+        r = tentativa;
+        modelo = m;
+        break;
       }
+      erros.push(`${m} ${tentativa.status}: ${(await tentativa.text()).slice(0, 160)}`);
+    } catch (e) {
+      erros.push(`${m} sem resposta (${e instanceof Error ? e.message : e})`);
     }
-  } catch (e) {
-    return { ok: false, limite: false, esperarSeg: 0, erro: `gemini/busca não respondeu a tempo (${e instanceof Error ? e.message : e})` };
   }
-  if (r.status === 429) {
-    const esperar = Number(r.headers.get('retry-after')) || 60;
-    return { ok: false, limite: true, esperarSeg: Math.min(Math.max(esperar, 10), 3600), erro: 'limite do gemini (busca)' };
-  }
-  if (!r.ok) return { ok: false, limite: false, esperarSeg: 0, erro: `gemini/busca ${r.status}: ${(await r.text()).slice(0, 300)}` };
+  if (!r) return { ok: false, limite: false, esperarSeg: 0, erro: `gemini/busca: ${erros.join(' | ')}` };
 
   const json = await r.json();
   const cand = json?.candidates?.[0];
@@ -257,18 +256,25 @@ export async function pesquisarGemini(sistema: string, historico: MensagemIA[]):
 export async function pesquisarGroq(sistema: string, historico: MensagemIA[]): Promise<Resultado> {
   const chave = PROVEDORES.groq.chave();
   if (!chave) return { ok: false, limite: false, esperarSeg: 0, erro: 'sem chave do groq' };
+  await escolherModelo(PROVEDORES.groq, chave); // preenche a lista de modelos da conta
+  const lista = cacheLista.get('groq') ?? [];
+  // O Groq já trocou o nome desse modelo (compound-beta, groq/compound...): pega o que existir.
+  const compound = lista.find((m) => /compound/i.test(m) && !/mini/i.test(m)) ?? lista.find((m) => /compound/i.test(m));
+  if (!compound) {
+    return { ok: false, limite: false, esperarSeg: 0, erro: `groq sem modelo com busca na conta (${lista.length} modelos)` };
+  }
   let r: Response;
   try {
     r = await fetch(PROVEDORES.groq.url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'groq/compound',
+        model: compound,
         messages: [{ role: 'system', content: sistema }, ...historico],
         temperature: 0.3,
         max_tokens: 2000,
       }),
-      signal: AbortSignal.timeout(45_000),
+      signal: AbortSignal.timeout(25_000),
     });
   } catch (e) {
     return { ok: false, limite: false, esperarSeg: 0, erro: `groq/compound não respondeu a tempo (${e instanceof Error ? e.message : e})` };
@@ -292,5 +298,5 @@ export async function pesquisarGroq(sistema: string, historico: MensagemIA[]): P
     Object.values(o).forEach(varrer);
   };
   varrer(msg?.executed_tools);
-  return { ok: true, texto, modelo: 'groq/compound', tokens: Number(json?.usage?.total_tokens) || 0, fontes: fontesUnicas(achadas) };
+  return { ok: true, texto, modelo: compound, tokens: Number(json?.usage?.total_tokens) || 0, fontes: fontesUnicas(achadas) };
 }

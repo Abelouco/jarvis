@@ -199,7 +199,7 @@ function Painel({ pulso, estado }: { pulso: Pulso; estado: EstadoNucleo }) {
           <Text style={s.resumo}>
             {abertas.length
               ? `${abertas.length} pendente${abertas.length > 1 ? 's' : ''} · ${feitas.length} concluída${feitas.length === 1 ? '' : 's'}`
-              : feitas.length ? 'Tudo em dia.' : 'Nada na fila ainda.'}
+              : feitas.length ? 'Tudo em dia.' : ''}
           </Text>
         </View>
       </View>

@@ -385,7 +385,7 @@ async function atualizarPainel() {
 
   $<HTMLDivElement>('#resumo').textContent = abertas.length
     ? `${abertas.length} pendente${abertas.length > 1 ? 's' : ''} · ${feitas.length} concluída${feitas.length === 1 ? '' : 's'}`
-    : feitas.length ? 'Tudo em dia.' : 'Nada na fila ainda.';
+    : feitas.length ? 'Tudo em dia.' : '';
 
   const htmlListas = lista.length
     ? `

@@ -453,3 +453,9 @@ input { font: inherit; }
 tr.md-destaque > td { background: rgba(60, 196, 255, 0.08); }
 .md-copiado { animation: copiado 0.7s ease-out; }
 @keyframes copiado { 0% { background: rgba(107, 227, 176, 0.25); } 100% { background: transparent; } }
+
+/* trechos destacados (código inline): copiáveis pelo clique direito */
+.md code:not(pre code) { cursor: context-menu; transition: background 0.15s, border-color 0.15s; }
+.md code:not(pre code):hover { background: rgba(127, 216, 255, 0.16); border-color: var(--borda-forte); }
+.md code.md-destaque { outline-offset: 1px; }
+.saudacao .resumo:empty { display: none; }

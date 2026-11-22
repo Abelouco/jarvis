@@ -64,6 +64,7 @@ function promptSistema(rota: Rota, pesquisando = false) {
     '- Passos e sequências: lista numerada. Itens soltos: lista com "-".',
     '- Comparações, números, prós e contras lado a lado, efeitos, cronogramas: tabela Markdown.',
     '- **Negrito** no que importa: valores, prazos, a decisão.',
+    '- `Código inline` para o que o dono pode querer copiar sozinho: nomes exatos (de itens, menus, arquivos, programas), valores, endereços, comandos curtos. O app destaca e deixa copiar com o clique direito.',
     '- Código: bloco ``` com a linguagem (```python, ```typescript...).',
     '- Comandos para o dono rodar no computador dele (Windows): cada passo num bloco ```powershell (ou ```cmd, se for do Prompt de comando), sem "$" ou "PS>" na frente. O app mostra um botão para rodar; um bloco por passo que ele deva rodar separado.',
     '- Quando houver uma próxima escolha clara para o dono (2 a 4 caminhos), termine com um bloco que abre com ```opcoes seguido de uma pergunta curta na mesma linha, uma opção por linha, e fecha com ``` (ex.: ```opcoes Por onde seguimos?). Cada opção deve funcionar sozinha como a resposta do dono. Não use em toda resposta, só quando ajudar a decidir o próximo passo; se usar, não repita as mesmas coisas em "Próximos passos".',
@@ -182,7 +183,7 @@ Deno.serve(async (req) => {
   const rota = escolherRota(texto);
   const ordem: NomeProvedor[] = conversaSensivel
     ? ['groq'] // nunca Gemini
-    : rota === 'rapido' ? ['groq', 'gemini'] : ['gemini', 'groq'];
+    : rota === 'inteligente' ? ['gemini', 'groq'] : ['groq', 'gemini']; // sem pesquisa: o Groq responde mais rápido
 
   // Memória: o que ele já sabe e que tem a ver com a pergunta. Sensível nunca vai para o Gemini.
   const memorias = await lembrar(sb, texto).catch(() => []);
@@ -223,11 +224,15 @@ Deno.serve(async (req) => {
       }
       erros.push(r.erro);
       console.warn('ia_conversar: pesquisa falhou', { provedor, erro: r.erro });
-      if (r.limite) await bloquear(sb, userId, provedor, r.esperarSeg);
+      if (r.limite) {
+        await bloquear(sb, userId, provedor, r.esperarSeg);
+        bloqueadoAte.set(provedor, new Date(Date.now() + r.esperarSeg * 1000).toISOString());
+      }
     }
   }
-  // Sem pesquisa (ou ela falhou): responde normalmente, avisando quando não tiver certeza.
-  if (!resposta && rota === 'pesquisa') rotaUsada = 'inteligente';
+  // Sem pesquisa (ou ela falhou): responde normalmente, mas avisa que não foi verificado.
+  const semVerificar = !resposta && rota === 'pesquisa';
+  if (semVerificar) rotaUsada = 'inteligente';
 
   for (const provedor of resposta ? [] : ordem) {
     if (!temChave(provedor)) continue;
@@ -248,6 +253,7 @@ Deno.serve(async (req) => {
     console.warn('ia_conversar: provedor falhou, tentando o próximo', { provedor, rota, erro: r.erro });
     if (r.limite) {
       await bloquear(sb, userId, provedor, r.esperarSeg);
+      bloqueadoAte.set(provedor, new Date(Date.now() + r.esperarSeg * 1000).toISOString());
       menorEspera = menorEspera ? Math.min(menorEspera, r.esperarSeg) : r.esperarSeg;
     }
   }
@@ -261,6 +267,10 @@ Deno.serve(async (req) => {
         ? `As IAs estão sem cota no momento.${espera}`
         : `Não consegui resposta da IA (${erros.join('; ')}).`;
     return responder(menorEspera ? 429 : 502, { erro });
+  }
+
+  if (semVerificar) {
+    resposta.texto = `> **Não consegui pesquisar na internet agora**, então esta resposta não foi verificada em fontes. Confira antes de confiar.\n\n${resposta.texto}`;
   }
 
   const salva = await sb.from('messages')
