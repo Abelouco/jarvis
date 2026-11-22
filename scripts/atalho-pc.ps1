@@ -33,8 +33,15 @@ if (-not $exe) {
   exit 1
 }
 $desktop = [Environment]::GetFolderPath('Desktop')
-$destino = Join-Path $desktop 'J.A.R.V.I.S.lnk'
 $shell = New-Object -ComObject WScript.Shell
+# O instalador já cria "JARVIS.lnk". Se já existe um atalho para o mesmo .exe, não duplica.
+$existente = Get-ChildItem $desktop -Filter *.lnk -ErrorAction SilentlyContinue |
+  Where-Object { $shell.CreateShortcut($_.FullName).TargetPath -eq $exe.FullName } | Select-Object -First 1
+if ($existente) {
+  Write-Host "Ja existe o atalho: $($existente.FullName)" -ForegroundColor Green
+  exit 0
+}
+$destino = Join-Path $desktop 'JARVIS.lnk'
 $atalho = $shell.CreateShortcut($destino)
 $atalho.TargetPath = $exe.FullName
 $atalho.WorkingDirectory = $exe.DirectoryName
