@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Laboratório do painel</title>
+  </head>
+  <!-- Só para conferir o layout no navegador (sem banco nem login). O app de verdade é o index.html. -->
+  <body class="sem-moldura">
+    <div class="controles-janela"><button>–</button><button>▢</button><button class="fechar">✕</button></div>
+    <div id="app">
+      <section class="painel">
+        <header class="topo">
+          <span class="sinal"></span><span class="nome">J.A.R.V.I.S.</span><span class="espaco"></span>
+          <span class="estado" data-e="parado"><i></i><span>sincronizado</span></span>
+          <button class="conta">Sair</button>
+        </header>
+        <div class="corpo">
+          <main class="principal">
+            <div class="principal-inner">
+              <div class="saudacao"><div><h2>Boa noite.</h2><p>Sábado, 21 de novembro</p><div class="resumo">Nada na fila ainda.</div></div></div>
+              <nav class="abas-painel"><button class="ativa">Conversa</button><button>Tarefas</button><button>Memória</button></nav>
+              <div class="vista" id="vista-conversa">
+                <div class="chat">
+                  <div class="msg" data-r="user"><div class="texto">Lembre que eu prefiro respostas curtas.</div></div>
+                  <div class="msg" data-r="assistant"><div class="md"><p>Entendido, Abel. Respostas curtas e diretas a partir de agora.</p></div></div>
+                  <div class="msg-acoes"><button class="md-btn md-copiar-tudo"><span>Copiar resposta</span></button></div>
+                </div>
+                <div class="chat-rodape">
+                  <form class="nova falar"><input placeholder="Fale com o J.A.R.V.I.S." /><button type="button" class="nova-conversa">nova</button><button class="adicionar">↑</button></form>
+                </div>
+              </div>
+              <div class="vista" id="vista-tarefas" hidden></div>
+              <div class="vista" id="vista-memoria" hidden></div>
+            </div>
+          </main>
+          <aside class="lateral"><div class="nucleo3d lateral-nucleo"></div><h3>Atividades recentes</h3><ul class="atividades"></ul></aside>
+        </div>
+      </section>
+    </div>
+    <script type="module">import './src/estilo.css';</script>
+  </body>
+</html>
