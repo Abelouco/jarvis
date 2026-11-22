@@ -10,6 +10,7 @@ Assistente de IA pessoal do dono deste repositório, no PC (Windows) e no celula
 - Monorepo TypeScript (pnpm workspaces): `apps/mobile` (Expo), `apps/desktop` (Tauri), `packages/core` (tipos, regras, sync, cliente Supabase compartilhados).
 - Núcleo: Supabase, plano gratuito, região São Paulo, projeto ref `pmqxeikcnuywvcxkeoep`. Schema em `supabase/migrations/`.
 - IA, só serviços gratuitos por enquanto: Groq (caminho rápido + transcrição Whisper) e Gemini Flash (raciocínio), com troca automática quando um bater o limite. Nada sensível vai para o Gemini grátis (pode treinar com os dados).
+- Pesquisa na web: Tavily (secret `TAVILY_API_KEY`); o Groq gera as consultas e o `gpt-oss-120b` escreve a resposta só com os trechos. As chaves (Groq, Gemini, Tavily) são do dono e ficam no servidor: se houver outros usuários, todos gastam a cota dele (pensar em limite por pessoa).
 - Voz falada: voz própria no perfil "lento, confiante e distante". Nunca clonar voz de pessoa real.
 - Cérebro: WebGL (Three.js) alimentado pela tabela `events` via Supabase Realtime.
 
@@ -38,7 +39,7 @@ Assistente de IA pessoal do dono deste repositório, no PC (Windows) e no celula
 
 ## Roteiro
 - Fase 0 (concluída em 2026-11-21): schema no Supabase, monorepo, login (e-mail e senha, conta criada pelo próprio app; RLS), banco local + sync, núcleo 3D compartilhado, .apk Android via EAS (com EAS Update) e teste ponta a ponta aprovado (tarefa criada no celular aparece no PC e o evento chega).
-- Fase 1 (atual): conversa por chat e voz, roteador rápido/inteligente, memória. Etapas feitas: 0 (instalador do Windows com auto-update), 1 (chat de texto), 2 (roteador Groq/Gemini, filtro de sensível, chat formatado). Próximas: 3 (memória) e 4 (voz).
+- Fase 1 (atual): conversa por chat e voz, roteador rápido/inteligente, memória. Etapas feitas: 0 (instalador do Windows com auto-update), 1 (chat de texto), 2 (roteador Groq/Gemini, filtro de sensível, chat formatado), 3 (memória com nós no núcleo) e pesquisa na web sempre (Tavily: 2 buscas básicas = 2 créditos por pergunta, de 1.000 grátis/mês; respostas com fontes citadas). Próxima: 4 (voz; ao pesquisar, falar "Só um momento, Senhor...").
 - Fase 2: paridade com o Néctar (tarefas, lembretes, projetos, hábitos, conhecimento, painel do dia).
 - Fase 3: proatividade (eventos, canais externos, silêncio e teto de avisos).
 - Fase 4: ações no mundo (computador, calendário, e-mail), finanças e saúde opcionais.
