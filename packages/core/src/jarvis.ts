@@ -8,6 +8,8 @@ import type { Fonte, JarvisEvent, Memory, Message, Prioridade, Task } from './ty
 export interface OpcoesJarvis {
   db: BancoLocal;
   sessao?: ArmazenamentoSessao;
+  /** Qual app e versão (ex.: "PC v0.1.12"): a IA usa para saber a própria versão. */
+  versaoApp?: () => string | Promise<string>;
 }
 
 export type EstadoSync = 'parado' | 'sincronizando' | 'offline' | 'erro';
@@ -59,7 +61,7 @@ function lerFontes(bruto: string | null): Fonte[] | null {
 }
 const LOTE = 500;
 
-export function criarJarvis({ db, sessao }: OpcoesJarvis) {
+export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
   const sb: SupabaseClient = criarCliente(sessao);
   const ouvintes = new Set<Ouvinte>();
   const ouvintesEvento = new Set<(e: JarvisEvent) => void>();
@@ -330,7 +332,10 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
     avisar();
     try {
       const { data, error } = await sb.functions.invoke('ia_conversar', {
-        body: { conversation_id: m.conversation_id, message_id: m.id, text: m.content },
+        body: {
+          conversation_id: m.conversation_id, message_id: m.id, text: m.content,
+          app: versaoApp ? await Promise.resolve(versaoApp()).catch(() => '') : '',
+        },
       });
       if (error) throw error;
       if (data?.mensagem) await gravarDoServidor(TABELA_MSG, data.mensagem as Record<string, unknown>);

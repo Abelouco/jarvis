@@ -31,7 +31,7 @@ const responder = (status: number, corpo: unknown) =>
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function promptSistema(rota: Rota, pesquisando = false, nosDeMemoria = 0) {
+function promptSistema(rota: Rota, pesquisando = false, nosDeMemoria = 0, app = '') {
   const agora = new Date().toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
@@ -87,6 +87,8 @@ function promptSistema(rota: Rota, pesquisando = false, nosDeMemoria = 0) {
     '- Cor contínua do núcleo = seu estado: verde-água em repouso; azul pulsando como um coração = pensando; violeta = pesquisando na internet ou agindo; âmbar com respiração lenta = esperando a permissão do dono; vermelho apagado = deu erro.',
     '- O dono pode girar o núcleo em qualquer direção, arrastando com o mouse ou com o dedo.',
     `- Agora o seu núcleo tem ${nosDeMemoria} ${nosDeMemoria === 1 ? 'nó' : 'nós'} de memória.`,
+    '',
+    `Você é um projeto pessoal do dono, feito sob medida para ele (não é o software "Jarvis" de outras empresas, nem o do filme). ${app ? `O dono está falando com você pelo app ${app}; essa é a sua versão atual.` : 'Se perguntarem sua versão, diga que ela aparece no app.'} Sobre você mesmo, responda com o que está aqui, nunca com resultados da web.`,
     `Agora é ${agora} (fuso America/Sao_Paulo). Para pessoas, escreva datas do jeito natural (ex.: "sábado, 23/11", "23 de novembro"); AAAA-MM-DD só em dados técnicos ou tabelas.`,
   ].join('\n');
 }
@@ -95,7 +97,9 @@ function promptSistema(rota: Rota, pesquisando = false, nosDeMemoria = 0) {
  * Mostra embaixo só as fontes citadas na resposta ([n]) e renumera as citações para baterem
  * com essa lista (1, 2, 3...). Se a resposta não citou nenhuma, mostra todas.
  */
-function fontesCitadas(texto: string, todas: Fonte[]): { texto: string; fontes: Fonte[] } {
+function fontesCitadas(original: string, todas: Fonte[]): { texto: string; fontes: Fonte[] } {
+  // Alguns modelos escrevem 【7】 ou ［7］ em vez de [7].
+  const texto = original.replace(/[【［]\s*(\d{1,2})\s*[】］]/g, '[$1]');
   const citadas = new Set([...texto.matchAll(/\[(\d{1,2})\]/g)].map((m) => Number(m[1]) - 1));
   const validas = [...citadas].filter((i) => i >= 0 && i < todas.length).sort((a, b) => a - b);
   if (!validas.length) return { texto, fontes: todas };
@@ -148,7 +152,7 @@ Deno.serve(async (req) => {
   if (erroUser || !u.user) return responder(401, { erro: 'Sessão inválida. Entre de novo.' });
   const userId = u.user.id;
 
-  let corpo: { conversation_id?: string; message_id?: string; text?: string };
+  let corpo: { conversation_id?: string; message_id?: string; text?: string; app?: string };
   try {
     corpo = await req.json();
   } catch {
@@ -165,6 +169,8 @@ Deno.serve(async (req) => {
   }
 
   const sens = avaliarSensibilidade(texto);
+  // De qual app/versão veio a pergunta (ex.: "PC v0.1.12"); só texto curto e simples.
+  const app = String(corpo.app ?? '').replace(/[^\p{L}\p{N} .()+-]/gu, '').slice(0, 60);
 
   // Idempotente: se o app já sincronizou a conversa/mensagem, não duplica.
   const conv = await sb.from('conversations')
@@ -223,7 +229,7 @@ Deno.serve(async (req) => {
     .select('id', { count: 'exact', head: true }).is('deleted_at', null);
   const sistemaPara = (provedor: NomeProvedor, pesquisando = false) => {
     const bloco = blocoMemoria(memorias, provedor === 'gemini' || pesquisando);
-    return promptSistema(rota, pesquisando, nosDeMemoria ?? 0) + (bloco ? `\n\n${bloco}` : '');
+    return promptSistema(rota, pesquisando, nosDeMemoria ?? 0, app) + (bloco ? `\n\n${bloco}` : '');
   };
   const mensagensPara = (provedor: NomeProvedor): MensagemIA[] => [
     { role: 'system', content: sistemaPara(provedor) },

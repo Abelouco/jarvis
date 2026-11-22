@@ -1,4 +1,5 @@
 import Database from '@tauri-apps/plugin-sql';
+import { getVersion } from '@tauri-apps/api/app';
 import { criarJarvis, type BancoLocal } from '@jarvis/core';
 
 // Arquivo jarvis.db na pasta de dados do app (AppData do Windows).
@@ -14,4 +15,8 @@ const db: BancoLocal = {
 };
 
 /** Instância única no PC. A sessão de login fica no localStorage da janela. */
-export const jarvis = criarJarvis({ db, sessao: window.localStorage });
+export const jarvis = criarJarvis({
+  db,
+  sessao: window.localStorage,
+  versaoApp: async () => `PC v${await getVersion()}`,
+});

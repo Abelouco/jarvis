@@ -52,6 +52,7 @@ test('rota: quase tudo vai pela pesquisa (padrão)', () => {
     'Explique como funciona um motor a combustão',
     'Como vejo a versão do Node instalada no meu PC?',
     'O que são partículas subatômicas?',
+    'Quem criou o Python?',
     'Qual o tamanho da esfera celeste?',
   ]) {
     assert.equal(escolherRota(t), 'pesquisa', t);
@@ -62,6 +63,7 @@ test('rota: conversa trivial e perguntas sobre o J.A.R.V.I.S. vão sem busca', (
   for (const t of [
     'Quem é você?', 'Oi', 'Que horas são?', 'Obrigado!', 'Meu nome é Abel', 'Bom dia, tudo bem?', 'Faz sentido',
     'O que são esses nós em volta do seu núcleo?', 'O que significa cada pulso?', 'Por que a esfera ficou azul?',
+    'Qual a versão do Jarvis?', 'Qual é a sua versão atual?', 'Quem te criou?',
   ]) {
     assert.equal(escolherRota(t), 'rapido', t);
   }

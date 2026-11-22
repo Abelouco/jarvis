@@ -23,7 +23,7 @@ const NOME_PROPRIO = /\s(?:[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}\d'’-]+\s+){1,4}[A
 
 // Não precisa de busca:
 const TRIVIAL = /^(oi+|ola|opa|e ai|eai|hey|bom dia|boa tarde|boa noite|obrigad\w*|valeu|vlw|ok|okay|beleza|blz|show|perfeito|otimo|legal|tudo bem|td bem|tchau|ate mais|ate logo|sim|nao|isso|entendi|certo)\b/;
-const SOBRE_JARVIS = /\b(quem e voce|quem (e|sao) vc|seu nome|o que voce (faz|sabe|pode)|voce (consegue|pode|sabe|lembra)|o que significa jarvis|j\.?a\.?r\.?v\.?i\.?s\.? significa)\b/;
+const SOBRE_JARVIS = /\b(quem e voce|quem (e|sao) vc|seu nome|o que voce (faz|sabe|pode)|voce (consegue|pode|sabe|lembra)|o que significa jarvis|j\.?a\.?r\.?v\.?i\.?s\.? significa|sua versao|versao (atual )?(do |de )?(jarvis|voce|vc|app|aplicativo)|que versao (voce|vc|e essa|esta)|voce esta (atualizado|na versao)|quem te (criou|fez|programou)|como (voce|vc) funciona|do que (voce|vc) e feito)\b/;
 // Perguntas sobre o núcleo 3D do próprio J.A.R.V.I.S. (não sobre física em geral).
 const SOBRE_O_NUCLEO = /\b(nucleo|seu cerebro|(esses?|essas?|os|as|cada) (nos|no|pulsos?|filamentos?|aneis|anel|linhas|pontos|particulas)\b|nos de memoria|por que (a esfera|o nucleo|voce) (ficou|esta|mudou|piscou|pulsou)|(ficou|esta|mudou para) (azul|violeta|roxo|roxa|ambar|vermelho|vermelha|verde)|essa cor)\b/;
 const AGORA = /\b(que horas|que dia e hoje|data de hoje|que dia da semana)\b/;
