@@ -13,6 +13,9 @@ interface Acoes {
 }
 import { C, MONO } from './tema';
 
+/** Fontes da resposta que está sendo desenhada (as citações [n] apontam para elas). */
+let fontesAtuais: { titulo: string; url: string }[] = [];
+
 function inline(f: Inline[], chave = ''): ReactNode[] {
   return f.map((x, i) => {
     const k = `${chave}${i}`;
@@ -24,6 +27,12 @@ function inline(f: Inline[], chave = ''): ReactNode[] {
       case 'risc': return <Text key={k} style={s.risc}>{inline(x.f, k)}</Text>;
       case 'cod': return <Text key={k} style={s.codInline}>{` ${x.v} `}</Text>;
       case 'link': return <Text key={k} style={s.link} onPress={() => void Linking.openURL(x.url)}>{inline(x.f, k)}</Text>;
+      case 'cita': {
+        const fonte = fontesAtuais[x.n - 1];
+        return fonte
+          ? <Text key={k} style={s.cita} onPress={() => void Linking.openURL(fonte.url)}>{` ${x.n} `}</Text>
+          : null;
+      }
     }
   });
 }
@@ -174,7 +183,8 @@ function BlocoMd({ b, chave, acoes }: { b: Bloco; chave: string; acoes?: Acoes }
   }
 }
 
-export function RespostaMd({ texto, aoEscolher }: { texto: string } & Acoes) {
+export function RespostaMd({ texto, aoEscolher, fontes = [] }: { texto: string; fontes?: { titulo: string; url: string }[] } & Acoes) {
+  fontesAtuais = fontes;
   const blocos = lerMarkdown(texto);
   // O cartão de opções sempre vai no fim da resposta.
   const ordenados = [...blocos.filter((b) => b.t !== 'opcoes'), ...blocos.filter((b) => b.t === 'opcoes')];
@@ -189,6 +199,7 @@ const s = StyleSheet.create({
   risc: { textDecorationLine: 'line-through', color: C.texto2 },
   codInline: { fontFamily: MONO, fontSize: 13, color: '#cfeeff', backgroundColor: 'rgba(127,216,255,0.1)' },
   link: { color: C.ciano, textDecorationLine: 'underline' },
+  cita: { color: C.ciano, fontFamily: MONO, fontSize: 11, backgroundColor: 'rgba(127,216,255,0.14)' },
   t1: { fontSize: 19, fontWeight: '700', marginTop: 8, marginBottom: 8 },
   t2: { fontSize: 17, fontWeight: '700', marginTop: 14, marginBottom: 8, paddingBottom: 5, borderBottomWidth: 1, borderBottomColor: C.borda },
   t3: { fontSize: 15.5, fontWeight: '700', color: C.ciano, marginTop: 12, marginBottom: 6 },

@@ -14,6 +14,7 @@ export type Inline =
   | { t: 'risc'; f: Inline[] }
   | { t: 'cod'; v: string }
   | { t: 'link'; f: Inline[]; url: string }
+  | { t: 'cita'; n: number }
   | { t: 'quebra' };
 
 export type Alinhamento = 'e' | 'c' | 'd';
@@ -269,6 +270,9 @@ export function lerInline(s: string): Inline[] {
     if (c === '[') {
       const m = s.slice(i).match(/^\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/);
       if (m) { soltar(); out.push({ t: 'link', f: lerInline(m[1]!), url: m[2]! }); i += m[0].length; continue; }
+      // Citação de fonte da pesquisa: [1], [2]...
+      const cita = s.slice(i).match(/^\[(\d{1,2})\](?!\()/);
+      if (cita) { soltar(); out.push({ t: 'cita', n: Number(cita[1]) }); i += cita[0].length; continue; }
     }
     buf += c;
     i++;
@@ -282,6 +286,7 @@ export function textoPuro(f: Inline[]): string {
   return f.map((x) => {
     switch (x.t) {
       case 'txt': case 'cod': return x.v;
+      case 'cita': return `[${x.n}]`;
       case 'quebra': return '\n';
       case 'link': return textoPuro(x.f);
       default: return textoPuro(x.f);

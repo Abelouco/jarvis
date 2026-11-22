@@ -23,6 +23,12 @@ function inline(f: Inline[]): string {
       case 'risc': return `<s>${inline(x.f)}</s>`;
       case 'cod': return `<code>${esc(x.v)}</code>`;
       case 'link': return `<a href="${esc(x.url)}" target="_blank" rel="noreferrer noopener">${inline(x.f)}</a>`;
+      case 'cita': {
+        const fonte = fontesAtuais[x.n - 1];
+        return fonte
+          ? `<button type="button" class="md-cita" data-link="${esc(fonte.url)}" title="${esc(fonte.titulo || fonte.url)}">${x.n}</button>`
+          : '';
+      }
     }
   }).join('');
 }
@@ -34,6 +40,8 @@ function guardar(texto: string): number {
 
 /** A resposta é a última da conversa? (só nela o cartão de opções fica clicável) */
 let opcoesAtivas = false;
+/** Fontes da resposta que está sendo desenhada (as citações [n] apontam para elas). */
+let fontesAtuais: { titulo: string; url: string }[] = [];
 
 function bloco(b: Bloco): string {
   switch (b.t) {
@@ -87,8 +95,9 @@ function bloco(b: Bloco): string {
 }
 
 /** HTML de uma resposta da IA. `ultima`: só a última resposta tem as opções clicáveis. */
-export function respostaHtml(texto: string, ultima = false): string {
+export function respostaHtml(texto: string, ultima = false, fontes: { titulo: string; url: string }[] = []): string {
   opcoesAtivas = ultima;
+  fontesAtuais = fontes;
   const blocos = lerMarkdown(texto);
   // O cartão de opções sempre vai no fim da resposta.
   const ordenados = [...blocos.filter((b) => b.t !== 'opcoes'), ...blocos.filter((b) => b.t === 'opcoes')];

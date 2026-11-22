@@ -58,7 +58,7 @@ export function Conversa({ aoCrescer }: { aoCrescer: () => void }) {
               aoEscolher={i === msgs.length - 1 && !estado.pensando ? (t) => void jarvis.chat.enviar(t) : undefined}
             />
           ))}
-          {estado.pensando && <Pensando />}
+          {estado.pensando && <Pensando pesquisando={jarvis.ia.estado() === 'pesquisando'} />}
         </View>
       )}
 
@@ -93,7 +93,7 @@ function Balao({ m, aoEscolher }: { m: Message; aoEscolher?: (opcao: string) => 
   return (
     <View>
       <View style={s.ele}>
-        <RespostaMd texto={m.content} aoEscolher={aoEscolher} />
+        <RespostaMd texto={m.content} aoEscolher={aoEscolher} fontes={m.sources ?? []} />
         {m.sources?.length ? (
           <View style={s.fontes}>
             <Text style={s.fontesRotulo}>FONTES</Text>
@@ -115,7 +115,7 @@ function Balao({ m, aoEscolher }: { m: Message; aoEscolher?: (opcao: string) => 
   );
 }
 
-function Pensando() {
+function Pensando({ pesquisando }: { pesquisando: boolean }) {
   const v = useRef(new Animated.Value(0.3)).current;
   useEffect(() => {
     const anim = Animated.loop(Animated.sequence([
@@ -128,6 +128,7 @@ function Pensando() {
   return (
     <View style={[s.ele, { flexDirection: 'row', gap: 5, paddingVertical: 10 }]}>
       {[0, 1, 2].map((i) => <Animated.View key={i} style={[s.ponto, { opacity: v }]} />)}
+      {pesquisando && <Animated.Text style={[s.pesquisando, { opacity: v }]}>Pesquisando na internet…</Animated.Text>}
     </View>
   );
 }
@@ -154,6 +155,7 @@ const s = StyleSheet.create({
   copiarTudoTxt: { color: C.apagado, fontSize: 12 },
   ele: { alignSelf: 'stretch', maxWidth: '100%', paddingLeft: 12, paddingVertical: 2, borderLeftWidth: 2, borderLeftColor: C.cianoForte },
   txt: { color: C.texto, fontSize: 15, lineHeight: 22 },
+  pesquisando: { marginLeft: 6, color: '#b58cff', fontFamily: MONO, fontSize: 11.5 },
   ponto: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.ciano },
   erro: { color: C.erro, fontSize: 13, marginTop: 14 },
   campoCaixa: {

@@ -12,6 +12,7 @@ import {
   conversar, pesquisarGemini, pesquisarGroq, temChave, type Fonte, type MensagemIA, type NomeProvedor,
 } from './provedores.ts';
 import { aprender, blocoMemoria, lembrar } from './memoria.ts';
+import { blocoTrechos, buscar, fontesDe, temBusca } from './busca.ts';
 
 // Trabalho depois da resposta (aprender), sem atrasar o chat. Existe no runtime do Supabase.
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
@@ -47,10 +48,10 @@ function promptSistema(rota: Rota, pesquisando = false) {
     ...(pesquisando
       ? [
         '',
-        'PESQUISA: use a busca na web antes de responder.',
-        '- Responda SOMENTE com o que as fontes encontradas confirmam. Não complete lacunas com suposições.',
-        '- Confirme cada informação importante em pelo menos 2 fontes independentes. Se só achar em uma, diga "segundo uma fonte". Se as fontes divergirem, mostre a divergência.',
-        '- Se não encontrar a resposta, diga claramente que não encontrou, em vez de chutar.',
+        'PESQUISA: a resposta deve vir dos resultados da pesquisa na web (no fim deste texto ou da sua busca).',
+        '- Responda SOMENTE com o que os resultados confirmam. Não complete lacunas com conhecimento próprio nem suposições.',
+        '- Confirme cada informação importante em pelo menos 2 fontes independentes; cite os números das fontes entre colchetes no fim da frase, ex.: [1][3]. Se só uma fonte disser, escreva "segundo uma fonte [n]". Se as fontes divergirem, mostre a divergência.',
+        '- Se os resultados não responderem a pergunta, diga claramente que não encontrou nas fontes, em vez de chutar, e sugira como o dono pode verificar.',
         '- Para jogos e produtos, use os nomes exatos de itens, menus e materiais como aparecem nas fontes (e o nome em inglês entre parênteses quando o jogo for em inglês).',
         '- Não escreva lista de links nem seção de fontes: o app mostra as fontes embaixo da resposta.',
       ]
@@ -78,6 +79,24 @@ function promptSistema(rota: Rota, pesquisando = false) {
     'Você tem memória de longo prazo: o app guarda sozinho fatos e preferências do dono depois de cada conversa, e o que você já sabe aparece abaixo. Se o dono pedir para lembrar ou esquecer algo, confirme em uma frase que vai fazer isso.',
     `Agora é ${agora} (fuso America/Sao_Paulo). Para pessoas, escreva datas do jeito natural (ex.: "sábado, 23/11", "23 de novembro"); AAAA-MM-DD só em dados técnicos ou tabelas.`,
   ].join('\n');
+}
+
+/**
+ * Mostra embaixo só as fontes citadas na resposta ([n]) e renumera as citações para baterem
+ * com essa lista (1, 2, 3...). Se a resposta não citou nenhuma, mostra todas.
+ */
+function fontesCitadas(texto: string, todas: Fonte[]): { texto: string; fontes: Fonte[] } {
+  const citadas = new Set([...texto.matchAll(/\[(\d{1,2})\]/g)].map((m) => Number(m[1]) - 1));
+  const validas = [...citadas].filter((i) => i >= 0 && i < todas.length).sort((a, b) => a - b);
+  if (!validas.length) return { texto, fontes: todas };
+  const novo = new Map(validas.map((i, k) => [i, k + 1]));
+  return {
+    texto: texto.replace(/\[(\d{1,2})\]/g, (_m, n) => {
+      const k = novo.get(Number(n) - 1);
+      return k ? `[${k}]` : '';
+    }),
+    fontes: validas.map((i) => todas[i]!),
+  };
 }
 
 const hojeSP = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
@@ -208,8 +227,40 @@ Deno.serve(async (req) => {
   let resposta: { provedor: NomeProvedor; texto: string; modelo: string; fontes?: Fonte[] } | null = null;
   let rotaUsada: Rota = rota;
 
-  // Pesquisa na web (nunca com assunto sensível: a pergunta iria para a busca).
-  if (rota === 'pesquisa' && !conversaSensivel) {
+  // Pesquisa na web pelo Tavily (nunca com assunto sensível: a pergunta iria para a busca).
+  if (rota === 'pesquisa' && !conversaSensivel && temBusca()) {
+    // Avisa os aparelhos: o chat mostra "Pesquisando na internet…" e o núcleo fica violeta.
+    await sb.from('events').insert({ kind: 'searching', payload: { conversation_id: corpo.conversation_id } });
+    const trechos = await buscar(conversa).catch((e) => {
+      erros.push(`busca: ${e instanceof Error ? e.message : e}`);
+      return [];
+    });
+    if (trechos.length) {
+      for (const provedor of ['groq', 'gemini'] as NomeProvedor[]) {
+        if (!temChave(provedor) || bloqueadoAte.get(provedor)) continue;
+        const r = await conversar(provedor, [
+          { role: 'system', content: `${sistemaPara(provedor, true)}\n\n${blocoTrechos(trechos)}` },
+          ...conversa,
+        ], { temperatura: 0.2, maxTokens: 1800 });
+        if (r.ok) {
+          const { texto: comCitacoes, fontes } = fontesCitadas(r.texto, fontesDe(trechos));
+          resposta = { provedor, texto: comCitacoes, modelo: r.modelo, fontes };
+          await registrarUso(sb, userId, provedor, r.tokens);
+          break;
+        }
+        erros.push(r.erro);
+        console.warn('ia_conversar: síntese da pesquisa falhou', { provedor, erro: r.erro });
+        if (r.limite) {
+          await bloquear(sb, userId, provedor, r.esperarSeg);
+          bloqueadoAte.set(provedor, new Date(Date.now() + r.esperarSeg * 1000).toISOString());
+        }
+      }
+    } else {
+      console.warn('ia_conversar: pesquisa sem resultados', { erros });
+    }
+  }
+  // Sem Tavily: tenta a busca embutida dos provedores (hoje indisponível no plano grátis).
+  if (!resposta && rota === 'pesquisa' && !conversaSensivel && !temBusca()) {
     const tentativas: [NomeProvedor, () => Promise<import('./provedores.ts').Resultado>][] = [
       ['gemini', () => pesquisarGemini(sistemaPara('gemini', true), conversa)],
       ['groq', () => pesquisarGroq(sistemaPara('groq', true), conversa)],

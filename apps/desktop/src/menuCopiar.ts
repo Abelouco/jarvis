@@ -50,31 +50,25 @@ export function ligarMenuCopiar(chat: HTMLElement, respostaInteira: (msg: HTMLEl
     const selecao = getSelection()?.toString().trim();
     if (selecao) itens.push({ rotulo: 'Copiar seleção', texto: selecao });
 
-    // Trecho destacado (código inline): copia só ele, como no Claude.
-    const inline = alvo.closest<HTMLElement>('code');
-    if (inline && !inline.closest('pre')) {
-      destacado = inline;
-      itens.unshift({ rotulo: `Copiar “${(inline.textContent ?? '').slice(0, 40)}${(inline.textContent ?? '').length > 40 ? '…' : ''}”`, texto: inline.textContent ?? '' });
+    // Só o que está EM DESTAQUE, como no Claude: o trecho em caixinha (código inline) ou em
+    // negrito sob o mouse. Nada de copiar o parágrafo inteiro.
+    const realce = alvo.closest<HTMLElement>('code, strong');
+    if (realce && !realce.closest('pre') && msg.contains(realce)) {
+      const texto = (realce.textContent ?? '').trim();
+      if (texto) {
+        destacado = realce;
+        itens.unshift({ rotulo: `Copiar “${texto.length > 40 ? `${texto.slice(0, 40)}…` : texto}”`, texto });
+      }
     }
 
     const codigo = alvo.closest<HTMLElement>('.md-codigo, .md-comando');
     const cartaoTexto = alvo.closest<HTMLElement>('.md-texto');
-    const trecho = alvo.closest<HTMLElement>('li, p, td, th, blockquote, h2, h3, h4, h5, .texto');
     if (codigo) {
       destacado = codigo;
       itens.push({ rotulo: codigo.classList.contains('md-comando') ? 'Copiar comando' : 'Copiar código', texto: textoDe(codigo.querySelector('pre') ?? codigo) });
     } else if (cartaoTexto) {
       destacado = cartaoTexto;
       itens.push({ rotulo: 'Copiar texto do cartão', texto: textoDe(cartaoTexto.querySelector('.md-texto-corpo') ?? cartaoTexto) });
-    } else if (trecho && msg.contains(trecho)) {
-      destacado ??= trecho.closest<HTMLElement>('tr') ?? trecho;
-      const linhaTabela = trecho.closest('tr');
-      itens.push({
-        rotulo: linhaTabela ? 'Copiar esta linha' : trecho.matches('li') ? 'Copiar este item' : 'Copiar este trecho',
-        texto: linhaTabela
-          ? Array.from(linhaTabela.children).map((c) => textoDe(c)).join(" | ")
-          : textoDe(trecho),
-      });
     }
 
     if (msg.dataset.r === 'assistant') {

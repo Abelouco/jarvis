@@ -3,6 +3,7 @@
 // Se achar, mostra uma faixa discreta; a instalação só começa quando o dono clica.
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
+import { saveWindowState, StateFlags } from '@tauri-apps/plugin-window-state';
 
 const CINCO_MINUTOS = 5 * 60 * 1000;
 const UM_MINUTO = 60 * 1000;
@@ -20,6 +21,8 @@ function mostrar(update: Update) {
   botao.addEventListener('click', async () => {
     botao.disabled = true;
     instalando = true;
+    // A instalação fecha o app: guarda antes o monitor, a posição e o tamanho da janela.
+    await saveWindowState(StateFlags.ALL).catch(() => {});
     let total = 0;
     let baixado = 0;
     try {

@@ -15,7 +15,8 @@
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-process": "^2.4.0",
     "@tauri-apps/plugin-sql": "^2.6.0",
-    "@tauri-apps/plugin-updater": "^2.14.1"
+    "@tauri-apps/plugin-updater": "^2.14.1",
+    "@tauri-apps/plugin-window-state": "^2.5.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

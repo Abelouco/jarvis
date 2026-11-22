@@ -459,3 +459,14 @@ tr.md-destaque > td { background: rgba(60, 196, 255, 0.08); }
 .md code:not(pre code):hover { background: rgba(127, 216, 255, 0.16); border-color: var(--borda-forte); }
 .md code.md-destaque { outline-offset: 1px; }
 .saudacao .resumo:empty { display: none; }
+
+/* pesquisando e citações */
+.msg.pensando { align-items: center; }
+.msg.pensando span { margin-left: 8px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.04em; color: #b58cff; animation: piscar 1.6s infinite; }
+.md-cita { display: inline-grid; place-items: center; min-width: 17px; height: 17px; margin: 0 1px; padding: 0 4px; vertical-align: 2px; border: 0; border-radius: 5px; font-family: var(--mono); font-size: 10px; line-height: 1; color: var(--ciano); background: rgba(127, 216, 255, 0.14); cursor: pointer; }
+.md-cita:hover { background: rgba(127, 216, 255, 0.3); color: #fff; }
+
+/* negrito também é trecho em destaque copiável */
+.md strong { cursor: context-menu; border-radius: 4px; transition: background 0.15s; }
+.md strong:hover { background: rgba(127, 216, 255, 0.1); }
+.md strong.md-destaque, .md code.md-destaque { outline: 1px solid var(--ciano); outline-offset: 2px; background: rgba(60, 196, 255, 0.16); }

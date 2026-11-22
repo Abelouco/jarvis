@@ -68,6 +68,11 @@ test('cerca sem fechar (resposta cortada) não quebra', () => {
   assert.deepEqual(b.map((x) => x.t), ['par', 'codigo']);
 });
 
+test('citações de fonte [n]', () => {
+  const f = lerInline('Use madeira [1][3] e corda.');
+  assert.deepEqual(f.map((x) => x.t), ['txt', 'cita', 'cita', 'txt']);
+});
+
 test('citação', () => {
   const b = lerMarkdown('> **Atenção:** confira o saldo\n> antes de pagar');
   assert.equal(b[0]!.t, 'citacao');

@@ -29,7 +29,7 @@ export default function App() {
     const a = jarvis.aoMudar(() => {
       void ver();
       const ia = jarvis.ia.estado();
-      setEstadoIA(ia !== 'repouso' ? ia : jarvis.chat.estado().erro ? 'erro' : 'repouso');
+      setEstadoIA(ia === 'pesquisando' ? 'agindo' : ia !== 'repouso' ? ia : jarvis.chat.estado().erro ? 'erro' : 'repouso');
     });
     const b = jarvis.aoEvento((e) => {
       const conversa = e.entity_type === 'messages' || e.entity_type === 'conversations';

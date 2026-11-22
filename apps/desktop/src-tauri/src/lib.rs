@@ -14,6 +14,8 @@ pub fn run() {
                 let _ = janela.set_focus();
             }
         }))
+        // Lembra posição, tamanho, monitor e se estava maximizada (restaura ao abrir).
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_sql::Builder::default().build())
         // Auto-update: baixa do GitHub Releases e confere a assinatura.
         .plugin(tauri_plugin_updater::Builder::new().build())

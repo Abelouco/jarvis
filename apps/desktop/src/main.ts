@@ -473,7 +473,7 @@ function itemMensagem(m: Message, nova: boolean, ultima: boolean) {
     return `<div class="${classe}" data-r="user"><div class="texto">${esc(m.content)}</div></div>`;
   }
   // O botão fica fora da mensagem, logo abaixo dela.
-  return `<div class="${classe}" data-r="assistant"><div class="md">${respostaHtml(m.content, ultima)}</div>${fontesHtml(m)}</div>`
+  return `<div class="${classe}" data-r="assistant"><div class="md">${respostaHtml(m.content, ultima, m.sources ?? [])}</div>${fontesHtml(m)}</div>`
     + `<div class="msg-acoes${nova ? ' nova' : ''}">${botaoCopiarResposta(m.content)}</div>`;
 }
 
@@ -481,7 +481,7 @@ async function desenharChat() {
   const msgs = await jarvis.chat.mensagens();
   if (tela !== 'painel') return;
   const { pensando, erro } = jarvis.chat.estado();
-  const assinatura = `${pensando}|${erro}|` + msgs.map((m) => `${m.id}:${m.content.length}:${m.sources?.length ?? 0}`).join(',');
+  const assinatura = `${pensando}|${jarvis.ia.estado()}|${erro}|` + msgs.map((m) => `${m.id}:${m.content.length}:${m.sources?.length ?? 0}`).join(',');
   if (assinatura === assinaturaChat) return;
   assinaturaChat = assinatura;
 
@@ -490,7 +490,9 @@ async function desenharChat() {
   textosCopiaveis.length = 0;
   chat.innerHTML = msgs.length || pensando
     ? msgs.map((m, i) => itemMensagem(m, !primeiraVez && !mensagensVistas.has(m.id), i === msgs.length - 1 && !pensando)).join('')
-      + (pensando ? `<div class="msg pensando nova" data-r="assistant"><i></i><i></i><i></i></div>` : '')
+      + (pensando
+        ? `<div class="msg pensando nova" data-r="assistant"><i></i><i></i><i></i>${jarvis.ia.estado() === 'pesquisando' ? '<span>Pesquisando na internet…</span>' : ''}</div>`
+        : '')
     : `<div class="vazio"><strong>Às suas ordens.</strong>Pergunte qualquer coisa.</div>`;
   mensagensVistas = new Set(msgs.map((m) => m.id));
   $<HTMLParagraphElement>('#erro-chat').textContent = erro ?? '';
@@ -551,6 +553,7 @@ jarvis.aoMudar(() => {
 // verde = algo criado, vermelho = algo apagado, neutro = mudança ou pensamento.
 function estadoDoNucleo() {
   const ia = jarvis.ia.estado();
+  if (ia === 'pesquisando') return 'agindo';
   if (ia !== 'repouso') return ia;
   return jarvis.chat.estado().erro ? 'erro' : 'repouso';
 }

@@ -36,7 +36,7 @@ test('não sensível: conversa comum', () => {
   }
 });
 
-test('rota: fatos do mundo vão pela pesquisa', () => {
+test('rota: quase tudo vai pela pesquisa (padrão)', () => {
   for (const t of [
     'Como fazer uma vara de pesca no jogo Medieval Dynasty?',
     'Quanto custa um PlayStation 5 hoje?',
@@ -45,29 +45,29 @@ test('rota: fatos do mundo vão pela pesquisa', () => {
     'Pesquise para mim os horários do metrô',
     'Como craftar uma picareta no Minecraft?',
     'O que é o Stardew Valley?',
+    'Qual a capital da França?',
+    'Compare Python e TypeScript para um app',
+    'Por que o céu é azul?',
+    'Qual é a melhor forma de estudar inglês?',
+    'Explique como funciona um motor a combustão',
+    'Como vejo a versão do Node instalada no meu PC?',
   ]) {
     assert.equal(escolherRota(t), 'pesquisa', t);
   }
 });
 
-test('rota: perguntas curtas vão pelo caminho rápido', () => {
-  for (const t of ['Quem é você?', 'Oi', 'Que horas são?', 'Qual a capital da França?', 'Obrigado!', 'Meu nome é Abel']) {
+test('rota: conversa trivial e perguntas sobre o J.A.R.V.I.S. vão sem busca', () => {
+  for (const t of ['Quem é você?', 'Oi', 'Que horas são?', 'Obrigado!', 'Meu nome é Abel', 'Bom dia, tudo bem?', 'Faz sentido']) {
     assert.equal(escolherRota(t), 'rapido', t);
   }
 });
 
-test('rota: pedidos de raciocínio vão pelo caminho inteligente', () => {
+test('rota: assuntos do dono e textos para escrever vão pelo raciocínio, sem busca', () => {
   for (const t of [
-    'Explique como funciona um motor a combustão',
     'Me ajuda a planejar minha semana',
-    'Compare Python e TypeScript para um app',
-    'Quais os prós e contras de morar sozinho?',
-    'Escreva um e-mail pedindo reunião',
-    'Por que o céu é azul?',
-    'Qual é a melhor forma de estudar inglês?',
-    'O que é isso? E para que serve?',
-    'a'.repeat(301),
+    'Escreva um e-mail pedindo reunião e organize os tópicos',
+    'Organize minha rotina para estudar à noite',
   ]) {
-    assert.equal(escolherRota(t), 'inteligente', t.slice(0, 40));
+    assert.equal(escolherRota(t), 'inteligente', t);
   }
 });

@@ -13,7 +13,7 @@ export interface OpcoesJarvis {
 export type EstadoSync = 'parado' | 'sincronizando' | 'offline' | 'erro';
 
 /** O que a IA está fazendo agora (vai ganhar 'agindo' e 'permissao' com as ferramentas). */
-export type EstadoIA = 'repouso' | 'pensando' | 'agindo' | 'permissao';
+export type EstadoIA = 'repouso' | 'pensando' | 'pesquisando' | 'agindo' | 'permissao';
 
 type Ouvinte = () => void;
 
@@ -484,8 +484,12 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
           pensandoRemotoAte = Date.now() + 60_000;
           if (relogioRemoto) clearTimeout(relogioRemoto);
           relogioRemoto = setTimeout(avisar, 60_500);
-        } else if (e.kind === 'created' && e.entity_type === 'messages' && pensandoRemotoAte) {
+        } else if (e.kind === 'searching') {
+          // A IA está pesquisando na internet (em qualquer aparelho).
+          pesquisandoAte = Date.now() + 60_000;
+        } else if (e.kind === 'created' && e.entity_type === 'messages') {
           pensandoRemotoAte = 0;
+          pesquisandoAte = 0;
         }
         const entraNaLista = !!e.entity_type && ENTIDADES_ATIVIDADE.includes(e.entity_type);
         if (entraNaLista && !eventosRecentes.some((x) => x.id === e.id)) {
@@ -503,11 +507,14 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
 
   // ---------- estado da IA (o que o cérebro mostra) ----------
   let pensandoRemotoAte = 0;
+  let pesquisandoAte = 0;
   let relogioRemoto: ReturnType<typeof setTimeout> | null = null;
   const ia = {
     /** 'pensando' enquanto este aparelho ou outro espera uma resposta da IA. */
     estado(): EstadoIA {
-      return pensando || pensandoRemotoAte > Date.now() ? 'pensando' : 'repouso';
+      const pensandoAgora = pensando || pensandoRemotoAte > Date.now();
+      if (pensandoAgora && pesquisandoAte > Date.now()) return 'pesquisando';
+      return pensandoAgora ? 'pensando' : 'repouso';
     },
   };
 
