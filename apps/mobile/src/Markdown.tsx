@@ -3,7 +3,14 @@
 // precisa do expo-clipboard, que entra no próximo .apk (junto com a voz).
 import { Fragment, useState, type ReactNode } from 'react';
 import { Linking, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
-import { lerMarkdown, type Bloco, type Inline } from '@jarvis/core';
+import { lerMarkdown, type Bloco, type Inline, type Shell } from '@jarvis/core';
+
+const NOME_SHELL: Record<Shell, string> = { powershell: 'PowerShell', cmd: 'Prompt de comando', bash: 'Terminal' };
+
+interface Acoes {
+  /** Só a última resposta tem as opções clicáveis. */
+  aoEscolher?: (opcao: string) => void;
+}
 import { C, MONO } from './tema';
 
 function inline(f: Inline[], chave = ''): ReactNode[] {
@@ -73,7 +80,7 @@ function CartaoTexto({ titulo, texto }: { titulo: string; texto: string }) {
   );
 }
 
-function BlocoMd({ b, chave }: { b: Bloco; chave: string }): ReactNode {
+function BlocoMd({ b, chave, acoes }: { b: Bloco; chave: string; acoes?: Acoes }): ReactNode {
   switch (b.t) {
     case 'titulo':
       return <Text style={[s.txt, s[`t${b.nivel}` as 't1']]} selectable>{inline(b.f)}</Text>;
@@ -132,12 +139,46 @@ function BlocoMd({ b, chave }: { b: Bloco; chave: string }): ReactNode {
       );
     case 'texto':
       return <CartaoTexto titulo={b.titulo} texto={b.texto} />;
+    case 'comando':
+      // No celular não dá para rodar no PC: só copiar.
+      return (
+        <View style={[s.cartao, { borderColor: 'rgba(127,216,255,0.22)' }]}>
+          <View style={s.cab}>
+            <Text style={s.cabTitulo}>{NOME_SHELL[b.shell]}</Text>
+            <Botao rotulo="Copiar" aoTocar={() => compartilharTexto(b.texto)} />
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <Text style={s.codigo} selectable>{b.texto}</Text>
+          </ScrollView>
+        </View>
+      );
+    case 'opcoes': {
+      const ativas = !!acoes?.aoEscolher;
+      return (
+        <View style={[s.opcoes, !ativas && { opacity: 0.55 }]}>
+          {b.pergunta ? <Text style={s.opcoesPergunta}>{b.pergunta}</Text> : null}
+          {b.itens.map((it, i) => (
+            <Pressable
+              key={i}
+              disabled={!ativas}
+              onPress={() => acoes?.aoEscolher?.(it)}
+              style={({ pressed }) => [s.opcao, pressed && { backgroundColor: 'rgba(60,196,255,0.14)', borderColor: C.bordaForte }]}
+            >
+              <Text style={s.opcaoN}>{i + 1}</Text>
+              <Text style={s.opcaoTxt}>{it}</Text>
+            </Pressable>
+          ))}
+        </View>
+      );
+    }
   }
 }
 
-export function RespostaMd({ texto }: { texto: string }) {
+export function RespostaMd({ texto, aoEscolher }: { texto: string } & Acoes) {
   const blocos = lerMarkdown(texto);
-  return <View>{blocos.map((b, i) => <BlocoMd key={i} b={b} chave={`${i}`} />)}</View>;
+  // O cartão de opções sempre vai no fim da resposta.
+  const ordenados = [...blocos.filter((b) => b.t !== 'opcoes'), ...blocos.filter((b) => b.t === 'opcoes')];
+  return <View>{ordenados.map((b, i) => <BlocoMd key={i} b={b} chave={`${i}`} acoes={{ aoEscolher }} />)}</View>;
 }
 
 const s = StyleSheet.create({
@@ -178,6 +219,20 @@ const s = StyleSheet.create({
   codigo: { fontFamily: MONO, fontSize: 12.5, lineHeight: 19, color: '#d6ecff', padding: 14 },
   botao: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
   botaoTxt: { color: C.texto2, fontSize: 12, fontWeight: '600' },
+  opcoes: {
+    marginTop: 10, marginBottom: 4, padding: 12, gap: 6, borderRadius: 14, borderWidth: 1, borderColor: C.bordaForte,
+    backgroundColor: 'rgba(60,196,255,0.06)',
+  },
+  opcoesPergunta: { color: C.texto, fontWeight: '700', fontSize: 14, marginBottom: 4, marginLeft: 2 },
+  opcao: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11,
+    borderRadius: 10, borderWidth: 1, borderColor: C.borda, backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  opcaoN: {
+    width: 22, height: 22, borderRadius: 6, textAlign: 'center', textAlignVertical: 'center', lineHeight: 22,
+    color: C.ciano, fontFamily: MONO, fontSize: 11.5, backgroundColor: 'rgba(127,216,255,0.1)', overflow: 'hidden',
+  },
+  opcaoTxt: { flex: 1, color: C.texto, fontSize: 14, lineHeight: 19 },
   sobreposto: { flex: 1, backgroundColor: 'rgba(2,4,8,0.8)', justifyContent: 'center', padding: 18 },
   janela: { maxHeight: '86%', borderRadius: 16, borderWidth: 1, borderColor: C.bordaForte, backgroundColor: '#0a1220', overflow: 'hidden' },
 });

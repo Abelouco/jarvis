@@ -11,7 +11,7 @@
     </div>
     <script type="module">
       import './src/estilo.css';
-      import { respostaHtml, botaoCopiarResposta, textosCopiaveis, copiar, marcarCopiado, abrirExpandido } from './src/markdown.ts';
+      import { respostaHtml, botaoCopiarResposta, textosCopiaveis, copiar, marcarCopiado, abrirExpandido, confirmarRodar } from './src/markdown.ts';
       const exemplo = [
         '## Python vs. TypeScript para um app pessoal',
         '',
@@ -42,17 +42,28 @@
         'Motivo: tipagem estática e um código só para PC e celular.',
         '```',
         '',
-        '---',
+        '```powershell',
+        'winget install --id Git.Git -e',
+        '```',
+        '',
         '**Recomendação:** TypeScript, porque o J.A.R.V.I.S. já é todo em TS.',
+        '',
+        '```opcoes Quer que eu siga por onde?',
+        '- Montar a estrutura do projeto em TypeScript',
+        '- Comparar os frameworks de interface',
+        '- Parar por aqui',
+        '```',
       ].join('\n');
       const chat = document.getElementById('chat');
       chat.innerHTML = `<div class="msg" data-r="user"><div class="texto">Compare Python e TypeScript</div></div>`
-        + `<div class="msg" data-r="assistant"><div class="md">${respostaHtml(exemplo)}</div></div><div class="msg-acoes">${botaoCopiarResposta(exemplo)}</div>`;
+        + `<div class="msg" data-r="assistant"><div class="md">${respostaHtml(exemplo, true)}</div></div><div class="msg-acoes">${botaoCopiarResposta(exemplo)}</div>`;
       chat.onclick = async (e) => {
         const c = e.target.closest('[data-copiar]');
         if (c && (await copiar(textosCopiaveis[+c.dataset.copiar]))) marcarCopiado(c);
         const x = e.target.closest('[data-expandir]');
         if (x) abrirExpandido(x.dataset.titulo, textosCopiaveis[+x.dataset.expandir]);
+        const r = e.target.closest('[data-rodar]');
+        if (r) console.log('rodar?', await confirmarRodar(textosCopiaveis[+r.dataset.rodar], r.dataset.shell));
       };
     </script>
   </body>

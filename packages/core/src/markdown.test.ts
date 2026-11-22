@@ -36,14 +36,31 @@ test('tabela com cabeçalho e alinhamento', () => {
 });
 
 test('código e bloco para copiar', () => {
-  const b = lerMarkdown('```bash\npip install flask\n```\n\n```texto E-mail ao cliente\nOlá, tudo bem?\n\nAbraço\n```');
-  assert.deepEqual(b[0], { t: 'codigo', lang: 'bash', texto: 'pip install flask' });
+  const b = lerMarkdown('```python\nprint(1)\n```\n\n```texto E-mail ao cliente\nOlá, tudo bem?\n\nAbraço\n```');
+  assert.deepEqual(b[0], { t: 'codigo', lang: 'python', texto: 'print(1)' });
   assert.deepEqual(b[1], { t: 'texto', titulo: 'E-mail ao cliente', texto: 'Olá, tudo bem?\n\nAbraço' });
 });
 
 test('cartão de texto sai limpo para colar', () => {
   const b = lerMarkdown('```texto Convite\nChurrasco no **sábado**, às **13h**.\n```');
   assert.deepEqual(b[0], { t: 'texto', titulo: 'Convite', texto: 'Churrasco no sábado, às 13h.' });
+});
+
+test('comandos de terminal', () => {
+  const b = lerMarkdown('```powershell\nPS C:\\> Get-Date\n```\n```bash\n$ npm install\n```\n```cmd\ndir\n```');
+  assert.deepEqual(b, [
+    { t: 'comando', shell: 'powershell', texto: 'Get-Date' },
+    { t: 'comando', shell: 'bash', texto: 'npm install' },
+    { t: 'comando', shell: 'cmd', texto: 'dir' },
+  ]);
+});
+
+test('cartão de opções', () => {
+  const b = lerMarkdown('Feito.\n\n```opcoes O que fazemos agora?\n- Montar o plano da semana\n- **Ver** os exercícios\n3. Parar por hoje\n```');
+  assert.deepEqual(b[1], {
+    t: 'opcoes', pergunta: 'O que fazemos agora?',
+    itens: ['Montar o plano da semana', 'Ver os exercícios', 'Parar por hoje'],
+  });
 });
 
 test('cerca sem fechar (resposta cortada) não quebra', () => {

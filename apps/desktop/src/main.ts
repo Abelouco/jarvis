@@ -3,7 +3,11 @@ import { jarvis } from './jarvis';
 import './estilo.css';
 import { montarNucleo, type NucleoMontado } from './nucleo3d';
 import { ligarAtualizacao } from './atualizacao';
-import { abrirExpandido, botaoCopiarResposta, copiar, marcarCopiado, respostaHtml, textosCopiaveis } from './markdown';
+import { invoke } from '@tauri-apps/api/core';
+import type { Shell } from '@jarvis/core';
+import {
+  abrirExpandido, botaoCopiarResposta, confirmarRodar, copiar, marcarCopiado, respostaHtml, textosCopiaveis,
+} from './markdown';
 import { montarControlesJanela } from './janela';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -266,6 +270,26 @@ async function montarPainel() {
       if (texto !== undefined && (await copiar(texto))) marcarCopiado(bCopiar);
       return;
     }
+    const bRodar = alvo.closest<HTMLButtonElement>('[data-rodar]');
+    if (bRodar) {
+      const comando = textosCopiaveis[Number(bRodar.dataset.rodar)];
+      const shell = (bRodar.dataset.shell ?? 'powershell') as Shell;
+      if (comando === undefined || !(await confirmarRodar(comando, shell))) return;
+      try {
+        await invoke('abrir_terminal', { comando, shell });
+        marcarCopiado(bRodar);
+      } catch (erro) {
+        $<HTMLParagraphElement>('#erro-chat').textContent = String(erro);
+      }
+      return;
+    }
+    // Cartão de opções: a escolha vira a próxima mensagem do dono.
+    const bOpcao = alvo.closest<HTMLButtonElement>('[data-opcao]');
+    if (bOpcao && !bOpcao.disabled) {
+      if (jarvis.chat.estado().pensando) return;
+      void jarvis.chat.enviar(bOpcao.dataset.opcao ?? '');
+      return;
+    }
     const bExpandir = alvo.closest<HTMLButtonElement>('[data-expandir]');
     if (bExpandir) {
       const texto = textosCopiaveis[Number(bExpandir.dataset.expandir)];
@@ -413,13 +437,13 @@ async function desenharMemorias() {
     : `<div class="vazio"><strong>Ainda não sei nada sobre você.</strong>Conte algo no chat, como seu nome, sua rotina ou do que você gosta.</div>`;
 }
 
-function itemMensagem(m: Message, nova: boolean) {
+function itemMensagem(m: Message, nova: boolean, ultima: boolean) {
   const classe = `msg${nova ? ' nova' : ''}`;
   if (m.role === 'user') {
     return `<div class="${classe}" data-r="user"><div class="texto">${esc(m.content)}</div></div>`;
   }
   // O botão fica fora da mensagem, logo abaixo dela.
-  return `<div class="${classe}" data-r="assistant"><div class="md">${respostaHtml(m.content)}</div></div>`
+  return `<div class="${classe}" data-r="assistant"><div class="md">${respostaHtml(m.content, ultima)}</div></div>`
     + `<div class="msg-acoes${nova ? ' nova' : ''}">${botaoCopiarResposta(m.content)}</div>`;
 }
 
@@ -435,7 +459,7 @@ async function desenharChat() {
   const primeiraVez = mensagensVistas.size === 0;
   textosCopiaveis.length = 0;
   chat.innerHTML = msgs.length || pensando
-    ? msgs.map((m) => itemMensagem(m, !primeiraVez && !mensagensVistas.has(m.id))).join('')
+    ? msgs.map((m, i) => itemMensagem(m, !primeiraVez && !mensagensVistas.has(m.id), i === msgs.length - 1 && !pensando)).join('')
       + (pensando ? `<div class="msg pensando nova" data-r="assistant"><i></i><i></i><i></i></div>` : '')
     : `<div class="vazio"><strong>Às suas ordens.</strong>Pergunte qualquer coisa.</div>`;
   mensagensVistas = new Set(msgs.map((m) => m.id));

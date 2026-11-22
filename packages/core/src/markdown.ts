@@ -2,8 +2,10 @@
 // em blocos (títulos, listas, tabelas, código, citações) que cada app desenha do seu jeito.
 // Sem dependências e sem HTML cru: nada do texto vira código na tela.
 //
-// Bloco especial para copiar: ```texto Título  (também aceita "escrita" e "copiar")
-// vira um cartão com botão de copiar e de expandir.
+// Blocos especiais:
+// - ```texto Título    (também "escrita", "copiar"): cartão com copiar e expandir.
+// - ```powershell / ```cmd / ```bash ...: comando de terminal (no PC ganha o botão "Rodar").
+// - ```opcoes Pergunta?  (uma opção por linha): cartão de escolha no fim da resposta.
 
 export type Inline =
   | { t: 'txt'; v: string }
@@ -30,10 +32,21 @@ export type Bloco =
   | { t: 'tabela'; cab: Inline[][]; alin: Alinhamento[]; linhas: Inline[][][] }
   | { t: 'codigo'; lang: string; texto: string }
   | { t: 'texto'; titulo: string; texto: string }
+  | { t: 'comando'; shell: Shell; texto: string }
+  | { t: 'opcoes'; pergunta: string; itens: string[] }
   | { t: 'citacao'; filhos: Bloco[] }
   | { t: 'linha' };
 
+/** Onde o comando roda: no Windows, bash/sh também vão para o PowerShell. */
+export type Shell = 'powershell' | 'cmd' | 'bash';
+
 const LANG_TEXTO = /^(texto|escrita|copiar|text)$/i;
+const LANG_OPCOES = /^(opcoes|opções|escolhas|opcao|opção)$/i;
+const SHELLS: Record<string, Shell> = {
+  powershell: 'powershell', ps: 'powershell', ps1: 'powershell', pwsh: 'powershell',
+  cmd: 'cmd', bat: 'cmd', batch: 'cmd',
+  bash: 'bash', sh: 'bash', shell: 'bash', zsh: 'bash', console: 'bash', terminal: 'bash',
+};
 const RE_CERCA = /^\s{0,3}(`{3,}|~{3,})\s*([^\s`]*)\s*(.*)$/;
 const RE_TITULO = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
 const RE_LINHA = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
@@ -84,8 +97,18 @@ function blocos(linhas: string[]): Bloco[] {
       while (i < linhas.length && !linhas[i]!.trim().startsWith(marca[0]!.repeat(3))) corpo.push(linhas[i++]!);
       i++;
       const conteudo = corpo.join('\n').replace(/\s+$/, '');
+      const shell = SHELLS[lang.toLowerCase()];
       if (LANG_TEXTO.test(lang)) out.push({ t: 'texto', titulo: resto || 'Texto', texto: limparTexto(conteudo) });
-      else out.push({ t: 'codigo', lang: lang.toLowerCase(), texto: conteudo });
+      else if (LANG_OPCOES.test(lang)) {
+        const itens = conteudo.split('\n')
+          .map((l) => limparTexto(l.replace(/^\s*(?:[-*+•]|\d{1,2}[.)])\s*/, '')).trim())
+          .filter(Boolean)
+          .slice(0, 6);
+        if (itens.length) out.push({ t: 'opcoes', pergunta: limparTexto(resto), itens });
+      } else if (shell && conteudo.trim()) {
+        // Tira o "$ " ou "> " de prompt que a IA às vezes põe na frente.
+        out.push({ t: 'comando', shell, texto: conteudo.replace(/^\s*(?:\$|PS [^>]*>|>)\s+/gm, '') });
+      } else out.push({ t: 'codigo', lang: lang.toLowerCase(), texto: conteudo });
       continue;
     }
 

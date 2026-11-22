@@ -1,5 +1,7 @@
 use tauri::Manager;
 
+mod terminal;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -16,6 +18,7 @@ pub fn run() {
         // Auto-update: baixa do GitHub Releases e confere a assinatura.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .invoke_handler(tauri::generate_handler![terminal::abrir_terminal])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o J.A.R.V.I.S.");
 }

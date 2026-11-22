@@ -1,11 +1,13 @@
 // Desenha as respostas da IA no PC a partir dos blocos do leitor de Markdown do core.
 // Todo texto passa por `esc`: nada que a IA escreva vira HTML de verdade.
-import { lerMarkdown, type Bloco, type Inline } from '@jarvis/core';
+import { lerMarkdown, type Bloco, type Inline, type Shell } from '@jarvis/core';
 
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 const ICONE_COPIAR = '<svg viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1.6"/><path d="M10.5 3.2V2.8A1.3 1.3 0 0 0 9.2 1.5H3a1.5 1.5 0 0 0-1.5 1.5v6.2A1.3 1.3 0 0 0 2.8 10.5h.4"/></svg>';
+const ICONE_RODAR = '<svg viewBox="0 0 16 16"><path d="M4.5 2.8v10.4L13 8z"/></svg>';
+const NOME_SHELL: Record<Shell, string> = { powershell: 'PowerShell', cmd: 'Prompt de comando', bash: 'Terminal' };
 const ICONE_EXPANDIR = '<svg viewBox="0 0 16 16"><path d="M9.5 1.8h4.7v4.7M14.2 1.8 9 7M6.5 14.2H1.8V9.5M1.8 14.2 7 9"/></svg>';
 
 /** Textos dos blocos copiáveis da tela atual (o botão guarda só o índice). */
@@ -29,6 +31,9 @@ function guardar(texto: string): number {
   textosCopiaveis.push(texto);
   return textosCopiaveis.length - 1;
 }
+
+/** A resposta é a última da conversa? (só nela o cartão de opções fica clicável) */
+let opcoesAtivas = false;
 
 function bloco(b: Bloco): string {
   switch (b.t) {
@@ -60,6 +65,17 @@ function bloco(b: Bloco): string {
         + `<button type="button" class="md-btn" data-copiar="${n}" title="Copiar">${ICONE_COPIAR}</button></div>`
         + `<pre><code>${esc(b.texto)}</code></pre></div>`;
     }
+    case 'comando': {
+      const n = guardar(b.texto);
+      return `<div class="md-codigo md-comando"><div class="md-cab"><span>${NOME_SHELL[b.shell]}</span><span class="md-acoes">`
+        + `<button type="button" class="md-btn" data-copiar="${n}" title="Copiar">${ICONE_COPIAR}</button>`
+        + `<button type="button" class="md-btn md-rodar" data-rodar="${n}" data-shell="${b.shell}" title="Rodar no terminal">${ICONE_RODAR}<span>Rodar</span></button>`
+        + `</span></div><pre><code>${esc(b.texto)}</code></pre></div>`;
+    }
+    case 'opcoes':
+      return `<div class="md-opcoes${opcoesAtivas ? '' : ' passada'}">${b.pergunta ? `<div class="md-opcoes-pergunta">${esc(b.pergunta)}</div>` : ''}`
+        + `<div class="md-opcoes-itens">${b.itens.map((it, i) => `<button type="button" class="md-opcao" data-opcao="${esc(it)}"${opcoesAtivas ? '' : ' disabled'}>`
+          + `<span class="md-opcao-n">${i + 1}</span><span>${esc(it)}</span></button>`).join('')}</div></div>`;
     case 'texto': {
       const n = guardar(b.texto);
       return `<div class="md-texto"><div class="md-cab"><span>${esc(b.titulo)}</span><span class="md-acoes">`
@@ -70,9 +86,46 @@ function bloco(b: Bloco): string {
   }
 }
 
-/** HTML de uma resposta da IA. */
-export function respostaHtml(texto: string): string {
-  return lerMarkdown(texto).map(bloco).join('');
+/** HTML de uma resposta da IA. `ultima`: só a última resposta tem as opções clicáveis. */
+export function respostaHtml(texto: string, ultima = false): string {
+  opcoesAtivas = ultima;
+  const blocos = lerMarkdown(texto);
+  // O cartão de opções sempre vai no fim da resposta.
+  const ordenados = [...blocos.filter((b) => b.t !== 'opcoes'), ...blocos.filter((b) => b.t === 'opcoes')];
+  return ordenados.map(bloco).join('');
+}
+
+/** Pergunta antes de rodar um comando (mostra o comando inteiro). */
+export function confirmarRodar(texto: string, shell: Shell): Promise<boolean> {
+  return new Promise((resolver) => {
+    const fundo = document.createElement('div');
+    fundo.className = 'md-sobreposto';
+    fundo.innerHTML = `<div class="md-janela md-confirmar" role="dialog" aria-label="Rodar comando">
+      <div class="md-cab"><span>Rodar no ${shell === 'cmd' ? 'Prompt de comando' : 'PowerShell'}?</span></div>
+      <div class="md-confirmar-corpo">
+        <p>Uma janela do terminal vai abrir e rodar este comando. Confira antes:</p>
+        <pre><code>${esc(texto)}</code></pre>
+      </div>
+      <div class="md-confirmar-botoes">
+        <button type="button" class="md-btn" data-acao="nao">Cancelar</button>
+        <button type="button" class="md-btn md-rodar" data-acao="sim">${ICONE_RODAR}<span>Rodar</span></button>
+      </div>
+    </div>`;
+    const fechar = (sim: boolean) => {
+      fundo.remove();
+      removeEventListener('keydown', tecla);
+      resolver(sim);
+    };
+    const tecla = (e: KeyboardEvent) => e.key === 'Escape' && fechar(false);
+    fundo.onclick = (e) => {
+      const alvo = e.target as HTMLElement;
+      if (alvo === fundo || alvo.closest('[data-acao="nao"]')) fechar(false);
+      else if (alvo.closest('[data-acao="sim"]')) fechar(true);
+    };
+    addEventListener('keydown', tecla);
+    document.body.appendChild(fundo);
+    fundo.querySelector<HTMLButtonElement>('[data-acao="nao"]')?.focus();
+  });
 }
 
 /** Botão de copiar a resposta inteira (texto como a IA escreveu). */

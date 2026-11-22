@@ -50,7 +50,14 @@ export function Conversa({ aoCrescer }: { aoCrescer: () => void }) {
         </View>
       ) : (
         <View style={s.lista}>
-          {msgs.map((m) => <Balao key={m.id} m={m} />)}
+          {msgs.map((m, i) => (
+            <Balao
+              key={m.id}
+              m={m}
+              // Só a última resposta tem as opções clicáveis; a escolha vira a próxima mensagem.
+              aoEscolher={i === msgs.length - 1 && !estado.pensando ? (t) => void jarvis.chat.enviar(t) : undefined}
+            />
+          ))}
           {estado.pensando && <Pensando />}
         </View>
       )}
@@ -74,7 +81,7 @@ export function Conversa({ aoCrescer }: { aoCrescer: () => void }) {
   );
 }
 
-function Balao({ m }: { m: Message }) {
+function Balao({ m, aoEscolher }: { m: Message; aoEscolher?: (opcao: string) => void }) {
   if (m.role === 'user') {
     return (
       <View style={s.eu}>
@@ -86,7 +93,7 @@ function Balao({ m }: { m: Message }) {
   return (
     <View>
       <View style={s.ele}>
-        <RespostaMd texto={m.content} />
+        <RespostaMd texto={m.content} aoEscolher={aoEscolher} />
       </View>
       <Pressable onPress={() => compartilharTexto(m.content)} hitSlop={8} style={s.copiarTudo}>
         <Text style={s.copiarTudoTxt}>Copiar resposta</Text>
