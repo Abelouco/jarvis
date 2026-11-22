@@ -18,7 +18,7 @@ pub fn run() {
         // Auto-update: baixa do GitHub Releases e confere a assinatura.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![terminal::abrir_terminal])
+        .invoke_handler(tauri::generate_handler![terminal::abrir_terminal, terminal::abrir_link])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o J.A.R.V.I.S.");
 }

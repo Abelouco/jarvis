@@ -1,6 +1,6 @@
 // Aba "Conversa" do celular: mensagens da conversa atual (banco local) + campo para falar.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Animated, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { Message } from '@jarvis/core';
 import { jarvis } from './jarvis';
 import { compartilharTexto, RespostaMd } from './Markdown';
@@ -94,6 +94,19 @@ function Balao({ m, aoEscolher }: { m: Message; aoEscolher?: (opcao: string) => 
     <View>
       <View style={s.ele}>
         <RespostaMd texto={m.content} aoEscolher={aoEscolher} />
+        {m.sources?.length ? (
+          <View style={s.fontes}>
+            <Text style={s.fontesRotulo}>FONTES</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+              {m.sources.map((f, i) => (
+                <Pressable key={f.url} style={s.fonte} onPress={() => void Linking.openURL(f.url)}>
+                  <Text style={s.fonteN}>{i + 1}</Text>
+                  <Text style={s.fonteTxt} numberOfLines={1}>{f.titulo || f.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
       </View>
       <Pressable onPress={() => compartilharTexto(m.content)} hitSlop={8} style={s.copiarTudo}>
         <Text style={s.copiarTudoTxt}>Copiar resposta</Text>
@@ -126,6 +139,17 @@ const s = StyleSheet.create({
     borderRadius: 14, borderBottomRightRadius: 4, backgroundColor: 'rgba(60,196,255,0.12)',
     borderWidth: 1, borderColor: C.bordaForte,
   },
+  fontes: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.borda, borderStyle: 'dashed', gap: 6 },
+  fontesRotulo: { color: C.apagado, fontFamily: MONO, fontSize: 9.5, letterSpacing: 1.6 },
+  fonte: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 220, paddingLeft: 4, paddingRight: 10, paddingVertical: 4,
+    borderRadius: 999, borderWidth: 1, borderColor: C.borda, backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  fonteN: {
+    width: 18, height: 18, borderRadius: 9, textAlign: 'center', lineHeight: 18, fontSize: 10, fontFamily: MONO,
+    color: C.ciano, backgroundColor: 'rgba(127,216,255,0.12)', overflow: 'hidden',
+  },
+  fonteTxt: { color: C.texto2, fontSize: 12, flexShrink: 1 },
   copiarTudo: { alignSelf: 'flex-start', marginTop: 4, paddingVertical: 4 },
   copiarTudoTxt: { color: C.apagado, fontSize: 12 },
   ele: { alignSelf: 'stretch', maxWidth: '100%', paddingLeft: 12, paddingVertical: 2, borderLeftWidth: 2, borderLeftColor: C.cianoForte },

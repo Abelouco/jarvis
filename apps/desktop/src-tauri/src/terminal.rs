@@ -52,3 +52,28 @@ fn abrir(comando: &str, shell: &str) -> Result<(), String> {
 fn abrir(_comando: &str, _shell: &str) -> Result<(), String> {
     Err("Rodar comandos ainda só funciona no Windows.".into())
 }
+
+/// Abre um link no navegador padrão (fontes da pesquisa e links das respostas).
+/// Só aceita http/https: nada de abrir arquivos ou programas por aqui.
+#[tauri::command]
+pub fn abrir_link(url: String) -> Result<(), String> {
+    let url = url.trim();
+    if !(url.starts_with("https://") || url.starts_with("http://")) || url.len() > 4000 {
+        return Err("Link inválido.".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        std::process::Command::new("rundll32.exe")
+            .args(["url.dll,FileProtocolHandler", url])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("Não consegui abrir o link: {e}"))
+    }
+    #[cfg(not(windows))]
+    {
+        Err("Abrir links ainda só funciona no Windows.".into())
+    }
+}

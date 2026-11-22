@@ -8,7 +8,9 @@
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { avaliarSensibilidade } from './sensivel.ts';
 import { escolherRota, type Rota } from './rota.ts';
-import { conversar, temChave, type MensagemIA, type NomeProvedor } from './provedores.ts';
+import {
+  conversar, pesquisarGemini, pesquisarGroq, temChave, type Fonte, type MensagemIA, type NomeProvedor,
+} from './provedores.ts';
 import { aprender, blocoMemoria, lembrar } from './memoria.ts';
 
 // Trabalho depois da resposta (aprender), sem atrasar o chat. Existe no runtime do Supabase.
@@ -28,7 +30,7 @@ const responder = (status: number, corpo: unknown) =>
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function promptSistema(rota: Rota) {
+function promptSistema(rota: Rota, pesquisando = false) {
   const agora = new Date().toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
@@ -39,7 +41,22 @@ function promptSistema(rota: Rota) {
     'Tom: calmo, confiante, um pouco distante e elegante; direto ao ponto, sem bajulação e sem enrolação.',
     rota === 'inteligente'
       ? 'Este pedido pede raciocínio: aprofunde o necessário, com estrutura clara.'
-      : 'Respostas curtas por padrão (1 a 4 frases); só se estenda quando pedirem detalhe.',
+      : rota === 'pesquisa'
+        ? 'Este pedido é sobre fatos do mundo: seja preciso e completo, sem enrolação.'
+        : 'Respostas curtas por padrão (1 a 4 frases); só se estenda quando pedirem detalhe.',
+    ...(pesquisando
+      ? [
+        '',
+        'PESQUISA: use a busca na web antes de responder.',
+        '- Responda SOMENTE com o que as fontes encontradas confirmam. Não complete lacunas com suposições.',
+        '- Confirme cada informação importante em pelo menos 2 fontes independentes. Se só achar em uma, diga "segundo uma fonte". Se as fontes divergirem, mostre a divergência.',
+        '- Se não encontrar a resposta, diga claramente que não encontrou, em vez de chutar.',
+        '- Para jogos e produtos, use os nomes exatos de itens, menus e materiais como aparecem nas fontes (e o nome em inglês entre parênteses quando o jogo for em inglês).',
+        '- Não escreva lista de links nem seção de fontes: o app mostra as fontes embaixo da resposta.',
+      ]
+      : rota === 'pesquisa'
+        ? ['', 'Não foi possível pesquisar na web agora. Sobre fatos específicos, diga claramente o que não tem certeza em vez de afirmar.']
+        : []),
     '',
     'Formatação (Markdown; o app desenha tudo, então use-a sempre que ajudar a ler):',
     '- Resposta curta: texto direto, sem títulos.',
@@ -56,7 +73,7 @@ function promptSistema(rota: Rota) {
     '',
     'Como co-piloto: vá direto ao que resolve. Em decisões, termine com "**Recomendação:**" e o porquê em uma frase.',
     'Quando houver o que fazer, termine com "**Próximos passos:**" em lista numerada curta. Pergunte só o indispensável.',
-    'Se não souber algo, diga. Nunca invente fatos sobre o dono.',
+    'Se não souber algo, diga. Nunca invente fatos sobre o dono nem detalhes do mundo (jogos, produtos, versões, regras, números): sem certeza, diga que não tem certeza.',
     'Você tem memória de longo prazo: o app guarda sozinho fatos e preferências do dono depois de cada conversa, e o que você já sabe aparece abaixo. Se o dono pedir para lembrar ou esquecer algo, confirme em uma frase que vai fazer isso.',
     `Agora é ${agora} (fuso America/Sao_Paulo). Para pessoas, escreva datas do jeito natural (ex.: "sábado, 23/11", "23 de novembro"); AAAA-MM-DD só em dados técnicos ou tabelas.`,
   ].join('\n');
@@ -165,17 +182,19 @@ Deno.serve(async (req) => {
   const rota = escolherRota(texto);
   const ordem: NomeProvedor[] = conversaSensivel
     ? ['groq'] // nunca Gemini
-    : rota === 'inteligente' ? ['gemini', 'groq'] : ['groq', 'gemini'];
+    : rota === 'rapido' ? ['groq', 'gemini'] : ['gemini', 'groq'];
 
   // Memória: o que ele já sabe e que tem a ver com a pergunta. Sensível nunca vai para o Gemini.
   const memorias = await lembrar(sb, texto).catch(() => []);
-  const mensagensPara = (provedor: NomeProvedor): MensagemIA[] => {
-    const bloco = blocoMemoria(memorias, provedor === 'gemini');
-    return [
-      { role: 'system', content: promptSistema(rota) + (bloco ? `\n\n${bloco}` : '') },
-      ...historico.map((m) => ({ role: m.role, content: m.content })),
-    ];
+  const conversa: MensagemIA[] = historico.map((m) => ({ role: m.role, content: m.content }));
+  const sistemaPara = (provedor: NomeProvedor, pesquisando = false) => {
+    const bloco = blocoMemoria(memorias, provedor === 'gemini' || pesquisando);
+    return promptSistema(rota, pesquisando) + (bloco ? `\n\n${bloco}` : '');
   };
+  const mensagensPara = (provedor: NomeProvedor): MensagemIA[] => [
+    { role: 'system', content: sistemaPara(provedor) },
+    ...conversa,
+  ];
 
   const { data: bloqueios } = await sb.from('ai_usage')
     .select('provider, blocked_until')
@@ -185,8 +204,32 @@ Deno.serve(async (req) => {
   const inicio = Date.now();
   const erros: string[] = [];
   let menorEspera = 0;
-  let resposta: { provedor: NomeProvedor; texto: string; modelo: string } | null = null;
-  for (const provedor of ordem) {
+  let resposta: { provedor: NomeProvedor; texto: string; modelo: string; fontes?: Fonte[] } | null = null;
+  let rotaUsada: Rota = rota;
+
+  // Pesquisa na web (nunca com assunto sensível: a pergunta iria para a busca).
+  if (rota === 'pesquisa' && !conversaSensivel) {
+    const tentativas: [NomeProvedor, () => Promise<import('./provedores.ts').Resultado>][] = [
+      ['gemini', () => pesquisarGemini(sistemaPara('gemini', true), conversa)],
+      ['groq', () => pesquisarGroq(sistemaPara('groq', true), conversa)],
+    ];
+    for (const [provedor, pesquisar] of tentativas) {
+      if (!temChave(provedor) || bloqueadoAte.get(provedor)) continue;
+      const r = await pesquisar();
+      if (r.ok) {
+        resposta = { provedor, texto: r.texto, modelo: r.modelo, fontes: r.fontes };
+        await registrarUso(sb, userId, provedor, r.tokens);
+        break;
+      }
+      erros.push(r.erro);
+      console.warn('ia_conversar: pesquisa falhou', { provedor, erro: r.erro });
+      if (r.limite) await bloquear(sb, userId, provedor, r.esperarSeg);
+    }
+  }
+  // Sem pesquisa (ou ela falhou): responde normalmente, avisando quando não tiver certeza.
+  if (!resposta && rota === 'pesquisa') rotaUsada = 'inteligente';
+
+  for (const provedor of resposta ? [] : ordem) {
     if (!temChave(provedor)) continue;
     const ate = bloqueadoAte.get(provedor);
     if (ate) {
@@ -224,7 +267,9 @@ Deno.serve(async (req) => {
     .insert({
       conversation_id: corpo.conversation_id, role: 'assistant', content: resposta.texto,
       provider: resposta.provedor, model: resposta.modelo, latency_ms: Date.now() - inicio,
-      route: rota, sensitive: conversaSensivel,
+      route: resposta.fontes?.length || (rotaUsada === 'pesquisa') ? 'pesquisa' : rotaUsada,
+      sensitive: conversaSensivel,
+      sources: resposta.fontes?.length ? resposta.fontes : null,
     })
     .select()
     .single();

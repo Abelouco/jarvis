@@ -3,7 +3,7 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { criarCliente, ouvirEventos, type ArmazenamentoSessao } from './supabase';
 import { novoId, prepararBanco, TABELAS_SYNC, type BancoLocal, type TabelaSync, type Valor } from './local';
-import type { JarvisEvent, Memory, Message, Prioridade, Task } from './types';
+import type { Fonte, JarvisEvent, Memory, Message, Prioridade, Task } from './types';
 
 export interface OpcoesJarvis {
   db: BancoLocal;
@@ -47,6 +47,16 @@ export function quandoCurto(iso: string, agoraRef = new Date()): string {
 }
 
 const agora = () => new Date().toISOString();
+
+function lerFontes(bruto: string | null): Fonte[] | null {
+  if (!bruto) return null;
+  try {
+    const lista = JSON.parse(bruto);
+    return Array.isArray(lista) ? lista.filter((f) => f && typeof f.url === 'string') : null;
+  } catch {
+    return null;
+  }
+}
 const LOTE = 500;
 
 export function criarJarvis({ db, sessao }: OpcoesJarvis) {
@@ -240,6 +250,7 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
     const valores: Valor[] = t.colunas.map((c) => {
       const v = srv[c];
       if (t.booleanas.includes(c)) return v ? 1 : 0;
+      if (t.json?.includes(c)) return v == null ? null : JSON.stringify(v);
       return (v ?? null) as Valor;
     });
     const sets = t.colunas.filter((c) => c !== 'id').map((c) => `${c} = excluded.${c}`).join(', ');
@@ -358,11 +369,11 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
     async mensagens(): Promise<Message[]> {
       const id = await idConversaAtual();
       if (!id) return [];
-      const linhas = await db.consultar<Omit<Message, 'sensitive'> & { sensitive: number }>(
+      const linhas = await db.consultar<Omit<Message, 'sensitive' | 'sources'> & { sensitive: number; sources: string | null }>(
         `select * from messages where conversation_id = ? and deleted_at is null order by created_at, rowid`,
         [id],
       );
-      return linhas.map((m) => ({ ...m, sensitive: !!m.sensitive }));
+      return linhas.map((m) => ({ ...m, sensitive: !!m.sensitive, sources: lerFontes(m.sources) }));
     },
     estado: () => ({ pensando, erro: erroChat }),
     novaConversa() {

@@ -28,6 +28,12 @@ export interface Conversation extends Base {
   title: string | null;
 }
 
+/** Página da web usada numa resposta com pesquisa. */
+export interface Fonte {
+  titulo: string;
+  url: string;
+}
+
 export interface Message extends Base {
   conversation_id: string;
   role: 'user' | 'assistant';
@@ -36,6 +42,8 @@ export interface Message extends Base {
   model: string | null;
   latency_ms: number | null;
   sensitive: boolean;
+  /** Fontes da pesquisa na web (só nas respostas que pesquisaram). */
+  sources: Fonte[] | null;
 }
 
 /** Algo que o J.A.R.V.I.S. aprendeu sobre o dono. */

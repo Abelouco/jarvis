@@ -18,7 +18,7 @@ export const COLUNAS_CONVERSATIONS = ['id', 'user_id', 'title', 'created_at', 'u
 
 export const COLUNAS_MESSAGES = [
   'id', 'user_id', 'conversation_id', 'role', 'content', 'provider', 'model', 'latency_ms',
-  'sensitive', 'created_at', 'updated_at', 'deleted_at',
+  'sensitive', 'sources', 'created_at', 'updated_at', 'deleted_at',
 ] as const;
 
 export const COLUNAS_MEMORIES = [
@@ -33,13 +33,16 @@ export interface TabelaSync {
   booleanas: readonly string[];
   /** Colunas que só o servidor escreve (o app nunca sobe, para não apagar o que a IA marcou). */
   somenteServidor?: readonly string[];
+  /** Colunas jsonb no Supabase, guardadas como texto JSON no SQLite. */
+  json?: readonly string[];
 }
 export const TABELAS_SYNC: readonly TabelaSync[] = [
   { nome: 'tasks', colunas: COLUNAS_TASKS, booleanas: ['archived'] },
   { nome: 'conversations', colunas: COLUNAS_CONVERSATIONS, booleanas: [] },
   {
     nome: 'messages', colunas: COLUNAS_MESSAGES, booleanas: ['sensitive'],
-    somenteServidor: ['sensitive', 'provider', 'model', 'latency_ms'],
+    somenteServidor: ['sensitive', 'provider', 'model', 'latency_ms', 'sources'],
+    json: ['sources'],
   },
   // Quem cria e muda memórias é a IA (no servidor); o app só lê e "esquece" (deleted_at).
   { nome: 'memories', colunas: COLUNAS_MEMORIES, booleanas: ['sensitive'], somenteServidor: ['sensitive'] },
@@ -84,6 +87,7 @@ export const SCHEMA_LOCAL = [
     model text,
     latency_ms integer,
     sensitive integer not null default 0,
+    sources text,
     created_at text not null,
     updated_at text not null,
     deleted_at text,
@@ -108,8 +112,17 @@ export const SCHEMA_LOCAL = [
   `create table if not exists sync_state (tabela text primary key, cursor text)`,
 ];
 
+/** Colunas acrescentadas depois que o banco local já existia nos aparelhos. */
+const COLUNAS_NOVAS: [tabela: string, coluna: string, tipo: string][] = [
+  ['messages', 'sources', 'text'],
+];
+
 export async function prepararBanco(db: BancoLocal) {
   for (const sql of SCHEMA_LOCAL) await db.executar(sql);
+  for (const [tabela, coluna, tipo] of COLUNAS_NOVAS) {
+    const cols = await db.consultar<{ name: string }>(`pragma table_info(${tabela})`);
+    if (!cols.some((c) => c.name === coluna)) await db.executar(`alter table ${tabela} add column ${coluna} ${tipo}`);
+  }
 }
 
 /** uuid v4 sem depender de crypto.randomUUID (nem todo motor JS tem). */

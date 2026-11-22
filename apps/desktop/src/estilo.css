@@ -437,3 +437,19 @@ input { font: inherit; }
 .md-opcao-n { flex-shrink: 0; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; font-family: var(--mono); font-size: 11.5px; color: var(--ciano); background: rgba(127, 216, 255, 0.1); }
 .md-opcoes.passada { opacity: 0.55; }
 .md-opcoes.passada .md-opcao { cursor: default; }
+
+/* ---------- fontes da pesquisa ---------- */
+.md-fontes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--borda); }
+.md-fontes-rotulo { margin-right: 4px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--apagado); }
+.md-fonte { display: inline-flex; align-items: center; gap: 7px; max-width: 260px; height: 26px; padding: 0 10px 0 4px; border: 1px solid var(--borda); border-radius: 999px; background: rgba(0, 0, 0, 0.25); color: var(--texto-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: 0.15s; }
+.md-fonte b { display: grid; place-items: center; flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; font-family: var(--mono); font-size: 10px; font-weight: 500; color: var(--ciano); background: rgba(127, 216, 255, 0.12); }
+.md-fonte:hover { color: var(--ciano); border-color: var(--borda-forte); background: rgba(60, 196, 255, 0.08); }
+
+/* ---------- menu do clique direito ---------- */
+.menu-copiar { position: fixed; z-index: 90; min-width: 200px; padding: 5px; border: 1px solid var(--borda-forte); border-radius: 11px; background: rgba(10, 18, 32, 0.97); backdrop-filter: blur(14px); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55); animation: entrar 0.12s ease-out; }
+.menu-copiar button { display: block; width: 100%; padding: 8px 12px; border: 0; border-radius: 7px; background: none; color: var(--texto); font-size: 13px; text-align: left; }
+.menu-copiar button:hover, .menu-copiar button:focus-visible { background: rgba(60, 196, 255, 0.14); color: #fff; outline: none; }
+.md-destaque { outline: 1px solid var(--borda-forte); outline-offset: 3px; border-radius: 6px; background: rgba(60, 196, 255, 0.07); }
+tr.md-destaque > td { background: rgba(60, 196, 255, 0.08); }
+.md-copiado { animation: copiado 0.7s ease-out; }
+@keyframes copiado { 0% { background: rgba(107, 227, 176, 0.25); } 100% { background: transparent; } }

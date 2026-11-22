@@ -3,6 +3,7 @@ import { jarvis } from './jarvis';
 import './estilo.css';
 import { montarNucleo, type NucleoMontado } from './nucleo3d';
 import { ligarAtualizacao } from './atualizacao';
+import { ligarMenuCopiar } from './menuCopiar';
 import { invoke } from '@tauri-apps/api/core';
 import type { Shell } from '@jarvis/core';
 import {
@@ -283,6 +284,14 @@ async function montarPainel() {
       }
       return;
     }
+    // Links (fontes e links dentro da resposta) abrem no navegador padrão.
+    const link = alvo.closest<HTMLElement>('a[href], [data-link]');
+    if (link) {
+      e.preventDefault();
+      const url = link.dataset.link ?? link.getAttribute('href') ?? '';
+      if (/^https?:\/\//.test(url)) void invoke('abrir_link', { url }).catch(() => {});
+      return;
+    }
     // Cartão de opções: a escolha vira a próxima mensagem do dono.
     const bOpcao = alvo.closest<HTMLButtonElement>('[data-opcao]');
     if (bOpcao && !bOpcao.disabled) {
@@ -310,6 +319,11 @@ async function montarPainel() {
       void desenharMemorias();
     }
   };
+  // Clique direito: copiar seleção, trecho, código ou a resposta inteira.
+  ligarMenuCopiar($<HTMLDivElement>('#chat'), (msg) => {
+    const botao = msg.nextElementSibling?.querySelector<HTMLElement>('[data-copiar]');
+    return botao ? textosCopiaveis[Number(botao.dataset.copiar)] : undefined;
+  });
   $<HTMLButtonElement>('#nova-conversa').onclick = () => {
     jarvis.chat.novaConversa();
     campoFala.focus();
@@ -437,13 +451,29 @@ async function desenharMemorias() {
     : `<div class="vazio"><strong>Ainda não sei nada sobre você.</strong>Conte algo no chat, como seu nome, sua rotina ou do que você gosta.</div>`;
 }
 
+/** Fontes da pesquisa na web, embaixo da resposta. */
+function fontesHtml(m: Message) {
+  if (!m.sources?.length) return '';
+  const nome = (f: { titulo: string; url: string }) => {
+    const t = f.titulo.trim();
+    try {
+      return t || new URL(f.url).hostname.replace(/^www\./, '');
+    } catch {
+      return t || 'fonte';
+    }
+  };
+  return `<div class="md-fontes"><span class="md-fontes-rotulo">Fontes</span>${m.sources
+    .map((f, i) => `<button type="button" class="md-fonte" data-link="${esc(f.url)}" title="${esc(f.titulo || f.url)}"><b>${i + 1}</b>${esc(nome(f))}</button>`)
+    .join('')}</div>`;
+}
+
 function itemMensagem(m: Message, nova: boolean, ultima: boolean) {
   const classe = `msg${nova ? ' nova' : ''}`;
   if (m.role === 'user') {
     return `<div class="${classe}" data-r="user"><div class="texto">${esc(m.content)}</div></div>`;
   }
   // O botão fica fora da mensagem, logo abaixo dela.
-  return `<div class="${classe}" data-r="assistant"><div class="md">${respostaHtml(m.content, ultima)}</div></div>`
+  return `<div class="${classe}" data-r="assistant"><div class="md">${respostaHtml(m.content, ultima)}</div>${fontesHtml(m)}</div>`
     + `<div class="msg-acoes${nova ? ' nova' : ''}">${botaoCopiarResposta(m.content)}</div>`;
 }
 
@@ -451,7 +481,7 @@ async function desenharChat() {
   const msgs = await jarvis.chat.mensagens();
   if (tela !== 'painel') return;
   const { pensando, erro } = jarvis.chat.estado();
-  const assinatura = `${pensando}|${erro}|` + msgs.map((m) => `${m.id}:${m.content.length}`).join(',');
+  const assinatura = `${pensando}|${erro}|` + msgs.map((m) => `${m.id}:${m.content.length}:${m.sources?.length ?? 0}`).join(',');
   if (assinatura === assinaturaChat) return;
   assinaturaChat = assinatura;
 

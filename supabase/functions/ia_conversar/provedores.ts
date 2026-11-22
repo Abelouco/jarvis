@@ -96,8 +96,13 @@ async function escolherModelo(p: Provedor, chave: string, recarregar = false): P
   return id;
 }
 
+export interface Fonte {
+  titulo: string;
+  url: string;
+}
+
 export type Resultado =
-  | { ok: true; texto: string; modelo: string; tokens: number }
+  | { ok: true; texto: string; modelo: string; tokens: number; fontes?: Fonte[] }
   | { ok: false; limite: boolean; esperarSeg: number; erro: string };
 
 export interface MensagemIA {
@@ -174,4 +179,118 @@ export async function conversar(nome: NomeProvedor, mensagens: MensagemIA[], op:
   const texto: string = json?.choices?.[0]?.message?.content?.trim() ?? '';
   if (!texto) return { ok: false, limite: false, esperarSeg: 0, erro: `${nome} respondeu vazio` };
   return { ok: true, texto, modelo: json?.model ?? modelo, tokens: Number(json?.usage?.total_tokens) || 0 };
+}
+
+// ---------- pesquisa na web ----------
+
+/** Junta fontes únicas (mesmo endereço só uma vez), no máximo 8. */
+function fontesUnicas(lista: Fonte[]): Fonte[] {
+  const vistas = new Set<string>();
+  const out: Fonte[] = [];
+  for (const f of lista) {
+    if (!f.url || !/^https?:\/\//.test(f.url) || vistas.has(f.url)) continue;
+    vistas.add(f.url);
+    out.push({ titulo: (f.titulo || new URL(f.url).hostname).slice(0, 120), url: f.url });
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
+/**
+ * Gemini com Google Search (API nativa: a compatível com OpenAI não tem a busca).
+ * Devolve a resposta e as fontes que o Google usou para fundamentá-la.
+ */
+export async function pesquisarGemini(sistema: string, historico: MensagemIA[]): Promise<Resultado> {
+  const p = PROVEDORES.gemini;
+  const chave = p.chave();
+  if (!chave) return { ok: false, limite: false, esperarSeg: 0, erro: 'sem chave do gemini' };
+
+  const chamar = (modelo: string) =>
+    fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelo)}:generateContent`, {
+      method: 'POST',
+      headers: { 'x-goog-api-key': chave, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: sistema }] },
+        contents: historico.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+        tools: [{ google_search: {} }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 2500 },
+      }),
+      signal: AbortSignal.timeout(45_000),
+    });
+
+  let modelo = await escolherModelo(p, chave);
+  let r: Response;
+  try {
+    r = await chamar(modelo);
+    if (r.status === 503 || r.status === 500 || r.status === 529 || r.status === 404) {
+      const lista = cacheLista.get('gemini') ?? [];
+      const outro = p.preferidos().find((m) => m !== modelo && lista.includes(m));
+      if (outro) {
+        const r2 = await chamar(outro);
+        if (r2.ok || r2.status === 429) {
+          r = r2;
+          modelo = outro;
+        }
+      }
+    }
+  } catch (e) {
+    return { ok: false, limite: false, esperarSeg: 0, erro: `gemini/busca não respondeu a tempo (${e instanceof Error ? e.message : e})` };
+  }
+  if (r.status === 429) {
+    const esperar = Number(r.headers.get('retry-after')) || 60;
+    return { ok: false, limite: true, esperarSeg: Math.min(Math.max(esperar, 10), 3600), erro: 'limite do gemini (busca)' };
+  }
+  if (!r.ok) return { ok: false, limite: false, esperarSeg: 0, erro: `gemini/busca ${r.status}: ${(await r.text()).slice(0, 300)}` };
+
+  const json = await r.json();
+  const cand = json?.candidates?.[0];
+  const texto: string = (cand?.content?.parts ?? []).map((x: { text?: string }) => x.text ?? '').join('').trim();
+  if (!texto) return { ok: false, limite: false, esperarSeg: 0, erro: 'gemini/busca respondeu vazio' };
+  const fontes = fontesUnicas(
+    (cand?.groundingMetadata?.groundingChunks ?? [])
+      .map((c: { web?: { uri?: string; title?: string } }) => ({ titulo: c.web?.title ?? '', url: c.web?.uri ?? '' })),
+  );
+  return { ok: true, texto, modelo, tokens: Number(json?.usageMetadata?.totalTokenCount) || 0, fontes };
+}
+
+/** Reserva: Groq Compound (modelo do Groq que pesquisa na web sozinho). */
+export async function pesquisarGroq(sistema: string, historico: MensagemIA[]): Promise<Resultado> {
+  const chave = PROVEDORES.groq.chave();
+  if (!chave) return { ok: false, limite: false, esperarSeg: 0, erro: 'sem chave do groq' };
+  let r: Response;
+  try {
+    r = await fetch(PROVEDORES.groq.url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'groq/compound',
+        messages: [{ role: 'system', content: sistema }, ...historico],
+        temperature: 0.3,
+        max_tokens: 2000,
+      }),
+      signal: AbortSignal.timeout(45_000),
+    });
+  } catch (e) {
+    return { ok: false, limite: false, esperarSeg: 0, erro: `groq/compound não respondeu a tempo (${e instanceof Error ? e.message : e})` };
+  }
+  if (r.status === 429) {
+    const esperar = Number(r.headers.get('retry-after')) || 60;
+    return { ok: false, limite: true, esperarSeg: Math.min(Math.max(esperar, 10), 3600), erro: 'limite do groq (busca)' };
+  }
+  if (!r.ok) return { ok: false, limite: false, esperarSeg: 0, erro: `groq/compound ${r.status}: ${(await r.text()).slice(0, 300)}` };
+  const json = await r.json();
+  const msg = json?.choices?.[0]?.message;
+  const texto: string = msg?.content?.trim() ?? '';
+  if (!texto) return { ok: false, limite: false, esperarSeg: 0, erro: 'groq/compound respondeu vazio' };
+  // As fontes vêm nos resultados das ferramentas de busca; o formato pode variar, então procura {url, title}.
+  const achadas: Fonte[] = [];
+  const varrer = (x: unknown) => {
+    if (!x || typeof x !== 'object') return;
+    if (Array.isArray(x)) return x.forEach(varrer);
+    const o = x as Record<string, unknown>;
+    if (typeof o.url === 'string') achadas.push({ titulo: String(o.title ?? ''), url: o.url });
+    Object.values(o).forEach(varrer);
+  };
+  varrer(msg?.executed_tools);
+  return { ok: true, texto, modelo: 'groq/compound', tokens: Number(json?.usage?.total_tokens) || 0, fontes: fontesUnicas(achadas) };
 }

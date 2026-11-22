@@ -36,8 +36,22 @@ test('não sensível: conversa comum', () => {
   }
 });
 
+test('rota: fatos do mundo vão pela pesquisa', () => {
+  for (const t of [
+    'Como fazer uma vara de pesca no jogo Medieval Dynasty?',
+    'Quanto custa um PlayStation 5 hoje?',
+    'Qual a última versão do Node?',
+    'Quem ganhou a Copa do Mundo de 2022?',
+    'Pesquise para mim os horários do metrô',
+    'Como craftar uma picareta no Minecraft?',
+    'O que é o Stardew Valley?',
+  ]) {
+    assert.equal(escolherRota(t), 'pesquisa', t);
+  }
+});
+
 test('rota: perguntas curtas vão pelo caminho rápido', () => {
-  for (const t of ['Quem é você?', 'Oi', 'Que horas são?', 'Qual a capital da França?', 'Obrigado!']) {
+  for (const t of ['Quem é você?', 'Oi', 'Que horas são?', 'Qual a capital da França?', 'Obrigado!', 'Meu nome é Abel']) {
     assert.equal(escolherRota(t), 'rapido', t);
   }
 });
