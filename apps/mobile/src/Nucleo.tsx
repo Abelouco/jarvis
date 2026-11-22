@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, PixelRatio, View } from 'react-native';
 import { GLView, type ExpoWebGLRenderingContext } from 'expo-gl';
 import * as THREE from 'three';
-import { criarNucleo, type EstadoNucleo, type Nucleo as Cena, type TomPulso } from '@jarvis/nucleo';
+import { criarNucleo, type EstadoNucleo, type NoMemoria, type Nucleo as Cena, type TomPulso } from '@jarvis/nucleo';
 
 /** Uma descarga do núcleo: `n` muda a cada evento. */
 export interface Pulso {
@@ -16,14 +16,22 @@ export interface Pulso {
  * `pulso`: cada vez que `n` muda, o núcleo descarrega energia (com a cor do evento).
  * `estado`: o que a IA está fazendo agora (pensando, esperando permissão...).
  */
-export function Nucleo({ tamanho = 240, pulso, estado = 'repouso' }: { tamanho?: number; pulso?: Pulso; estado?: EstadoNucleo }) {
+export function Nucleo({ tamanho = 240, pulso, estado = 'repouso', memorias }: {
+  tamanho?: number; pulso?: Pulso; estado?: EstadoNucleo; memorias?: NoMemoria[];
+}) {
   const cena = useRef<Cena | null>(null);
   const quadro = useRef<number | null>(null);
   const estadoAtual = useRef(estado);
+  const memoriasAtuais = useRef(memorias);
 
   useEffect(() => {
     if (pulso?.n) cena.current?.pulsar(pulso.forca, pulso.tom);
   }, [pulso]);
+
+  useEffect(() => {
+    memoriasAtuais.current = memorias;
+    if (memorias) cena.current?.definirMemorias(memorias);
+  }, [memorias]);
 
   useEffect(() => {
     estadoAtual.current = estado;
@@ -86,6 +94,7 @@ export function Nucleo({ tamanho = 240, pulso, estado = 'repouso' }: { tamanho?:
     const n = criarNucleo(renderer, { largura: w / dpr, altura: h / dpr, dpr, densidade: 0.55 });
     cena.current = n;
     n.definirEstado(estadoAtual.current);
+    if (memoriasAtuais.current) n.definirMemorias(memoriasAtuais.current);
 
     const laco = (t: number) => {
       n.quadro(t);

@@ -3,7 +3,7 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { criarCliente, ouvirEventos, type ArmazenamentoSessao } from './supabase';
 import { novoId, prepararBanco, TABELAS_SYNC, type BancoLocal, type TabelaSync, type Valor } from './local';
-import type { JarvisEvent, Message, Prioridade, Task } from './types';
+import type { JarvisEvent, Memory, Message, Prioridade, Task } from './types';
 
 export interface OpcoesJarvis {
   db: BancoLocal;
@@ -404,6 +404,23 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
     },
   };
 
+  // ---------- memória (o que a IA aprendeu sobre o dono) ----------
+  const memorias = {
+    /** Tudo o que ele sabe, das mais importantes para as menos (banco local). */
+    async listar(): Promise<Memory[]> {
+      const linhas = await db.consultar<Omit<Memory, 'sensitive'> & { sensitive: number }>(
+        `select * from memories where deleted_at is null order by importance desc, updated_at desc`,
+      );
+      return linhas.map((m) => ({ ...m, sensitive: !!m.sensitive }));
+    },
+    /** Esquecer = exclusão suave (some do app e da IA; nada é apagado de verdade). */
+    async esquecer(id: string) {
+      const t = agora();
+      await db.executar(`update memories set deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, id]);
+      mudouLocal();
+    },
+  };
+
   // ---------- atividades recentes (a partir da tabela events) ----------
   const MAX_ATIVIDADES = 15;
   let eventosRecentes: JarvisEvent[] = [];
@@ -428,14 +445,15 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
   const atividades = {
     /** As últimas coisas que aconteceram, já em texto, com o nome do item (vem do banco local). */
     async listar(): Promise<Atividade[]> {
-      const ids = eventosRecentes.filter((e) => e.entity_type === 'tasks' && e.entity_id).map((e) => e.entity_id!);
       const titulos = new Map<string, string>();
-      if (ids.length) {
-        const linhas = await db.consultar<{ id: string; title: string }>(
-          `select id, title from tasks where id in (${ids.map(() => '?').join(', ')})`,
+      for (const [tabela, coluna] of [['tasks', 'title'], ['memories', "coalesce(title, content)"]] as const) {
+        const ids = eventosRecentes.filter((e) => e.entity_type === tabela && e.entity_id).map((e) => e.entity_id!);
+        if (!ids.length) continue;
+        const linhas = await db.consultar<{ id: string; titulo: string }>(
+          `select id, ${coluna} as titulo from ${tabela} where id in (${ids.map(() => '?').join(', ')})`,
           ids,
         );
-        for (const l of linhas) titulos.set(l.id, l.title);
+        for (const l of linhas) titulos.set(l.id, l.titulo);
       }
       return eventosRecentes.map((e) => ({
         id: e.id,
@@ -498,6 +516,7 @@ export function criarJarvis({ db, sessao }: OpcoesJarvis) {
     atividades,
     chat,
     ia,
+    memorias,
     sincronizar,
     estado: () => ({ estado, ultimoErro }),
     /** Avisa quando algo local mudou (para a tela recarregar). */

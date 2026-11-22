@@ -9,6 +9,10 @@ import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { avaliarSensibilidade } from './sensivel.ts';
 import { escolherRota, type Rota } from './rota.ts';
 import { conversar, temChave, type MensagemIA, type NomeProvedor } from './provedores.ts';
+import { aprender, blocoMemoria, lembrar } from './memoria.ts';
+
+// Trabalho depois da resposta (aprender), sem atrasar o chat. Existe no runtime do Supabase.
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
 const MAX_TEXTO = 4000;
 const HISTORICO = 20;
@@ -51,6 +55,7 @@ function promptSistema(rota: Rota) {
     'Como co-piloto: vá direto ao que resolve. Em decisões, termine com "**Recomendação:**" e o porquê em uma frase.',
     'Quando houver o que fazer, termine com "**Próximos passos:**" em lista numerada curta. Pergunte só o indispensável.',
     'Se não souber algo, diga. Nunca invente fatos sobre o dono.',
+    'Você tem memória de longo prazo: o app guarda sozinho fatos e preferências do dono depois de cada conversa, e o que você já sabe aparece abaixo. Se o dono pedir para lembrar ou esquecer algo, confirme em uma frase que vai fazer isso.',
     `Agora é ${agora} (fuso America/Sao_Paulo). Para pessoas, escreva datas do jeito natural (ex.: "sábado, 23/11", "23 de novembro"); AAAA-MM-DD só em dados técnicos ou tabelas.`,
   ].join('\n');
 }
@@ -160,10 +165,15 @@ Deno.serve(async (req) => {
     ? ['groq'] // nunca Gemini
     : rota === 'inteligente' ? ['gemini', 'groq'] : ['groq', 'gemini'];
 
-  const mensagens: MensagemIA[] = [
-    { role: 'system', content: promptSistema(rota) },
-    ...historico.map((m) => ({ role: m.role, content: m.content })),
-  ];
+  // Memória: o que ele já sabe e que tem a ver com a pergunta. Sensível nunca vai para o Gemini.
+  const memorias = await lembrar(sb, texto).catch(() => []);
+  const mensagensPara = (provedor: NomeProvedor): MensagemIA[] => {
+    const bloco = blocoMemoria(memorias, provedor === 'gemini');
+    return [
+      { role: 'system', content: promptSistema(rota) + (bloco ? `\n\n${bloco}` : '') },
+      ...historico.map((m) => ({ role: m.role, content: m.content })),
+    ];
+  };
 
   const { data: bloqueios } = await sb.from('ai_usage')
     .select('provider, blocked_until')
@@ -183,7 +193,7 @@ Deno.serve(async (req) => {
       erros.push(`${provedor} sem cota por mais ${seg} s`);
       continue;
     }
-    const r = await conversar(provedor, mensagens);
+    const r = await conversar(provedor, mensagensPara(provedor));
     if (r.ok) {
       resposta = { provedor, texto: r.texto, modelo: r.modelo };
       await registrarUso(sb, userId, provedor, r.tokens);
@@ -217,6 +227,15 @@ Deno.serve(async (req) => {
     .select()
     .single();
   if (salva.error) return responder(500, { erro: salva.error.message });
+
+  // Aprende com esta troca depois de responder (não atrasa o chat).
+  if (texto.length >= 8) {
+    const tarefa = aprender(sb, userId, {
+      pergunta: texto, resposta: resposta.texto, perguntaId: corpo.message_id, sensivel: conversaSensivel,
+    }, memorias).catch((e) => console.warn('memoria: erro', e instanceof Error ? e.message : e));
+    if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(tarefa);
+    else await tarefa;
+  }
 
   return responder(200, { mensagem: salva.data });
 });

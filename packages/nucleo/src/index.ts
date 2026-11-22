@@ -22,6 +22,12 @@ export type EstadoNucleo = 'repouso' | 'pensando' | 'agindo' | 'permissao' | 'er
 /** Cor da descarga de um evento: criado (verde), apagado (vermelho), neutro (a cor do estado). */
 export type TomPulso = 'neutro' | 'criado' | 'apagado';
 
+export interface NoMemoria {
+  id: string;
+  /** 1 a 10 */
+  importancia: number;
+}
+
 export interface Nucleo {
   /** Desenha um quadro. `tempo` em milissegundos (requestAnimationFrame). */
   quadro(tempo: number): void;
@@ -29,6 +35,8 @@ export interface Nucleo {
   pulsar(forca?: number, tom?: TomPulso): void;
   /** Estado contínuo (fica até mudar). */
   definirEstado(estado: EstadoNucleo): void;
+  /** Cada memória real vira um nó em volta da esfera (posição fixa pelo id; brilho pela importância). */
+  definirMemorias(memorias: NoMemoria[]): void;
   /** Gira o núcleo pelo arraste (dx, dy em pixels desde o último movimento). */
   arrastar(dx: number, dy: number): void;
   /** Fim do arraste: o giro continua por inércia e desacelera. */
@@ -221,6 +229,43 @@ void main() {
 }
 `;
 
+// ---------- nós de memória ----------
+
+const NOS_VERT = /* glsl */ `
+attribute float aSemente;
+attribute float aTam;
+uniform float uTempo;
+uniform float uPulso;
+uniform float uDpr;
+varying float vAlfa;
+varying float vBrilho;
+void main() {
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float cintila = 0.6 + 0.4 * sin(uTempo * (0.7 + aSemente * 1.4) + aSemente * 50.0);
+  gl_PointSize = uDpr * (7.0 + aTam * 9.0 + uPulso * 4.0) * (6.0 / -mv.z);
+  vAlfa = 0.5 + 0.5 * cintila;
+  vBrilho = 0.85 + aTam * 0.45 + uPulso * 0.5;
+}
+`;
+
+/** Embaralhador final do MurmurHash3: ids parecidos viram números bem diferentes. */
+function misturar(h: number): number {
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
+/** Três números estáveis em [0,1) a partir do id (mesma memória, mesmo lugar). */
+function hashId(id: string): [number, number, number] {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  return [misturar(h), misturar(h ^ 0x9e3779b9), misturar(h ^ 0x7f4a7c15)];
+}
+
 // ---------- esfera geodésica ----------
 
 const VERTICE_VERT = /* glsl */ `
@@ -354,6 +399,22 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
   }
   ico.dispose();
 
+  // Nós de memória: pontos em volta da esfera, cada um ligado a ela por um filamento.
+  const nos = new THREE.Group();
+  esfera.add(nos);
+  const matNos = new THREE.ShaderMaterial({
+    vertexShader: NOS_VERT,
+    fragmentShader: PONTO_FRAG,
+    uniforms: { ...uComuns, uCor: { value: CIANO }, uCor2: { value: new THREE.Color('#f2fffd') }, uOpacidade: { value: 1 } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const matFios = new THREE.LineBasicMaterial({
+    color: CIANO, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  let pontosNos: THREE.Points | null = null;
+  let fiosNos: THREE.LineSegments | null = null;
+  let assinaturaNos = '';
+
   const brilho = new THREE.Mesh(
     new THREE.PlaneGeometry(3.2, 3.2),
     new THREE.ShaderMaterial({
@@ -429,6 +490,8 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
       uComuns.uTempo!.value = tempoInterno;
       uComuns.uPulso!.value = energiaTotal;
       corArestas.copy(TEAL).lerp(tinta, uComuns.uMistura!.value as number);
+      matFios.color.copy(CIANO).lerp(tinta, uComuns.uMistura!.value as number);
+      matFios.opacity = 0.28 + energiaTotal * 0.3;
 
       if (!segurando) {
         // inércia: continua girando e desacelera
@@ -459,6 +522,45 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
     },
     definirEstado(estado) {
       alvo = PERFIS[estado] ?? PERFIS.repouso;
+    },
+    definirMemorias(memorias) {
+      const lista = memorias.slice(0, 400);
+      const assinatura = lista.map((m) => `${m.id}:${m.importancia}`).join(',');
+      if (assinatura === assinaturaNos) return;
+      assinaturaNos = assinatura;
+      if (pontosNos) { nos.remove(pontosNos); pontosNos.geometry.dispose(); pontosNos = null; }
+      if (fiosNos) { nos.remove(fiosNos); fiosNos.geometry.dispose(); fiosNos = null; }
+      if (!lista.length) return;
+
+      const pos = new Float32Array(lista.length * 3);
+      const sem = new Float32Array(lista.length);
+      const tam = new Float32Array(lista.length);
+      const fios = new Float32Array(lista.length * 6);
+      lista.forEach((m, i) => {
+        const [a, b, c] = hashId(m.id);
+        const th = a * Math.PI * 2;
+        const ph = Math.acos(2 * b - 1);
+        const dir = new THREE.Vector3(Math.sin(ph) * Math.cos(th), Math.sin(ph) * Math.sin(th), Math.cos(ph));
+        const imp = Math.min(10, Math.max(1, m.importancia)) / 10;
+        // as mais importantes ficam mais perto do centro
+        const r = 1.18 - imp * 0.32 + c * 0.12;
+        const p = dir.clone().multiplyScalar(r);
+        pos.set([p.x, p.y, p.z], i * 3);
+        sem[i] = c;
+        tam[i] = imp;
+        const base = dir.clone().multiplyScalar(0.64);
+        fios.set([base.x, base.y, base.z, p.x, p.y, p.z], i * 6);
+      });
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      geo.setAttribute('aSemente', new THREE.BufferAttribute(sem, 1));
+      geo.setAttribute('aTam', new THREE.BufferAttribute(tam, 1));
+      pontosNos = new THREE.Points(geo, matNos);
+      pontosNos.frustumCulled = false;
+      const geoFios = new THREE.BufferGeometry();
+      geoFios.setAttribute('position', new THREE.BufferAttribute(fios, 3));
+      fiosNos = new THREE.LineSegments(geoFios, matFios);
+      nos.add(fiosNos, pontosNos);
     },
     arrastar(dx, dy) {
       const agora = Date.now() / 1000;

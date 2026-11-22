@@ -8,6 +8,7 @@ import { quandoCurto, type Atividade, type Prioridade, type Task } from '@jarvis
 import { jarvis } from './src/jarvis';
 import { aplicarAtualizacao, ligarAtualizacao } from './src/atualizacao';
 import { Conversa } from './src/Conversa';
+import { Memoria } from './src/Memoria';
 import { Nucleo, type Pulso } from './src/Nucleo';
 import type { EstadoNucleo } from '@jarvis/nucleo';
 import { C, COR_PRIO, MONO, NOME_PRIO } from './src/tema';
@@ -148,7 +149,8 @@ function Painel({ pulso, estado }: { pulso: Pulso; estado: EstadoNucleo }) {
   const [prio, setPrio] = useState<Prioridade>('media');
   const [sync, setSync] = useState(jarvis.estado());
   const [atividades, setAtividades] = useState<Atividade[]>([]);
-  const [aba, setAba] = useState<'conversa' | 'tarefas'>('conversa');
+  const [nos, setNos] = useState<{ id: string; importancia: number }[]>([]);
+  const [aba, setAba] = useState<'conversa' | 'tarefas' | 'memoria'>('conversa');
   const rolagem = useRef<ComponentRef<typeof ScrollView>>(null);
   const descer = useCallback(() => rolagem.current?.scrollToEnd({ animated: true }), []);
 
@@ -156,6 +158,9 @@ function Painel({ pulso, estado }: { pulso: Pulso; estado: EstadoNucleo }) {
     setLista(await jarvis.tarefas.listar());
     setSync(jarvis.estado());
     setAtividades(await jarvis.atividades.listar());
+    // Cada memória real é um nó do cérebro (só troca a lista se mudou de verdade).
+    const mem = (await jarvis.memorias.listar()).map((m) => ({ id: m.id, importancia: m.importance }));
+    setNos((antes) => (antes.length === mem.length && antes.every((x, i) => x.id === mem[i]!.id && x.importancia === mem[i]!.importancia) ? antes : mem));
   }, []);
 
   useEffect(() => {
@@ -185,7 +190,7 @@ function Painel({ pulso, estado }: { pulso: Pulso; estado: EstadoNucleo }) {
       </View>
 
       <View style={{ alignItems: 'center', marginTop: -24, marginBottom: -28 }}>
-        <Nucleo tamanho={280} pulso={pulso} estado={estado} />
+        <Nucleo tamanho={280} pulso={pulso} estado={estado} memorias={nos} />
       </View>
       <View style={s.saudacao}>
         <View style={{ flex: 1 }}>
@@ -200,14 +205,14 @@ function Painel({ pulso, estado }: { pulso: Pulso; estado: EstadoNucleo }) {
       </View>
 
       <View style={s.abasPainel}>
-        {(['conversa', 'tarefas'] as const).map((a) => (
+        {(['conversa', 'tarefas', 'memoria'] as const).map((a) => (
           <Pressable key={a} style={[s.aba, aba === a && s.abaAtiva]} onPress={() => setAba(a)}>
-            <Text style={[s.abaTxt, aba === a && { color: C.ciano }]}>{a === 'conversa' ? 'Conversa' : 'Tarefas'}</Text>
+            <Text style={[s.abaTxt, aba === a && { color: C.ciano }]}>{a === 'conversa' ? 'Conversa' : a === 'tarefas' ? 'Tarefas' : 'Memória'}</Text>
           </Pressable>
         ))}
       </View>
 
-      {aba === 'conversa' ? <Conversa aoCrescer={descer} /> : (
+      {aba === 'conversa' ? <Conversa aoCrescer={descer} /> : aba === 'memoria' ? <Memoria /> : (
       <>
       <View style={s.nova}>
         <TextInput

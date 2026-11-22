@@ -105,8 +105,15 @@ export interface MensagemIA {
   content: string;
 }
 
+export interface OpcoesConversa {
+  /** pede resposta em JSON (modo JSON do provedor) */
+  json?: boolean;
+  temperatura?: number;
+  maxTokens?: number;
+}
+
 /** Chama o provedor. Se o modelo foi aposentado, recarrega a lista e tenta uma vez de novo. */
-export async function conversar(nome: NomeProvedor, mensagens: MensagemIA[]): Promise<Resultado> {
+export async function conversar(nome: NomeProvedor, mensagens: MensagemIA[], op: OpcoesConversa = {}): Promise<Resultado> {
   const p = PROVEDORES[nome];
   const chave = p.chave();
   if (!chave) return { ok: false, limite: false, esperarSeg: 0, erro: `sem chave do ${nome}` };
@@ -115,7 +122,11 @@ export async function conversar(nome: NomeProvedor, mensagens: MensagemIA[]): Pr
     fetch(p.url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: modelo, messages: mensagens, temperature: 0.6, max_tokens: 1500, ...p.extras(modelo) }),
+      body: JSON.stringify({
+        model: modelo, messages: mensagens, temperature: op.temperatura ?? 0.6, max_tokens: op.maxTokens ?? 1500,
+        ...(op.json ? { response_format: { type: 'json_object' } } : {}),
+        ...p.extras(modelo),
+      }),
       signal: AbortSignal.timeout(p.timeoutMs),
     });
 

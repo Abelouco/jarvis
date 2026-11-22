@@ -38,6 +38,15 @@ export interface Message extends Base {
   sensitive: boolean;
 }
 
+/** Algo que o J.A.R.V.I.S. aprendeu sobre o dono. */
+export interface Memory extends Base {
+  kind: 'fato' | 'preferencia' | 'nota' | 'captura' | 'diario';
+  title: string | null;
+  content: string;
+  importance: number;
+  sensitive: boolean;
+}
+
 export interface JarvisEvent {
   id: number;
   user_id: string;

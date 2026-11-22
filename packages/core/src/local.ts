@@ -21,6 +21,10 @@ export const COLUNAS_MESSAGES = [
   'sensitive', 'created_at', 'updated_at', 'deleted_at',
 ] as const;
 
+export const COLUNAS_MEMORIES = [
+  'id', 'user_id', 'kind', 'title', 'content', 'importance', 'sensitive', 'created_at', 'updated_at', 'deleted_at',
+] as const;
+
 /** Tabelas que sincronizam com o Supabase, na ordem de envio (pais antes dos filhos). */
 export interface TabelaSync {
   nome: string;
@@ -37,6 +41,8 @@ export const TABELAS_SYNC: readonly TabelaSync[] = [
     nome: 'messages', colunas: COLUNAS_MESSAGES, booleanas: ['sensitive'],
     somenteServidor: ['sensitive', 'provider', 'model', 'latency_ms'],
   },
+  // Quem cria e muda memórias é a IA (no servidor); o app só lê e "esquece" (deleted_at).
+  { nome: 'memories', colunas: COLUNAS_MEMORIES, booleanas: ['sensitive'], somenteServidor: ['sensitive'] },
 ];
 
 export const SCHEMA_LOCAL = [
@@ -85,6 +91,20 @@ export const SCHEMA_LOCAL = [
   )`,
   `create index if not exists messages_dirty_idx on messages (dirty)`,
   `create index if not exists messages_conversa_idx on messages (conversation_id, created_at)`,
+  `create table if not exists memories (
+    id text primary key,
+    user_id text,
+    kind text not null default 'nota',
+    title text,
+    content text not null,
+    importance integer not null default 5,
+    sensitive integer not null default 0,
+    created_at text not null,
+    updated_at text not null,
+    deleted_at text,
+    dirty integer not null default 0
+  )`,
+  `create index if not exists memories_dirty_idx on memories (dirty)`,
   `create table if not exists sync_state (tabela text primary key, cursor text)`,
 ];
 

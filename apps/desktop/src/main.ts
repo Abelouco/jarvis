@@ -1,4 +1,4 @@
-import { quandoCurto, type Message, type Prioridade, type Task } from '@jarvis/core';
+import { quandoCurto, type Memory, type Message, type Prioridade, type Task } from '@jarvis/core';
 import { jarvis } from './jarvis';
 import './estilo.css';
 import { montarNucleo, type NucleoMontado } from './nucleo3d';
@@ -122,10 +122,11 @@ let prioridade: Prioridade = 'media';
 // Ids já desenhados: só os novos entram com animação.
 let atividadesVistas = new Set<number>();
 
-type Aba = 'conversa' | 'tarefas';
+type Aba = 'conversa' | 'tarefas' | 'memoria';
 const lerAba = (): Aba => {
   try {
-    return localStorage.getItem('jarvis.aba') === 'tarefas' ? 'tarefas' : 'conversa';
+    const salva = localStorage.getItem('jarvis.aba');
+    return salva === 'tarefas' || salva === 'memoria' ? salva : 'conversa';
   } catch {
     return 'conversa';
   }
@@ -137,6 +138,8 @@ let assinaturaChat = '';
 let assinaturaListas = '';
 let assinaturaAtividades = '';
 let mensagensVistas = new Set<string>();
+let assinaturaMemoria = '';
+let memoriaConfirmando: string | null = null;
 
 function saudacao() {
   const h = new Date().getHours();
@@ -172,6 +175,7 @@ async function montarPainel() {
             <nav class="abas-painel" id="abas">
               <button type="button" data-aba="conversa">Conversa</button>
               <button type="button" data-aba="tarefas">Tarefas</button>
+              <button type="button" data-aba="memoria">Memória</button>
             </nav>
             <div class="vista" id="vista-conversa">
               <div class="chat" id="chat"></div>
@@ -183,6 +187,11 @@ async function montarPainel() {
                   <button class="adicionar" title="Enviar (Enter)">↑</button>
                 </form>
               </div>
+            </div>
+            <div class="vista" id="vista-memoria">
+              <p class="memoria-intro">O que o J.A.R.V.I.S. aprendeu sobre você nas conversas. Ele usa isso para responder melhor.
+                Peça no chat para lembrar ou esquecer algo, ou esqueça por aqui.</p>
+              <div id="memorias"></div>
             </div>
             <div class="vista" id="vista-tarefas">
             <form class="nova" id="nova">
@@ -263,6 +272,20 @@ async function montarPainel() {
       if (texto !== undefined) abrirExpandido(bExpandir.dataset.titulo ?? 'Texto', texto);
     }
   };
+  // Esquecer pede confirmação: o primeiro clique arma, o segundo esquece.
+  $<HTMLDivElement>('#memorias').onclick = (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-esquecer]');
+    if (!b) return;
+    const id = b.dataset.esquecer!;
+    if (memoriaConfirmando === id) {
+      memoriaConfirmando = null;
+      void jarvis.memorias.esquecer(id);
+    } else {
+      memoriaConfirmando = id;
+      assinaturaMemoria = '';
+      void desenharMemorias();
+    }
+  };
   $<HTMLButtonElement>('#nova-conversa').onclick = () => {
     jarvis.chat.novaConversa();
     campoFala.focus();
@@ -275,7 +298,9 @@ async function montarPainel() {
     );
     $<HTMLDivElement>('#vista-conversa').hidden = aba !== 'conversa';
     $<HTMLDivElement>('#vista-tarefas').hidden = aba !== 'tarefas';
-    (aba === 'conversa' ? campoFala : campo).focus();
+    $<HTMLDivElement>('#vista-memoria').hidden = aba !== 'memoria';
+    if (aba === 'conversa') campoFala.focus();
+    else if (aba === 'tarefas') campo.focus();
   };
   $<HTMLElement>('#abas').onclick = (e) => {
     const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-aba]');
@@ -294,7 +319,8 @@ async function montarPainel() {
   marcarPrio();
   trocarNucleo($('#nucleo'), 0.8);
   qtdMensagensDesenhadas = -1;
-  assinaturaChat = assinaturaListas = assinaturaAtividades = '';
+  assinaturaChat = assinaturaListas = assinaturaAtividades = assinaturaMemoria = '';
+  memoriaConfirmando = null;
   mensagensVistas = new Set();
   mostrarAba();
   atividadesVistas = new Set();
@@ -348,6 +374,43 @@ async function atualizarPainel() {
 
   await desenharAtividades();
   await desenharChat();
+  await desenharMemorias();
+}
+
+const NOME_TIPO: Record<string, string> = {
+  preferencia: 'Preferências', fato: 'Fatos', nota: 'Notas', captura: 'Capturas', diario: 'Diário',
+};
+
+function itemMemoria(m: Memory) {
+  const confirmando = memoriaConfirmando === m.id;
+  return `
+    <li class="memoria" data-imp="${m.importance >= 8 ? 'alta' : m.importance >= 5 ? 'media' : 'baixa'}">
+      <div class="memoria-corpo">
+        <div class="memoria-titulo">${esc(m.title ?? m.content)}${m.sensitive ? '<span class="memoria-sens" title="Sensível: nunca vai para o Gemini">sensível</span>' : ''}</div>
+        ${m.title ? `<div class="memoria-texto">${esc(m.content)}</div>` : ''}
+        <div class="memoria-quando">${quandoCurto(m.updated_at)}</div>
+      </div>
+      <button class="memoria-esquecer${confirmando ? ' confirmar' : ''}" data-esquecer="${m.id}" title="Esquecer">${confirmando ? 'Esquecer?' : '×'}</button>
+    </li>`;
+}
+
+async function desenharMemorias() {
+  const lista = await jarvis.memorias.listar();
+  if (tela !== 'painel') return;
+  // Cada memória real é um nó do cérebro.
+  nucleo?.definirMemorias(lista.map((m) => ({ id: m.id, importancia: m.importance })));
+  const assinatura = `${memoriaConfirmando}|` + lista.map((m) => `${m.id}:${m.updated_at}`).join(',');
+  if (assinatura === assinaturaMemoria) return;
+  assinaturaMemoria = assinatura;
+  const grupos = new Map<string, Memory[]>();
+  for (const m of lista) grupos.set(m.kind, [...(grupos.get(m.kind) ?? []), m]);
+  $<HTMLDivElement>('#memorias').innerHTML = lista.length
+    ? [...grupos.entries()].map(([tipo, itens]) => `
+      <section class="secao">
+        <h3>${NOME_TIPO[tipo] ?? tipo} <b>${itens.length}</b></h3>
+        <ul class="lista">${itens.map(itemMemoria).join('')}</ul>
+      </section>`).join('')
+    : `<div class="vazio"><strong>Ainda não sei nada sobre você.</strong>Conte algo no chat, como seu nome, sua rotina ou do que você gosta.</div>`;
 }
 
 function itemMensagem(m: Message, nova: boolean) {
