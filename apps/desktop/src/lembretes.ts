@@ -284,7 +284,7 @@ export function ligarLembretes(raiz: HTMLElement, op: Opcoes = {}) {
    */
   async function notificarWindows(titulo: string, corpo: string) {
     try {
-      await invoke('plugin:notification|notify', { options: { title: titulo, body: corpo } });
+      await invoke('notificar', { titulo, corpo });
     } catch (e) {
       console.warn('lembretes: notificação do Windows falhou', e);
     }

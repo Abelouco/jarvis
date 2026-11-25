@@ -19,7 +19,8 @@
         "minHeight": 560,
         "backgroundColor": "#04060b",
         "decorations": false,
-        "shadow": true
+        "shadow": true,
+        "backgroundThrottling": "disabled"
       }
     ],
     "security": {

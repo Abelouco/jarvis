@@ -1,5 +1,6 @@
 use tauri::Manager;
 
+mod aviso;
 mod terminal;
 mod voz;
 
@@ -23,6 +24,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
+            aviso::notificar,
             terminal::abrir_terminal,
             terminal::abrir_link,
             voz::voz_estado,
