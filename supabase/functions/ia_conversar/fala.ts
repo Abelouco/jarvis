@@ -2,6 +2,7 @@
 // J.A.R.V.I.S. fala a resposta inteira, resumida (quem só ouvir
 // precisa ficar sabendo a resposta). A voz do PC (Piper pt-BR) só sabe ler português, então as palavras em inglês vão escritas como se pronunciam ("pike" → "páique").
 // Só Groq: a resposta pode ter assunto sensível, e sensível nunca vai para o Gemini grátis.
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { conversar } from './provedores.ts';
 
 const SISTEMA = [
@@ -29,9 +30,19 @@ function limpar(texto: string): string {
     .trim();
 }
 
-export async function resumoFalado(pergunta: string, resposta: string): Promise<string | null> {
+/** Pronúncias que o dono ensinou (guardadas na memória: "X se pronuncia \"Y\""). */
+export async function pronunciasEnsinadas(sb: SupabaseClient): Promise<string[]> {
+  const { data } = await sb.from('memories').select('content').is('deleted_at', null)
+    .ilike('content', '%se pronuncia%').order('updated_at', { ascending: false }).limit(40);
+  return (data ?? []).map((m: { content: string }) => m.content.slice(0, 200));
+}
+
+export async function resumoFalado(pergunta: string, resposta: string, pronuncias: string[] = []): Promise<string | null> {
+  const ensinadas = pronuncias.length
+    ? `\n- PRONÚNCIAS ENSINADAS PELO DONO (use exatamente esta grafia ao falar esses nomes; valem mais que os exemplos acima):\n${pronuncias.map((p) => `  - ${p}`).join('\n')}`
+    : '';
   const r = await conversar('groq', [
-    { role: 'system', content: SISTEMA },
+    { role: 'system', content: SISTEMA + ensinadas },
     { role: 'user', content: `Pergunta do dono: ${pergunta.slice(0, 600)}\n\nResposta completa:\n${resposta.slice(0, 6000)}` },
   ], { temperatura: 0.3, maxTokens: 600 });
   if (!r.ok) {

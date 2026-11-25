@@ -26,6 +26,9 @@ const TRIVIAL = /^(oi+|ola|opa|e ai|eai|hey|bom dia|boa tarde|boa noite|obrigad\
 const SOBRE_JARVIS = /\b(quem e voce|quem (e|sao) vc|seu nome|o que voce (faz|sabe|pode)|voce (consegue|pode|sabe|lembra)|o que significa jarvis|j\.?a\.?r\.?v\.?i\.?s\.? significa|sua versao|versao (atual )?(do |de )?(jarvis|voce|vc|app|aplicativo)|que versao (voce|vc|e essa|esta)|voce esta (atualizado|na versao)|quem te (criou|fez|programou)|como (voce|vc) funciona|do que (voce|vc) e feito)\b/;
 // Perguntas sobre o núcleo 3D do próprio J.A.R.V.I.S. (não sobre física em geral).
 const SOBRE_O_NUCLEO = /\b(nucleo|seu cerebro|(esses?|essas?|os|as|cada) (nos|no|pulsos?|filamentos?|aneis|anel|linhas|pontos|particulas)\b|nos de memoria|por que (a esfera|o nucleo|voce) (ficou|esta|mudou|piscou|pulsou)|(ficou|esta|mudou para) (azul|violeta|roxo|roxa|ambar|vermelho|vermelha|verde)|essa cor)\b/;
+// O dono ensinando ou corrigindo o J.A.R.V.I.S. (pronúncia, nome certo, "na verdade..."): não há o que pesquisar.
+const PRONUNCIA = /\b(pronunci\w*|se (fala|le|diz)|fala-se|le-se|diz-se|(fala|le|diz) assim|soletr\w*)\b/;
+const CORRECAO = /^(na verdade|nao[,.]? (e|era) (assim|isso)|(o|a) (certo|certa|correto|correta|nome (certo|correto)) (e|eh)|(voce|vc) (errou|falou errado|leu errado|disse errado|escreveu errado)|errado[,.]|corrigindo|so corrigindo|fica sabendo|so para (voce|vc) saber|anota ai|grava (isso|ai)|se escreve)\b/;
 const AGORA = /\b(que horas|que dia e hoje|data de hoje|que dia da semana)\b/;
 const SOBRE_O_DONO = /\b(meu nome|eu sou|eu (trabalho|estudo|moro|gosto|prefiro|tenho|quero|preciso|vou)|me (lembre|lembra)|lembr\w*|esquec\w*|minha (semana|rotina|agenda|vida|casa|familia|tarefa|lista|meta|dieta)|meu (dia|mes|plano|objetivo|treino|projeto))\b/;
 const CRIATIVO = /\b(escrev\w*|redij\w*|redig\w*|reescrev\w*|cri[ea] (um|uma) (texto|mensagem|poema|historia|post|legenda|email|e-mail|carta|roteiro|discurso)|traduz\w*|melhor[ea] (este|esse|o) texto|corrij\w*|revis\w* (este|esse|o) texto)\b/;
@@ -40,6 +43,8 @@ export function escolherRota(texto: string): Rota {
 
   if (PEDE_BUSCA.test(t)) return 'pesquisa';
   if ((TRIVIAL.test(t) && palavras <= 6) || SOBRE_JARVIS.test(t) || SOBRE_O_NUCLEO.test(t) || AGORA.test(t)) return 'rapido';
+  // Ensinar pronúncia (pergunta ou não) e correções afirmativas: resposta direta, sem busca.
+  if (PRONUNCIA.test(t) || (CORRECAO.test(t) && !t.includes('?'))) return 'rapido';
   if (FATO_DO_MUNDO.test(t) || NOME_PROPRIO.test(` ${texto.trim()}`.replace(/^\s*\S+/, ' '))) return 'pesquisa';
   if (CRIATIVO.test(t) || SOBRE_O_DONO.test(t)) {
     return PEDE_RACIOCINIO.test(t) || t.length > 300 ? 'inteligente' : 'rapido';

@@ -69,6 +69,15 @@ test('rota: conversa trivial e perguntas sobre o J.A.R.V.I.S. vão sem busca', (
   }
 });
 
+test('rota: o dono ensinando pronúncia ou corrigindo vai sem busca', () => {
+  for (const t of [
+    'A pronúncia correta é "Dêpê Sóquer".', 'Medieval Dynasty se pronuncia Midíval Dáinasti', 'Como se pronuncia Steam?',
+    'Na verdade o nome do projeto é DP Soccer', 'O certo é Sóquer, não Socker', 'Você falou errado o nome do jogo',
+  ]) {
+    assert.equal(escolherRota(t), 'rapido', t);
+  }
+});
+
 test('rota: assuntos do dono e textos para escrever vão pelo raciocínio, sem busca', () => {
   for (const t of [
     'Me ajuda a planejar minha semana',

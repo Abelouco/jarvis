@@ -58,6 +58,7 @@ const PROMPT_EXTRAIR = [
   'NÃO guarde: perguntas de conhecimento geral, conteúdo das respostas do assistente, tarefas pontuais, coisas passageiras do dia, suposições.',
   'Se algo novo contradiz ou atualiza uma memória existente, use "atualizar" com o id dela. Se o dono pedir para esquecer algo, use "apagar" com o id. Se já está guardado igual, não repita.',
   'Se o dono pedir explicitamente para lembrar de algo, guarde com importância alta.',
+  'Se o dono ensinar como se pronuncia uma palavra ou nome, guarde como \"preferencia\" com título \"Pronúncia de X\" e conteúdo exatamente no formato: X se pronuncia \"Y\" (Y escrito como ele ensinou), importância 7. Se já houver pronúncia de X guardada, atualize.',
   'Importância: 10 = identidade (nome); 8-9 = essencial; 5-7 = útil; 1-4 = detalhe.',
   '"sensivel": true para saúde, dinheiro, documentos, senhas, intimidade ou terceiros identificáveis em situação delicada.',
   'No máximo 3 itens.',

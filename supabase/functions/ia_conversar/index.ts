@@ -13,7 +13,7 @@ import {
 } from './provedores.ts';
 import { aprender, blocoMemoria, lembrar } from './memoria.ts';
 import { blocoTrechos, buscar, fontesDe, temBusca, type PesquisaAnterior, type Trecho } from './busca.ts';
-import { resumoFalado } from './fala.ts';
+import { pronunciasEnsinadas, resumoFalado } from './fala.ts';
 import './lembretes.ts'; // registra as ferramentas de lembretes no planejador
 import './projetos.ts'; // idem, projetos e marcos
 import {
@@ -246,7 +246,7 @@ Deno.serve(async (req) => {
       });
       const resultados = await executar(sb, plano.acoes, hoje);
       const conteudo = textoFinal(resultados) || 'Feito.';
-      const falaPronta = corpo.voz ? resumoFalado(texto, conteudo).catch(() => null) : Promise.resolve(null);
+      const falaPronta = corpo.voz ? pronunciasEnsinadas(sb).catch(() => []).then((p) => resumoFalado(texto, conteudo, p)).catch(() => null) : Promise.resolve(null);
       const salva = await sb.from('messages').insert({
         conversation_id: corpo.conversation_id, role: 'assistant', content: conteudo,
         provider: plano.provedor, model: 'ferramentas', latency_ms: Date.now() - inicioAcao,
@@ -398,7 +398,7 @@ Deno.serve(async (req) => {
   }
 
   // Pergunta feita por voz: além da resposta completa (tela), um resumo curto para falar.
-  const falaPronta = corpo.voz ? resumoFalado(texto, resposta.texto).catch(() => null) : Promise.resolve(null);
+  const falaPronta = corpo.voz ? pronunciasEnsinadas(sb).catch(() => []).then((p) => resumoFalado(texto, resposta!.texto, p)).catch(() => null) : Promise.resolve(null);
 
   const salva = await sb.from('messages')
     .insert({
