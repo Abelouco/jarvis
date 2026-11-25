@@ -119,3 +119,65 @@ test('tarefas: detector local', () => {
   for (const t of ['Qual a capital da França?', 'quem é você?', 'sim']) assert.ok(!pareceTarefa(t, false), t);
   assert.ok(pareceTarefa('sim, pode', true));
 });
+
+// ---------- tarefas fixas (repetição) e datas calculadas no servidor ----------
+import { readFileSync } from 'node:fs';
+import { dataAposConcluir, descreverRecorrencia, normalizarRecorrencia, primeiraData, proximaData } from './recorrencia.ts';
+import { resolverQuando } from './tarefas.ts';
+
+// Quarta, 25/11/2026, 12:42 em São Paulo (15:42 UTC): o dia do erro da "Pelada Dondon".
+const QUARTA = new Date('2026-11-25T15:42:00Z');
+
+test('repetição: "toda segunda às 20h" criada numa quarta cai na segunda 30/11', () => {
+  const rec = normalizarRecorrencia({ freq: 'semanal', dias_semana: ['seg'] })!;
+  assert.deepEqual(rec, { freq: 'semanal', dias: [1], ate: null });
+  assert.equal(primeiraData(rec, '20:00', QUARTA), '2026-11-30');
+  assert.equal(descreverRecorrencia(rec), 'toda segunda');
+  // Concluiu a de segunda 30/11 -> próxima segunda 07/12.
+  assert.equal(dataAposConcluir(rec, '2026-11-30', new Date('2026-11-30T23:30:00Z')), '2026-12-07');
+  // Esqueceu de concluir e concluiu na quarta seguinte -> próxima segunda, nunca o passado.
+  assert.equal(dataAposConcluir(rec, '2026-11-30', new Date('2026-12-02T15:00:00Z')), '2026-12-07');
+});
+
+test('repetição: hoje vale só se a hora ainda não passou', () => {
+  const diaria = normalizarRecorrencia({ freq: 'diaria' })!;
+  assert.equal(primeiraData(diaria, '20:00', QUARTA), '2026-11-25');
+  assert.equal(primeiraData(diaria, '09:00', QUARTA), '2026-11-26');
+  assert.equal(primeiraData(diaria, null, QUARTA), '2026-11-25');
+});
+
+test('repetição: dias úteis, fim de semana, mensal e fim da série', () => {
+  const uteis = normalizarRecorrencia({ freq: 'dias_uteis' })!;
+  assert.equal(proximaData(uteis, '2026-11-27', false), '2026-11-30'); // sexta -> segunda
+  const fds = normalizarRecorrencia({ frequencia: 'fim_de_semana' })!;
+  assert.equal(proximaData(fds, '2026-11-25', true), '2026-11-28');
+  const mensal = normalizarRecorrencia({ freq: 'mensal', dia_do_mes: 31 })!;
+  assert.equal(proximaData(mensal, '2027-02-01', true), '2027-02-28'); // mês curto: último dia
+  const curta = normalizarRecorrencia({ freq: 'semanal', dias_semana: ['seg', 'qua'], ate: '2026-12-01' })!;
+  assert.equal(descreverRecorrencia(curta), 'seg, qua');
+  assert.equal(proximaData(curta, '2026-11-30', false), null);
+  assert.equal(normalizarRecorrencia({ freq: 'semanal', dias_semana: [] }), null);
+  assert.equal(descreverRecorrencia(normalizarRecorrencia({ freq: 'semanal', dias: ['sab'] })), 'todo sábado');
+});
+
+test('datas: o servidor calcula, a IA só diz o dia', () => {
+  const hoje = '2026-11-25'; // quarta
+  assert.equal(resolverQuando({ dia_semana: 'seg' }, hoje), '2026-11-30');
+  assert.equal(resolverQuando({ dia_semana: 'segunda-feira' }, hoje), '2026-11-30');
+  assert.equal(resolverQuando({ dia_semana: 'qua' }, hoje), '2026-12-02'); // "quarta" dita na quarta = a próxima
+  assert.equal(resolverQuando({ dia_semana: 'sex' }, hoje), '2026-11-27');
+  assert.equal(resolverQuando({ dia_semana: 'sex', semana_que_vem: true }, hoje), '2026-12-04');
+  assert.equal(resolverQuando({ quando: 'amanhã' }, hoje), '2026-11-26');
+  assert.equal(resolverQuando({ quando: 'depois de amanhã' }, hoje), '2026-11-27');
+  assert.equal(resolverQuando({ daqui_dias: 10 }, hoje), '2026-12-05');
+  assert.equal(resolverQuando({ dia_mes: 5 }, hoje), '2026-12-05');
+  assert.equal(resolverQuando({ dia_mes: 28 }, hoje), '2026-11-28');
+  assert.equal(resolverQuando({ data: '2026-12-24' }, hoje), '2026-12-24');
+  assert.equal(resolverQuando({ quando: 'sem_data' }, hoje), null);
+  assert.equal(resolverQuando({}, hoje), undefined);
+});
+
+test('repetição: a cópia do servidor é igual à do app', () => {
+  const corpo = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8').replace(/\r/g, '').split('\n').slice(2).join('\n');
+  assert.equal(corpo('./recorrencia.ts'), corpo('../../../packages/core/src/recorrencia.ts'));
+});

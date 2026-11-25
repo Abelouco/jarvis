@@ -7,6 +7,12 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { conversar, temChave, type MensagemIA, type NomeProvedor } from './provedores.ts';
 import { normalizar } from './sensivel.ts';
+import {
+  dataAposConcluir, descreverRecorrencia, hojeSP, normalizarRecorrencia, numeroDoDia, primeiraData, proximaData,
+  somarDias, type Recorrencia,
+} from './recorrencia.ts';
+
+export { hojeSP, somarDias };
 
 const FUSO = 'America/Sao_Paulo';
 const DATA = /^\d{4}-\d{2}-\d{2}$/;
@@ -23,6 +29,7 @@ export interface Tarefa {
   due_time: string | null;
   done_at: string | null;
   deleted_at: string | null;
+  recurrence: Recorrencia | null;
 }
 
 /** Resposta em camadas: resumo, fatos estruturados, texto pronto e ids. */
@@ -41,16 +48,6 @@ export interface Acao {
 }
 
 // ---------- datas (sempre no fuso de São Paulo) ----------
-
-export function hojeSP(base = new Date()): string {
-  return base.toLocaleDateString('en-CA', { timeZone: FUSO });
-}
-
-export function somarDias(data: string, dias: number): string {
-  const d = new Date(`${data}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + dias);
-  return d.toISOString().slice(0, 10);
-}
 
 const SEMANA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
 const diaDaSemana = (data: string) => SEMANA[new Date(`${data}T12:00:00Z`).getUTCDay()]!;
@@ -89,8 +86,39 @@ export function dataHumana(data: string | null, hoje: string): string {
   return `${diaDaSemana(data)}, ${d}/${m}`;
 }
 
-const quando = (t: Pick<Tarefa, 'due_date' | 'due_time'>, hoje: string) =>
-  t.due_date ? `${dataHumana(t.due_date, hoje)}${t.due_time ? ` às ${t.due_time.slice(0, 5)}` : ''}` : 'sem data';
+const quando = (t: Pick<Tarefa, 'due_date' | 'due_time' | 'recurrence'>, hoje: string) => {
+  const hora = t.due_time ? ` às ${t.due_time.slice(0, 5)}` : '';
+  if (t.recurrence) {
+    return `${descreverRecorrencia(t.recurrence)}${hora}${t.due_date ? ` (próxima: ${dataHumana(t.due_date, hoje)})` : ''}`;
+  }
+  return t.due_date ? `${dataHumana(t.due_date, hoje)}${hora}` : 'sem data';
+};
+
+/**
+ * A data sai daqui, nunca da IA: ela só diz "amanhã", "segunda", "daqui a 3 dias", "dia 5"
+ * ou uma data completa que o dono falou. `undefined` = não falou de data.
+ */
+export function resolverQuando(a: Record<string, unknown>, hoje: string): string | null | undefined {
+  const q = typeof a.quando === 'string' ? normalizar(a.quando).trim().replace(/\s+/g, '_') : '';
+  if (q === 'hoje') return hoje;
+  if (q === 'amanha') return somarDias(hoje, 1);
+  if (q === 'depois_de_amanha') return somarDias(hoje, 2);
+  if (q === 'sem_data' || a.data === null) return null;
+  const dw = numeroDoDia(a.dia_semana);
+  if (dw !== null) {
+    let d = proximaData({ freq: 'semanal', dias: [dw] }, hoje, false)!;
+    // "da semana que vem": se a próxima ainda cai nesta semana (até domingo), pula uma semana.
+    const diasAteDomingo = (7 - new Date(`${hoje}T12:00:00Z`).getUTCDay()) % 7;
+    if (a.semana_que_vem === true && d <= somarDias(hoje, diasAteDomingo)) d = somarDias(d, 7);
+    return d;
+  }
+  const n = Number(a.daqui_dias);
+  if (a.daqui_dias !== undefined && Number.isInteger(n) && n >= 0 && n <= 366) return somarDias(hoje, n);
+  const dm = Number(a.dia_mes);
+  if (Number.isInteger(dm) && dm >= 1 && dm <= 31) return proximaData({ freq: 'mensal', dia_mes: dm }, hoje, true);
+  if (dataValida(a.data)) return a.data;
+  return undefined;
+}
 
 // ---------- detector local (não gasta IA à toa) ----------
 
@@ -141,15 +169,23 @@ export function acharPorNome<T extends Pick<Tarefa, 'id' | 'title'>>(ref: string
 // ---------- o planejador (Groq em JSON; Gemini só se não for sensível) ----------
 
 const FERRAMENTAS = `
-tarefas_criar {titulo, data?: "AAAA-MM-DD", hora?: "HH:MM", prioridade?: "alta"|"media"|"baixa", notas?}
+tarefas_criar {titulo, QUANDO?, hora?: "HH:MM", repetir?: REPETIR, prioridade?: "alta"|"media"|"baixa", notas?}
 tarefas_listar {filtro: "hoje"|"atrasadas"|"proximas"|"abertas"|"concluidas"|"periodo", de?: "AAAA-MM-DD", ate?: "AAAA-MM-DD", termo?}
 tarefas_concluir {refs: ["nome ou id", ...]}
 tarefas_reabrir {refs: ["nome ou id", ...]}
-tarefas_editar {ref: "nome ou id", titulo?, data?: "AAAA-MM-DD"|null, hora?: "HH:MM"|null, prioridade?, notas?}
+tarefas_editar {ref: "nome ou id", titulo?, QUANDO?, hora?: "HH:MM"|null, repetir?: REPETIR|null, prioridade?, notas?}
 tarefas_apagar {refs: ["nome ou id", ...]}
 jarvis_confirmar {}   (o dono disse sim para a confirmação pendente)
 jarvis_cancelar {}    (o dono desistiu da confirmação pendente)
-jarvis_desfazer {}    (desfaz a última ação, até 24 h)`;
+jarvis_desfazer {}    (desfaz a última ação, até 24 h)
+
+QUANDO = UM destes campos (você NUNCA calcula a data; o app calcula):
+  quando: "hoje"|"amanha"|"depois_de_amanha"|"sem_data"
+  dia_semana: "dom"|"seg"|"ter"|"qua"|"qui"|"sex"|"sab"   (ex.: "na segunda" -> "seg"; some semana_que_vem: true se o dono disser "da semana que vem")
+  daqui_dias: número   (ex.: "daqui a 3 dias" -> 3)
+  dia_mes: número      (ex.: "dia 5" sem mês -> 5)
+  data: "AAAA-MM-DD"   (só quando o dono disser dia E mês, ex.: "5 de dezembro")
+REPETIR (tarefa fixa) = {freq: "diaria"|"dias_uteis"|"fim_de_semana"|"semanal"|"mensal", dias_semana?: ["seg", ...] (semanal), dia_mes?: número (mensal), ate?: "AAAA-MM-DD"}`;
 
 function promptPlanejador(hoje: string, abertas: Tarefa[], pendente: string | null) {
   const agora = new Date().toLocaleTimeString('pt-BR', { timeZone: FUSO, hour: '2-digit', minute: '2-digit' });
@@ -159,7 +195,8 @@ function promptPlanejador(hoje: string, abertas: Tarefa[], pendente: string | nu
     'Ferramentas:', FERRAMENTAS,
     '',
     'Regras:',
-    '- Datas sempre AAAA-MM-DD usando o calendário abaixo; horas HH:MM (24 h). "amanhã às 9h" = data de amanhã + "09:00". "de manhã" sem hora: não invente hora.',
+    '- NUNCA escreva a data de um dia da semana: use dia_semana. "amanhã às 9h" -> quando:"amanha", hora:"09:00". Horas HH:MM em 24 h: "8 da noite" = "20:00", "meio-dia" = "12:00". "de manhã" sem hora: não invente hora.',
+    '- TAREFA FIXA: "toda/todo/todas/todos", "sempre", "cada", "diariamente", "semanalmente", "de segunda a sexta" = repetir. Ex.: "toda segunda às 20h" -> repetir:{freq:"semanal", dias_semana:["seg"]}, hora:"20:00" (sem QUANDO). "todo dia" -> diaria. "dias úteis"/"de segunda a sexta" -> dias_uteis. "toda segunda e quarta" -> semanal ["seg","qua"]. "todo dia 10" -> mensal dia_mes 10.',
     '- Título curto e limpo, começando com verbo quando der (ex.: "Comprar pão"); sem a data/hora no título.',
     '- Para concluir/editar/apagar, use o título exato da lista de tarefas abertas abaixo quando der para saber qual é (ex.: "a do mercado" -> "Ir ao mercado"). Se não der, repita as palavras do dono.',
     '- "o que tenho hoje?" -> tarefas_listar {filtro:"hoje"} (já inclui as atrasadas). "essa semana" -> periodo de hoje até domingo.',
@@ -172,7 +209,7 @@ function promptPlanejador(hoje: string, abertas: Tarefa[], pendente: string | nu
     '',
     'Tarefas abertas (título | data | hora):',
     abertas.length
-      ? abertas.slice(0, 60).map((t) => `- ${t.title} | ${t.due_date ?? '-'} | ${t.due_time?.slice(0, 5) ?? '-'}`).join('\n')
+      ? abertas.slice(0, 60).map((t) => `- ${t.title} | ${t.due_date ?? '-'} | ${t.due_time?.slice(0, 5) ?? '-'}${t.recurrence ? ` | ${descreverRecorrencia(t.recurrence)}` : ''}`).join('\n')
       : '(nenhuma)',
   ].join('\n');
 }
@@ -208,7 +245,7 @@ interface Ctx {
   hoje: string;
 }
 
-const CAMPOS = 'id, title, notes, priority, due_date, due_time, done_at, deleted_at';
+const CAMPOS = 'id, title, notes, priority, due_date, due_time, done_at, deleted_at, recurrence';
 
 async function abertasDe(sb: SupabaseClient): Promise<Tarefa[]> {
   const { data, error } = await sb.from('tasks').select(CAMPOS)
@@ -302,7 +339,9 @@ async function concluirVarias(ctx: Ctx, alvo: Tarefa[]) {
   const agora = new Date().toISOString();
   const feitas: Tarefa[] = [];
   for (const t of alvo) {
-    const nova = await atualizar(ctx, t, { done_at: agora }, 'tarefas_concluir');
+    // Tarefa fixa: concluir esta vez leva para a próxima data (ela continua aberta).
+    const proxima = t.recurrence ? dataAposConcluir(t.recurrence, t.due_date) : null;
+    const nova = await atualizar(ctx, t, proxima ? { due_date: proxima } : { done_at: agora }, 'tarefas_concluir');
     if (nova) feitas.push(nova);
   }
   return feitas;
@@ -324,8 +363,10 @@ const EXECUTORES: Record<string, Executor> = {
   async tarefas_criar(ctx, a) {
     const titulo = String(a.titulo ?? '').trim().replace(/\s+/g, ' ').slice(0, 200);
     if (!titulo) return falha('tarefas_criar', 'Faltou dizer qual é a tarefa.');
-    const data = dataValida(a.data) ? a.data : null;
     const hora = normalizarHora(a.hora);
+    const rec = normalizarRecorrencia(a.repetir);
+    const pedida = resolverQuando(a, ctx.hoje) ?? null;
+    const data = rec ? (pedida && proximaData(rec, pedida, true)) || primeiraData(rec, hora) : pedida;
     const prioridade: Prioridade = PRIOS.includes(a.prioridade as Prioridade) ? a.prioridade as Prioridade : 'media';
     // Não duplica uma tarefa aberta igual.
     const abertas = await abertasDe(ctx.sb);
@@ -337,7 +378,7 @@ const EXECUTORES: Record<string, Executor> = {
       };
     }
     const { data: nova, error } = await ctx.sb.from('tasks').insert({
-      title: titulo, priority: prioridade, due_date: data, due_time: data ? hora : null,
+      title: titulo, priority: prioridade, due_date: data, due_time: data ? hora : null, recurrence: rec,
       notes: typeof a.notas === 'string' && a.notas.trim() ? a.notas.trim().slice(0, 2000) : null,
     }).select(CAMPOS).single();
     if (error) return falha('tarefas_criar', `Não consegui criar a tarefa (${error.message}).`);
@@ -345,7 +386,7 @@ const EXECUTORES: Record<string, Executor> = {
     const t = nova as Tarefa;
     return {
       ferramenta: 'tarefas_criar', ok: true, resumo: `criada "${t.title}"`, fatos: { tarefa: t },
-      texto: `Anotado: **${t.title}** · ${quando(t, ctx.hoje)}${t.priority === 'alta' ? ' · prioridade alta' : ''}.`,
+      texto: `Anotado: **${t.title}** · ${quando(t, ctx.hoje)}${t.priority === 'alta' ? ' · prioridade alta' : ''}.${rec ? ' Ao concluir, ela passa para a próxima data.' : ''}`,
       ids: [t.id],
     };
   },
@@ -415,7 +456,9 @@ const EXECUTORES: Record<string, Executor> = {
     const feitas = await concluirVarias(ctx, r.achadas);
     return {
       ferramenta: 'tarefas_concluir', ok: feitas.length > 0, resumo: `${feitas.length} concluída(s)`, fatos: { concluidas: feitas, ...r },
-      texto: [feitas.length ? `Feito: ${feitas.map((t) => `**${t.title}**`).join(', ')} ✓` : 'Não consegui concluir.', aviso].filter(Boolean).join('\n\n'),
+      texto: [feitas.length
+        ? `Feito: ${feitas.map((t) => `**${t.title}**${t.recurrence && !t.done_at ? ` (próxima: ${dataHumana(t.due_date, ctx.hoje)})` : ''}`).join(', ')} ✓`
+        : 'Não consegui concluir.', aviso].filter(Boolean).join('\n\n'),
       ids: feitas.map((t) => t.id),
     };
   },
@@ -441,16 +484,26 @@ const EXECUTORES: Record<string, Executor> = {
     const t = r.achadas[0]!;
     const m: Partial<Tarefa> = {};
     if (typeof a.titulo === 'string' && a.titulo.trim()) m.title = a.titulo.trim().slice(0, 200);
-    if (a.data === null) {
+    const pedida = resolverQuando(a, ctx.hoje);
+    if (pedida === null) {
       m.due_date = null;
       m.due_time = null;
-    } else if (dataValida(a.data)) m.due_date = a.data;
+    } else if (pedida) m.due_date = pedida;
     if (a.hora === null) m.due_time = null;
     else if (a.hora !== undefined) {
       const h = normalizarHora(a.hora);
       if (h) {
         m.due_time = h;
         if (!t.due_date && !m.due_date) m.due_date = ctx.hoje;
+      }
+    }
+    if (a.repetir === null) m.recurrence = null;
+    else if (a.repetir !== undefined) {
+      const rec = normalizarRecorrencia(a.repetir);
+      if (rec) {
+        m.recurrence = rec;
+        const base = m.due_date ?? null;
+        m.due_date = (base && proximaData(rec, base, true)) || primeiraData(rec, m.due_time ?? t.due_time);
       }
     }
     if (PRIOS.includes(a.prioridade as Prioridade)) m.priority = a.prioridade as Prioridade;
@@ -521,7 +574,7 @@ const EXECUTORES: Record<string, Executor> = {
       const antes = r.before as Tarefa | null;
       const mudanca = antes
         ? { title: antes.title, notes: antes.notes, priority: antes.priority, due_date: antes.due_date,
-          due_time: antes.due_time, done_at: antes.done_at, deleted_at: antes.deleted_at }
+          due_time: antes.due_time, done_at: antes.done_at, deleted_at: antes.deleted_at, recurrence: antes.recurrence ?? null }
         : { deleted_at: new Date().toISOString() }; // desfazer uma criação = apagar (suave)
       const { error } = await ctx.sb.from('tasks').update(mudanca).eq('id', r.entity_id);
       if (error) continue;

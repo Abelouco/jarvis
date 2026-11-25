@@ -19,6 +19,7 @@ export interface Task extends Base {
   priority: Prioridade;
   due_date: string | null; // AAAA-MM-DD
   due_time: string | null; // HH:MM
+  recurrence: import('./recorrencia').Recorrencia | null;
   done_at: string | null;
   archived: boolean;
   position: number;

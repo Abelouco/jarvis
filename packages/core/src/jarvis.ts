@@ -4,6 +4,7 @@ import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { criarCliente, ouvirEventos, type ArmazenamentoSessao } from './supabase';
 import { novoId, prepararBanco, TABELAS_SYNC, type BancoLocal, type TabelaSync, type Valor } from './local';
 import type { Fonte, JarvisEvent, Memory, Message, Prioridade, Task } from './types';
+import { dataAposConcluir, normalizarRecorrencia, primeiraData, proximaData, type Recorrencia } from './recorrencia';
 
 export interface OpcoesJarvis {
   db: BancoLocal;
@@ -114,27 +115,71 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
   };
 
   // ---------- tarefas (sempre no banco local) ----------
+  const lerTarefa = (t: Omit<Task, 'archived' | 'recurrence'> & { archived: number; recurrence: string | null }): Task => {
+    let recurrence: Recorrencia | null = null;
+    try {
+      recurrence = t.recurrence ? normalizarRecorrencia(JSON.parse(t.recurrence)) : null;
+    } catch {
+      /* repetição ilegível: trata como tarefa única */
+    }
+    return { ...t, archived: !!t.archived, recurrence };
+  };
   const tarefas = {
     async listar(): Promise<Task[]> {
-      const linhas = await db.consultar<Omit<Task, 'archived'> & { archived: number }>(
+      const linhas = await db.consultar<Parameters<typeof lerTarefa>[0]>(
         `select * from tasks where deleted_at is null and archived = 0
          order by done_at is not null, position, created_at desc`,
       );
-      return linhas.map((t) => ({ ...t, archived: !!t.archived }));
+      return linhas.map(lerTarefa);
     },
-    /** `data` AAAA-MM-DD e `hora` HH:MM (fuso America/Sao_Paulo), ambos opcionais. */
-    async criar(titulo: string, prioridade: Prioridade = 'media', data: string | null = null, hora: string | null = null) {
+    /**
+     * Cria uma tarefa. `data` AAAA-MM-DD e `hora` HH:MM (fuso America/Sao_Paulo).
+     * Com `repetir`, a data vira a primeira ocorrência da série (se não vier, é calculada).
+     */
+    async criar(titulo: string, prioridade: Prioridade = 'media', data: string | null = null, hora: string | null = null,
+      extra: { repetir?: Recorrencia | null; notas?: string | null } = {}) {
       const t = agora();
       const user = (await auth.sessao())?.user.id ?? null;
+      const rec = extra.repetir ? normalizarRecorrencia(extra.repetir) : null;
+      const dia = rec ? (data && proximaData(rec, data, true)) || primeiraData(rec, hora) : data;
       await db.executar(
-        `insert into tasks (id, user_id, title, priority, due_date, due_time, created_at, updated_at, dirty)
-         values (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-        [novoId(), user, titulo.trim(), prioridade, data, data ? hora : null, t, t],
+        `insert into tasks (id, user_id, title, notes, priority, due_date, due_time, recurrence, created_at, updated_at, dirty)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        [novoId(), user, titulo.trim(), extra.notas?.trim() || null, prioridade, dia, dia ? hora : null,
+          rec ? JSON.stringify(rec) : null, t, t],
       );
       mudouLocal();
     },
+    /** Muda os campos dados (os ausentes ficam como estão). */
+    async editar(id: string, m: { titulo?: string; prioridade?: Prioridade; data?: string | null; hora?: string | null;
+      repetir?: Recorrencia | null; notas?: string | null }) {
+      const [atual] = (await db.consultar<Parameters<typeof lerTarefa>[0]>(`select * from tasks where id = ?`, [id])).map(lerTarefa);
+      if (!atual) return;
+      const rec = m.repetir === undefined ? atual.recurrence : m.repetir ? normalizarRecorrencia(m.repetir) : null;
+      const hora = m.hora === undefined ? atual.due_time : m.hora;
+      let data = m.data === undefined ? atual.due_date : m.data;
+      if (rec) data = (data && proximaData(rec, data, true)) || primeiraData(rec, hora);
+      await db.executar(
+        `update tasks set title = ?, notes = ?, priority = ?, due_date = ?, due_time = ?, recurrence = ?,
+         updated_at = ?, dirty = 1 where id = ?`,
+        [m.titulo?.trim() || atual.title, m.notas === undefined ? atual.notes : m.notas?.trim() || null,
+          m.prioridade ?? atual.priority, data, data ? hora : null, rec ? JSON.stringify(rec) : null, agora(), id],
+      );
+      mudouLocal();
+    },
+    /** Concluir uma tarefa fixa passa ela para a próxima data (e ela continua aberta). */
     async alternarConcluida(id: string) {
       const t = agora();
+      const [atual] = (await db.consultar<Parameters<typeof lerTarefa>[0]>(`select * from tasks where id = ?`, [id])).map(lerTarefa);
+      if (!atual) return;
+      if (!atual.done_at && atual.recurrence) {
+        const proxima = dataAposConcluir(atual.recurrence, atual.due_date);
+        if (proxima) {
+          await db.executar(`update tasks set due_date = ?, updated_at = ?, dirty = 1 where id = ?`, [proxima, t, id]);
+          mudouLocal();
+          return;
+        }
+      }
       await db.executar(
         `update tasks set done_at = case when done_at is null then ? else null end,
          updated_at = ?, dirty = 1 where id = ?`,
@@ -197,6 +242,15 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
       for (const c of t.colunas) linha[c] = r[c];
       linha.user_id = userId;
       for (const c of t.booleanas) linha[c] = !!r[c];
+      for (const c of t.json ?? []) {
+        if (typeof linha[c] === 'string') {
+          try {
+            linha[c] = JSON.parse(linha[c] as string);
+          } catch {
+            linha[c] = null;
+          }
+        }
+      }
       for (const c of t.somenteServidor ?? []) delete linha[c];
       delete linha.updated_at; // quem carimba é o trigger do servidor
       return linha;

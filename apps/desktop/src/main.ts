@@ -1,4 +1,4 @@
-import { quandoCurto, type Memory, type Message, type Prioridade, type Task } from '@jarvis/core';
+import { descreverRecorrencia, quandoCurto, type Memory, type Message, type Prioridade, type Task } from '@jarvis/core';
 import { jarvis } from './jarvis';
 import './estilo.css';
 import { montarNucleo, type NucleoMontado } from './nucleo3d';
@@ -12,6 +12,7 @@ import {
   abrirExpandido, botaoCopiarResposta, confirmarRodar, copiar, marcarCopiado, respostaHtml, textosCopiaveis,
 } from './markdown';
 import { montarControlesJanela } from './janela';
+import { htmlFormTarefa, ligarFormTarefa } from './formTarefa';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const esc = (s: string) =>
@@ -125,8 +126,6 @@ function montarLogin() {
 
 // ======================= painel =======================
 
-let prioridade: Prioridade = 'media';
-let quandoNova: '' | 'hoje' | 'amanha' = '';
 /** Tarefas já desenhadas: as que surgem depois (criadas pela IA ou noutro aparelho) chegam com brilho verde. */
 let tarefasVistas: Set<string> | null = null;
 // Ids já desenhados: só os novos entram com animação.
@@ -205,21 +204,8 @@ async function montarPainel() {
               <div id="memorias"></div>
             </div>
             <div class="vista" id="vista-tarefas">
-            <form class="nova" id="nova">
-              <input name="t" placeholder="O que precisa ser feito?" autocomplete="off" />
-              <div class="prios">
-                ${(['alta', 'media', 'baixa'] as Prioridade[])
-                  .map((p) => `<button type="button" class="prio" data-p="${p}">${NOME_PRIO[p]}</button>`)
-                  .join('')}
-              </div>
-              <div class="quando-nova" id="quando-nova">
-                <button type="button" data-q="hoje">Hoje</button>
-                <button type="button" data-q="amanha">Amanhã</button>
-                <button type="button" data-q="" class="ativa">Sem data</button>
-              </div>
-              <button class="adicionar" title="Adicionar (Enter)">+</button>
-            </form>
-            <p class="dica-tarefas">Ou peça na conversa: <em>"cria uma tarefa para amanhã às 9h"</em>, <em>"o que tenho hoje?"</em>, <em>"conclui a do mercado"</em>.</p>
+            ${htmlFormTarefa()}
+            <p class="dica-tarefas">Ou peça na conversa: <em>"toda segunda às 20h, pelada"</em>, <em>"o que tenho hoje?"</em>, <em>"conclui a do mercado"</em>. Clique numa tarefa para editar.</p>
             <div id="listas"></div>
             </div>
           </div>
@@ -234,36 +220,7 @@ async function montarPainel() {
 
   $<HTMLButtonElement>('#sair').onclick = () => void jarvis.auth.sair();
 
-  const form = $<HTMLFormElement>('#nova');
-  const campo = form.t as HTMLInputElement;
-  const marcarPrio = () =>
-    form.querySelectorAll<HTMLButtonElement>('.prio').forEach((b) => b.classList.toggle('ativa', b.dataset.p === prioridade));
-  form.querySelectorAll<HTMLButtonElement>('.prio').forEach((b) => {
-    b.onclick = () => {
-      prioridade = b.dataset.p as Prioridade;
-      marcarPrio();
-      campo.focus();
-    };
-  });
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    const titulo = campo.value.trim();
-    if (!titulo) return;
-    campo.value = '';
-    const data = quandoNova === 'hoje' ? hojeSP() : quandoNova === 'amanha' ? somarDias(hojeSP(), 1) : null;
-    await jarvis.tarefas.criar(titulo, prioridade, data);
-  };
-  const marcarQuando = () =>
-    $<HTMLDivElement>('#quando-nova').querySelectorAll<HTMLButtonElement>('button').forEach((b) =>
-      b.classList.toggle('ativa', b.dataset.q === quandoNova));
-  $<HTMLDivElement>('#quando-nova').onclick = (e) => {
-    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-q]');
-    if (!b) return;
-    quandoNova = b.dataset.q as typeof quandoNova;
-    marcarQuando();
-    campo.focus();
-  };
-  marcarQuando();
+  const formTarefa = ligarFormTarefa($<HTMLFormElement>('#nova'));
 
   // Um único ouvinte de clique para a lista inteira.
   $<HTMLDivElement>('#listas').onclick = (e) => {
@@ -272,6 +229,13 @@ async function montarPainel() {
     if (!id) return;
     if (alvo.closest('.apagar')) void jarvis.tarefas.apagar(id);
     else if (alvo.closest('.check')) void jarvis.tarefas.alternarConcluida(id);
+    else if (alvo.closest('.titulo, .quando')) {
+      // Clicar na tarefa abre ela no formulário para editar.
+      void jarvis.tarefas.listar().then((l) => {
+        const t = l.find((x) => x.id === id);
+        if (t && !t.done_at) formTarefa.editar(t);
+      });
+    }
   };
 
   // ---------- conversa ----------
@@ -365,7 +329,6 @@ async function montarPainel() {
     $<HTMLDivElement>('#vista-tarefas').hidden = aba !== 'tarefas';
     $<HTMLDivElement>('#vista-memoria').hidden = aba !== 'memoria';
     if (aba === 'conversa') campoFala.focus();
-    else if (aba === 'tarefas') campo.focus();
   };
   $<HTMLElement>('#abas').onclick = (e) => {
     const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-aba]');
@@ -381,7 +344,6 @@ async function montarPainel() {
     void desenharChat();
   };
 
-  marcarPrio();
   trocarNucleo($('#nucleo'), 0.8);
   qtdMensagensDesenhadas = -1;
   assinaturaChat = assinaturaListas = assinaturaAtividades = assinaturaMemoria = '';
@@ -409,14 +371,16 @@ function rotuloData(data: string, hoje: string) {
 
 function itemTarefa(t: Task, hoje: string, novas: Set<string>) {
   const atrasada = !t.done_at && !!t.due_date && t.due_date < hoje;
+  const rep = t.recurrence ? `<span class="rep" title="Tarefa fixa: ao concluir, passa para a próxima data">↻ ${descreverRecorrencia(t.recurrence)}</span>` : '';
   const quando = t.due_date
     ? `<span class="quando ${atrasada ? 'atrasada' : ''}">${rotuloData(t.due_date, hoje)}${t.due_time ? ` · ${t.due_time.slice(0, 5)}` : ''}</span>`
     : '';
+  const nota = t.notes ? `<span class="nota" title="${esc(t.notes)}">≡</span>` : '';
   return `
     <li class="tarefa ${t.done_at ? 'feita' : ''} ${novas.has(t.id) ? 'recem' : ''}" data-id="${t.id}" data-p="${t.priority}">
       <button class="check" title="${t.done_at ? 'Reabrir' : 'Concluir'}">✓</button>
-      <span class="titulo">${esc(t.title)}</span>
-      ${quando}
+      <span class="titulo" title="Clique para editar">${esc(t.title)}</span>
+      ${nota}${rep}${quando}
       ${t.priority !== 'media' ? `<span class="tag">${NOME_PRIO[t.priority]}</span>` : ''}
       <button class="apagar" title="Apagar">×</button>
     </li>`;

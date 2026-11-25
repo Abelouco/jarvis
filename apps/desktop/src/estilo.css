@@ -484,14 +484,54 @@ tr.md-destaque > td { background: rgba(60, 196, 255, 0.08); }
 @keyframes ouvindo { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 129, 0.45); } 50% { box-shadow: 0 0 0 7px rgba(255, 107, 129, 0); } }
 
 /* ---------- tarefas: prazo, grupos e chegada ao vivo ---------- */
-.quando-nova { display: flex; gap: 4px; }
-.quando-nova button {
-  border: 1px solid var(--borda); background: none; color: var(--apagado);
-  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
-  padding: 4px 8px; border-radius: 999px; transition: 0.15s;
+/* formulário completo: abre ao focar; a mesma caixa edita uma tarefa da lista */
+.form-tarefa { flex-direction: column; align-items: stretch; gap: 0; padding: 8px 8px 8px 18px; }
+.nova-linha { display: flex; align-items: center; gap: 10px; }
+.nova-detalhes { max-height: 0; overflow: hidden; opacity: 0; margin-right: 10px; transition: max-height 0.25s ease, opacity 0.18s ease; }
+.form-tarefa.aberta .nova-detalhes { opacity: 1; }
+.form-tarefa.aberta .nova-detalhes { max-height: 460px; padding: 6px 0 4px; border-top: 1px solid var(--borda); margin-top: 6px; }
+.form-tarefa.editando { border-color: var(--ciano); }
+.ft-campo { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 0; }
+.ft-campo[hidden] { display: none; }
+.ft-campo .rotulo {
+  width: 84px; flex-shrink: 0; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--apagado);
 }
-.quando-nova button:hover { color: var(--texto-2); border-color: var(--borda-forte); }
-.quando-nova button.ativa { color: var(--ciano); border-color: var(--ciano); background: rgba(60, 196, 255, 0.08); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chips button, .dias-semana button {
+  border: 1px solid var(--borda); background: none; color: var(--texto-2);
+  font-size: 12.5px; padding: 5px 10px; border-radius: 999px; transition: 0.15s;
+}
+.chips button:hover, .dias-semana button:hover { border-color: var(--borda-forte); color: var(--texto); }
+.chips button.ativa, .dias-semana button.ativa {
+  color: var(--ciano); border-color: var(--ciano); background: rgba(60, 196, 255, 0.1);
+}
+.dias-semana { display: flex; gap: 4px; }
+.dias-semana button { width: 32px; height: 32px; padding: 0; border-radius: 50%; font-family: var(--mono); }
+.form-tarefa input[type='date'], .form-tarefa input[type='time'], .dia-mes input {
+  background: rgba(14, 22, 36, 0.6); border: 1px solid var(--borda); border-radius: 10px;
+  color: var(--texto-2); padding: 5px 8px; font: inherit; font-size: 12.5px; color-scheme: dark; outline: none;
+}
+.form-tarefa input[type='date'].ativa { color: var(--ciano); border-color: var(--ciano); }
+.form-tarefa input:focus-visible, .form-tarefa textarea:focus-visible { border-color: var(--borda-forte); }
+.dia-mes { color: var(--texto-2); font-size: 13px; display: inline-flex; align-items: center; gap: 8px; }
+.dia-mes input { width: 64px; }
+.form-tarefa textarea {
+  flex: 1; min-width: 240px; resize: vertical; background: rgba(14, 22, 36, 0.6); border: 1px solid var(--borda);
+  border-radius: 10px; color: var(--texto); padding: 8px 10px; font: inherit; font-size: 13.5px; outline: none;
+}
+.nova-acoes { display: flex; align-items: center; gap: 8px; padding: 8px 0 2px; }
+.nova-acoes .previa { flex: 1; font-family: var(--mono); font-size: 12px; color: var(--ciano); letter-spacing: 0.02em; }
+.nova-acoes .cancelar { border: 0; background: none; color: var(--apagado); padding: 7px 10px; font-size: 13px; }
+.nova-acoes .cancelar:hover { color: var(--texto); }
+.nova-acoes .salvar {
+  border: 0; border-radius: 10px; padding: 8px 16px; font-size: 13px; font-weight: 600;
+  background: var(--ciano-forte); color: #031018;
+}
+.tarefa .titulo { cursor: pointer; }
+.tarefa .rep { font-family: var(--mono); font-size: 11px; color: var(--ciano); opacity: 0.85; white-space: nowrap; }
+.tarefa .nota { color: var(--apagado); font-size: 13px; }
+.tarefa.feita .rep { opacity: 0.35; }
 .dica-tarefas { margin: -6px 0 18px; font-size: 12px; color: var(--apagado); }
 .dica-tarefas em { font-style: normal; color: var(--texto-2); }
 .tarefa .quando {

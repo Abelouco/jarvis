@@ -11,7 +11,7 @@ export interface BancoLocal {
 /** Colunas de `tasks` iguais às do Supabase (sem o controle local `dirty`). */
 export const COLUNAS_TASKS = [
   'id', 'user_id', 'project_id', 'title', 'notes', 'priority', 'due_date', 'due_time',
-  'done_at', 'archived', 'position', 'created_at', 'updated_at', 'deleted_at',
+  'done_at', 'archived', 'position', 'recurrence', 'created_at', 'updated_at', 'deleted_at',
 ] as const;
 
 export const COLUNAS_CONVERSATIONS = ['id', 'user_id', 'title', 'created_at', 'updated_at', 'deleted_at'] as const;
@@ -37,7 +37,7 @@ export interface TabelaSync {
   json?: readonly string[];
 }
 export const TABELAS_SYNC: readonly TabelaSync[] = [
-  { nome: 'tasks', colunas: COLUNAS_TASKS, booleanas: ['archived'] },
+  { nome: 'tasks', colunas: COLUNAS_TASKS, booleanas: ['archived'], json: ['recurrence'] },
   { nome: 'conversations', colunas: COLUNAS_CONVERSATIONS, booleanas: [] },
   {
     nome: 'messages', colunas: COLUNAS_MESSAGES, booleanas: ['sensitive'],
@@ -58,6 +58,7 @@ export const SCHEMA_LOCAL = [
     priority text not null default 'media',
     due_date text,
     due_time text,
+    recurrence text,
     done_at text,
     archived integer not null default 0,
     position real not null default 0,
@@ -115,6 +116,7 @@ export const SCHEMA_LOCAL = [
 /** Colunas acrescentadas depois que o banco local já existia nos aparelhos. */
 const COLUNAS_NOVAS: [tabela: string, coluna: string, tipo: string][] = [
   ['messages', 'sources', 'text'],
+  ['tasks', 'recurrence', 'text'],
 ];
 
 export async function prepararBanco(db: BancoLocal) {
