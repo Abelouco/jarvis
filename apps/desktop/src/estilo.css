@@ -311,6 +311,7 @@ input { font: inherit; }
 }
 .faixa-update button:hover:not(:disabled) { background: rgba(127, 216, 255, 0.1); }
 .faixa-update button:disabled { opacity: 0.5; cursor: default; }
+.faixa-voz { bottom: 72px; }
 
 /* ---------- abas do painel ---------- */
 .abas-painel { align-self: flex-start; display: inline-grid; grid-template-columns: repeat(3, auto); padding: 4px; margin-bottom: 18px; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--borda); border-radius: 12px; }

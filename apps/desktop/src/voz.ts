@@ -1,6 +1,8 @@
 // Voz no PC: gravar o que o dono fala (para o Whisper transcrever) e ler respostas em voz alta.
-// Fala com a voz do Windows (grátis, sem rede), no perfil "lento, confiante e distante":
-// um pouco mais devagar e mais grave que o normal. Nunca uma voz clonada de pessoa real.
+// Fala com a voz natural do Piper (neural, roda no PC, grátis; voz masculina pt-BR "faber",
+// não é clone de ninguém). Enquanto ela não está instalada, usa a voz do Windows.
+import { invoke } from '@tauri-apps/api/core';
+
 
 // ---------- gravar ----------
 
@@ -98,81 +100,219 @@ export async function gravar({ aoNivel, aoTerminar }: OpcoesGravar = {}): Promis
   };
 }
 
+
 // ---------- falar ----------
 
-let vozEscolhida: SpeechSynthesisVoice | null = null;
-
-/** Voz do Windows em português do Brasil; prefere as masculinas e as "naturais" (mais humanas). */
-function escolherVoz(): SpeechSynthesisVoice | null {
-  if (vozEscolhida) return vozEscolhida;
-  const vozes = speechSynthesis.getVoices().filter((v) => /^pt(-|_)?BR/i.test(v.lang));
-  const nota = (v: SpeechSynthesisVoice) =>
-    (/natural|online|neural/i.test(v.name) ? 4 : 0)
-    + (/antonio|daniel|donato|fabio|humberto|julio|nicolau|valerio/i.test(v.name) ? 2 : 0)
-    + (v.localService ? 0 : 1);
-  vozEscolhida = vozes.sort((a, b) => nota(b) - nota(a))[0] ?? null;
-  return vozEscolhida;
+export interface EstadoVoz {
+  instalada: boolean;
+  baixando: boolean;
+  baixado: number;
+  total: number;
+  pasta: string;
 }
-if (typeof speechSynthesis !== 'undefined') speechSynthesis.onvoiceschanged = () => { vozEscolhida = null; };
 
-/** Frases curtas: o leitor do Windows corta textos muito longos de uma vez. */
+export const estadoVoz = () => invoke<EstadoVoz>('voz_estado');
+
+/** Baixa e instala a voz natural (~85 MB, uma vez só). */
+export async function instalarVoz() {
+  await invoke<void>('voz_instalar');
+  natural = null;
+}
+
+let natural: boolean | null = null;
+async function temVozNatural(): Promise<boolean> {
+  if (natural === null) {
+    try {
+      natural = (await estadoVoz()).instalada;
+    } catch {
+      natural = false;
+    }
+  }
+  return natural;
+}
+
+/** Frases agrupadas em trechos curtos: a primeira sai rápido e as próximas são geradas enquanto ela toca. */
 function emFrases(texto: string): string[] {
   const frases = texto.match(/[^.!?;:]+[.!?;:]*\s*/g) ?? [texto];
   const out: string[] = [];
   let atual = '';
   for (const f of frases) {
-    if ((atual + f).length > 220 && atual) {
+    const limite = out.length ? 220 : 90; // o primeiro trecho é menor, para começar a falar logo
+    if ((atual + f).length > limite && atual) {
       out.push(atual.trim());
       atual = '';
     }
     atual += f;
   }
   if (atual.trim()) out.push(atual.trim());
-  return out;
+  return out.filter((f) => /[\p{L}\p{N}]/u.test(f));
 }
 
+// Timbre do J.A.R.V.I.S.: um pouco mais grave (tocada ~5% abaixo, cerca de um semitom; o Piper
+// já gera ~8% mais rápida, então o ritmo fica natural) e um equalizador leve, mais encorpado.
+const TOM = 0.95;
+
+let ctx: AudioContext | null = null;
+let entrada: AudioNode | null = null;
+let analisador: AnalyserNode | null = null;
+let fonteAtual: AudioBufferSourceNode | null = null;
+
+function audio(): AudioContext {
+  if (!ctx) {
+    ctx = new AudioContext();
+    const graves = ctx.createBiquadFilter();
+    graves.type = 'lowshelf';
+    graves.frequency.value = 180;
+    graves.gain.value = 3;
+    const presenca = ctx.createBiquadFilter();
+    presenca.type = 'peaking';
+    presenca.frequency.value = 3200;
+    presenca.Q.value = 0.9;
+    presenca.gain.value = 1.5;
+    const chiado = ctx.createBiquadFilter();
+    chiado.type = 'highshelf';
+    chiado.frequency.value = 8000;
+    chiado.gain.value = -3;
+    analisador = ctx.createAnalyser();
+    analisador.fftSize = 512;
+    graves.connect(presenca).connect(chiado).connect(analisador).connect(ctx.destination);
+    entrada = graves;
+  }
+  if (ctx.state === 'suspended') void ctx.resume();
+  return ctx;
+}
+
+async function sintetizar(frase: string): Promise<AudioBuffer> {
+  const bytes = await invoke<ArrayBuffer>('voz_falar', { texto: frase });
+  return audio().decodeAudioData(bytes);
+}
+
+let geracao = 0; // cada falar() novo (ou calar) invalida a fala anterior
 let falando = false;
 
 export function estaFalando() {
   return falando;
 }
 
-/** Lê o texto em voz alta. `aoPalavra` é chamado a cada palavra (o núcleo pulsa junto). */
-export function falar(texto: string, aoPalavra?: () => void, aoFim?: () => void) {
-  if (typeof speechSynthesis === 'undefined' || !texto.trim()) {
+function tocar(buffer: AudioBuffer, aoPulso: (() => void) | undefined, minha: number): Promise<void> {
+  return new Promise((resolver) => {
+    const c = audio();
+    const fonte = c.createBufferSource();
+    fonte.buffer = buffer;
+    fonte.playbackRate.value = TOM;
+    fonte.connect(entrada!);
+    fonteAtual = fonte;
+    const amostras = new Float32Array(analisador!.fftSize);
+    let ultimoPulso = 0;
+    let quadro = 0;
+    // O núcleo pulsa nas sílabas mais fortes.
+    const medir = () => {
+      if (minha !== geracao) return;
+      analisador!.getFloatTimeDomainData(amostras);
+      let soma = 0;
+      for (const v of amostras) soma += v * v;
+      const nivel = Math.sqrt(soma / amostras.length) * 6;
+      const agora = performance.now();
+      if (nivel > 0.25 && agora - ultimoPulso > 170) {
+        ultimoPulso = agora;
+        aoPulso?.();
+      }
+      quadro = requestAnimationFrame(medir);
+    };
+    fonte.onended = () => {
+      cancelAnimationFrame(quadro);
+      if (fonteAtual === fonte) fonteAtual = null;
+      resolver();
+    };
+    fonte.start();
+    quadro = requestAnimationFrame(medir);
+  });
+}
+
+/** Lê o texto em voz alta. `aoPulso` é chamado no ritmo da fala (o núcleo pulsa junto). */
+export function falar(texto: string, aoPulso?: () => void, aoFim?: () => void) {
+  calar();
+  const minha = ++geracao;
+  const frases = emFrases(texto);
+  const terminar = () => {
+    if (minha !== geracao) return;
+    falando = false;
+    aoFim?.();
+  };
+  if (!frases.length) {
     aoFim?.();
     return;
   }
-  speechSynthesis.cancel();
-  const frases = emFrases(texto);
   falando = true;
+  void (async () => {
+    if (!(await temVozNatural())) return falarWindows(frases, aoPulso, terminar, minha);
+    let i = 0;
+    try {
+      let proxima = sintetizar(frases[0]!);
+      for (; i < frases.length; i++) {
+        const buffer = await proxima;
+        if (minha !== geracao) return;
+        if (i + 1 < frases.length) {
+          proxima = sintetizar(frases[i + 1]!);
+          proxima.catch(() => {}); // se for cancelada, o erro não importa
+        }
+        await tocar(buffer, aoPulso, minha);
+        if (minha !== geracao) return;
+      }
+      terminar();
+    } catch (e) {
+      console.warn('voz natural falhou, usando a do Windows', e);
+      if (minha === geracao) falarWindows(frases.slice(i), aoPulso, terminar, minha);
+    }
+  })();
+}
+
+// ---- reserva: voz do Windows ----
+
+let vozWindows: SpeechSynthesisVoice | null = null;
+
+/** Voz do Windows em pt-BR; prefere as "naturais" e as masculinas. */
+function escolherVozWindows(): SpeechSynthesisVoice | null {
+  if (vozWindows) return vozWindows;
+  const vozes = speechSynthesis.getVoices().filter((v) => /^pt(-|_)?BR/i.test(v.lang));
+  const nota = (v: SpeechSynthesisVoice) =>
+    (/natural|online|neural/i.test(v.name) ? 4 : 0)
+    + (/antonio|daniel|donato|fabio|humberto|julio|nicolau|valerio/i.test(v.name) ? 2 : 0);
+  vozWindows = vozes.sort((a, b) => nota(b) - nota(a))[0] ?? null;
+  return vozWindows;
+}
+if (typeof speechSynthesis !== 'undefined') speechSynthesis.onvoiceschanged = () => { vozWindows = null; };
+
+function falarWindows(frases: string[], aoPulso: (() => void) | undefined, terminar: () => void, minha: number) {
+  if (typeof speechSynthesis === 'undefined' || !frases.length || minha !== geracao) return terminar();
   frases.forEach((frase, i) => {
     const u = new SpeechSynthesisUtterance(frase);
-    const voz = escolherVoz();
+    const voz = escolherVozWindows();
     if (voz) u.voice = voz;
     u.lang = voz?.lang ?? 'pt-BR';
-    u.rate = 0.92; // um pouco mais lento
-    u.pitch = 0.82; // mais grave
+    u.rate = 1.05;
+    u.pitch = 0.95;
     u.onboundary = (e) => {
-      if (e.name === 'word') aoPalavra?.();
+      if (e.name === 'word') aoPulso?.();
     };
     if (i === frases.length - 1) {
-      u.onend = () => {
-        falando = false;
-        aoFim?.();
-      };
+      u.onend = terminar;
+      u.onerror = terminar;
     }
-    u.onerror = () => {
-      if (i === frases.length - 1) {
-        falando = false;
-        aoFim?.();
-      }
-    };
     speechSynthesis.speak(u);
   });
 }
 
 export function calar() {
+  geracao++;
   falando = false;
+  if (fonteAtual) {
+    try {
+      fonteAtual.stop();
+    } catch {
+      /* já tinha parado */
+    }
+    fonteAtual = null;
+  }
   if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
 }

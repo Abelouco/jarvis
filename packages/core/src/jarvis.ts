@@ -410,6 +410,20 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     async transcrever(audio: Blob, nome = 'fala.webm'): Promise<string> {
       const form = new FormData();
       form.append('audio', audio, nome);
+      // As últimas mensagens ajudam a acertar nomes ("Medieval Dynasty", não "medieval de Nastia").
+      // Mensagens sensíveis ficam de fora.
+      const id = await idConversaAtual();
+      if (id) {
+        const ultimas = await db.consultar<{ role: string; content: string }>(
+          `select role, content from messages where conversation_id = ? and deleted_at is null and coalesce(sensitive, 0) = 0
+           order by created_at desc, rowid desc limit 4`,
+          [id],
+        );
+        const contexto = ultimas.reverse()
+          .map((m) => `${m.role === 'user' ? 'Dono' : 'JARVIS'}: ${m.content.replace(/\s+/g, ' ').slice(0, 400)}`)
+          .join('\n');
+        if (contexto) form.append('contexto', contexto);
+      }
       const { data, error } = await sb.functions.invoke('ia_transcrever', { body: form });
       if (error) throw new Error(await mensagemDeErro(error));
       return String(data?.texto ?? '').trim();

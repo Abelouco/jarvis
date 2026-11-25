@@ -1,6 +1,7 @@
 use tauri::Manager;
 
 mod terminal;
+mod voz;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -20,7 +21,13 @@ pub fn run() {
         // Auto-update: baixa do GitHub Releases e confere a assinatura.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![terminal::abrir_terminal, terminal::abrir_link])
+        .invoke_handler(tauri::generate_handler![
+            terminal::abrir_terminal,
+            terminal::abrir_link,
+            voz::voz_estado,
+            voz::voz_instalar,
+            voz::voz_falar
+        ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o J.A.R.V.I.S.");
 }

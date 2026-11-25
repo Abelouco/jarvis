@@ -4,7 +4,7 @@ import './estilo.css';
 import { montarNucleo, type NucleoMontado } from './nucleo3d';
 import { ligarAtualizacao } from './atualizacao';
 import { ligarMenuCopiar } from './menuCopiar';
-import { calar, falar, gravar, type Gravacao } from './voz';
+import { calar, estadoVoz, falar, gravar, instalarVoz, type Gravacao } from './voz';
 import { paraFala } from '@jarvis/core';
 import { invoke } from '@tauri-apps/api/core';
 import type { Shell } from '@jarvis/core';
@@ -580,7 +580,58 @@ function atualizarMicrofone() {
   nucleo?.definirEstado(estadoDoNucleo());
 }
 
+/** Na primeira vez que usa a voz, oferece instalar a voz natural (sem ela, usa a do Windows). */
+let ofereceuVoz = false;
+async function oferecerVozNatural() {
+  if (ofereceuVoz) return;
+  ofereceuVoz = true;
+  let estado;
+  try {
+    estado = await estadoVoz();
+  } catch {
+    return;
+  }
+  if (estado.instalada) return;
+  const faixa = document.createElement('div');
+  faixa.className = 'faixa-update faixa-voz';
+  faixa.innerHTML = `<span>Voz natural do J.A.R.V.I.S. · download único de ~${Math.round(estado.total / 1e6)} MB</span>`
+    + '<button type="button" data-a="sim">Instalar</button><button type="button" data-a="nao">Agora não</button>';
+  const texto = faixa.querySelector('span')!;
+  const sim = faixa.querySelector<HTMLButtonElement>('[data-a="sim"]')!;
+  const nao = faixa.querySelector<HTMLButtonElement>('[data-a="nao"]')!;
+  nao.onclick = () => faixa.remove();
+  sim.onclick = async () => {
+    sim.disabled = true;
+    nao.hidden = true;
+    texto.textContent = 'Baixando a voz… 0%';
+    const relogio = setInterval(async () => {
+      try {
+        const e = await estadoVoz();
+        texto.textContent = `Baixando a voz… ${Math.round((e.baixado / e.total) * 100)}%`;
+      } catch {
+        /* segue */
+      }
+    }, 700);
+    try {
+      await instalarVoz();
+      clearInterval(relogio);
+      texto.textContent = 'Voz instalada.';
+      sim.hidden = true;
+      falar('Voz instalada, Senhor. Bem melhor assim.', () => nucleo?.pulsar(0.18));
+      setTimeout(() => faixa.remove(), 3000);
+    } catch (e) {
+      clearInterval(relogio);
+      texto.textContent = e instanceof Error ? e.message : String(e);
+      sim.disabled = false;
+      sim.textContent = 'Tentar de novo';
+      nao.hidden = false;
+    }
+  };
+  document.body.appendChild(faixa);
+}
+
 async function alternarVoz() {
+  void oferecerVozNatural();
   if (falandoAgora) {
     calar();
     falandoAgora = false;
