@@ -14,6 +14,11 @@ export const COLUNAS_TASKS = [
   'done_at', 'archived', 'position', 'recurrence', 'created_at', 'updated_at', 'deleted_at',
 ] as const;
 
+export const COLUNAS_REMINDERS = [
+  'id', 'user_id', 'title', 'notes', 'remind_at', 'channel', 'priority', 'alarm', 'recurrence',
+  'done_at', 'created_at', 'updated_at', 'deleted_at',
+] as const;
+
 export const COLUNAS_CONVERSATIONS = ['id', 'user_id', 'title', 'created_at', 'updated_at', 'deleted_at'] as const;
 
 export const COLUNAS_MESSAGES = [
@@ -38,6 +43,7 @@ export interface TabelaSync {
 }
 export const TABELAS_SYNC: readonly TabelaSync[] = [
   { nome: 'tasks', colunas: COLUNAS_TASKS, booleanas: ['archived'], json: ['recurrence'] },
+  { nome: 'reminders', colunas: COLUNAS_REMINDERS, booleanas: ['alarm'], json: ['recurrence'] },
   { nome: 'conversations', colunas: COLUNAS_CONVERSATIONS, booleanas: [] },
   {
     nome: 'messages', colunas: COLUNAS_MESSAGES, booleanas: ['sensitive'],
@@ -68,6 +74,23 @@ export const SCHEMA_LOCAL = [
     dirty integer not null default 0
   )`,
   `create index if not exists tasks_dirty_idx on tasks (dirty)`,
+  `create table if not exists reminders (
+    id text primary key,
+    user_id text,
+    title text not null,
+    notes text,
+    remind_at text not null,
+    channel text not null default 'app',
+    priority text not null default 'media',
+    alarm integer not null default 0,
+    recurrence text,
+    done_at text,
+    created_at text not null,
+    updated_at text not null,
+    deleted_at text,
+    dirty integer not null default 0
+  )`,
+  `create index if not exists reminders_dirty_idx on reminders (dirty)`,
   `create table if not exists conversations (
     id text primary key,
     user_id text,

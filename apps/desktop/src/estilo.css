@@ -546,3 +546,28 @@ tr.md-destaque > td { background: rgba(60, 196, 255, 0.08); }
   0% { border-color: rgba(80, 230, 150, 0.9); box-shadow: 0 0 0 0 rgba(80, 230, 150, 0.45), 0 0 22px rgba(80, 230, 150, 0.35); }
   100% { border-color: transparent; box-shadow: 0 0 0 10px rgba(80, 230, 150, 0), 0 0 0 rgba(80, 230, 150, 0); }
 }
+
+/* ---------- lembretes ---------- */
+.alarme-op { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--texto-2); cursor: pointer; }
+.avisos-lembrete {
+  position: fixed; right: 20px; bottom: 20px; z-index: 50; display: flex; flex-direction: column; gap: 10px;
+  width: min(380px, calc(100vw - 40px));
+}
+.aviso-lembrete {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px;
+  background: rgba(10, 18, 32, 0.96); border: 1px solid rgba(255, 196, 92, 0.45);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5), 0 0 0 4px rgba(255, 196, 92, 0.08);
+  animation: entrar 0.3s ease-out;
+}
+.aviso-lembrete[data-alarme='1'] { animation: entrar 0.3s ease-out, tocando 1.6s ease-in-out infinite; }
+@keyframes tocando { 50% { box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5), 0 0 0 8px rgba(255, 196, 92, 0.18); } }
+.aviso-lembrete .sino { font-size: 20px; }
+.aviso-lembrete .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.aviso-lembrete strong { color: var(--texto); font-weight: 500; overflow-wrap: anywhere; }
+.aviso-lembrete small { color: var(--texto-2); font-size: 12px; }
+.aviso-lembrete button {
+  border: 1px solid var(--borda); background: none; color: var(--texto-2); border-radius: 8px; padding: 6px 10px;
+  font-size: 12.5px; cursor: pointer; white-space: nowrap;
+}
+.aviso-lembrete button:hover { border-color: var(--borda-forte); color: var(--texto); }
+.aviso-lembrete button.feito { background: var(--ciano-forte); border-color: var(--ciano-forte); color: #031018; }

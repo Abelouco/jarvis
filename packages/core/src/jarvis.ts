@@ -3,8 +3,10 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { criarCliente, ouvirEventos, type ArmazenamentoSessao } from './supabase';
 import { novoId, prepararBanco, TABELAS_SYNC, type BancoLocal, type TabelaSync, type Valor } from './local';
-import type { Fonte, JarvisEvent, Memory, Message, Prioridade, Task } from './types';
-import { dataAposConcluir, normalizarRecorrencia, primeiraData, proximaData, type Recorrencia } from './recorrencia';
+import type { Fonte, JarvisEvent, Memory, Message, Prioridade, Reminder, Task } from './types';
+import {
+  dataAposConcluir, hojeSP, instanteSP, normalizarRecorrencia, partesSP, primeiraData, proximaData, type Recorrencia,
+} from './recorrencia';
 
 export interface OpcoesJarvis {
   db: BancoLocal;
@@ -191,6 +193,109 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     async apagar(id: string) {
       const t = agora();
       await db.executar(`update tasks set deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, id]);
+      mudouLocal();
+    },
+  };
+
+  // ---------- lembretes (sempre no banco local; quem avisa na hora é o app) ----------
+  type LinhaLembrete = Omit<Reminder, 'alarm' | 'recurrence'> & { alarm: number; recurrence: string | null };
+  const lerLembrete = (l: LinhaLembrete): Reminder => {
+    let recurrence: Recorrencia | null = null;
+    try {
+      recurrence = l.recurrence ? normalizarRecorrencia(JSON.parse(l.recurrence)) : null;
+    } catch {
+      /* repetição ilegível: lembrete único */
+    }
+    return { ...l, alarm: !!l.alarm, recurrence };
+  };
+  const umLembrete = async (id: string) =>
+    (await db.consultar<LinhaLembrete>(`select * from reminders where id = ?`, [id])).map(lerLembrete)[0];
+  /** Instante de um lembrete: com repetição, a primeira ocorrência a partir da data (ou de agora). */
+  const instante = (data: string | null, hora: string, rec: Recorrencia | null) => {
+    if (rec) {
+      const d = (data && proximaData(rec, data, true)) || primeiraData(rec, hora);
+      return d ? instanteSP(d, hora) : null;
+    }
+    return instanteSP(data ?? hojeSP(), hora);
+  };
+  const lembretes = {
+    /** Ativos primeiro (pela hora), depois os concluídos recentes. */
+    async listar(): Promise<Reminder[]> {
+      const linhas = await db.consultar<LinhaLembrete>(
+        `select * from reminders where deleted_at is null order by done_at is not null, remind_at`,
+      );
+      return linhas.map(lerLembrete);
+    },
+    /** `data` AAAA-MM-DD e `hora` HH:MM em São Paulo. */
+    async criar(titulo: string, data: string | null, hora: string,
+      extra: { repetir?: Recorrencia | null; notas?: string | null; alarme?: boolean; prioridade?: Prioridade } = {}) {
+      const rec = extra.repetir ? normalizarRecorrencia(extra.repetir) : null;
+      const quando = instante(data, hora, rec);
+      if (!quando) throw new Error('Essa repetição não tem próxima data.');
+      const t = agora();
+      const user = (await auth.sessao())?.user.id ?? null;
+      await db.executar(
+        `insert into reminders (id, user_id, title, notes, remind_at, priority, alarm, recurrence, created_at, updated_at, dirty)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        [novoId(), user, titulo.trim(), extra.notas?.trim() || null, quando, extra.prioridade ?? 'media',
+          extra.alarme ? 1 : 0, rec ? JSON.stringify(rec) : null, t, t],
+      );
+      mudouLocal();
+    },
+    async editar(id: string, m: { titulo: string; data: string | null; hora: string; repetir: Recorrencia | null;
+      notas: string | null; alarme: boolean; prioridade?: Prioridade }) {
+      const atual = await umLembrete(id);
+      if (!atual) return;
+      const rec = m.repetir ? normalizarRecorrencia(m.repetir) : null;
+      const quando = instante(m.data, m.hora, rec);
+      if (!quando) throw new Error('Essa repetição não tem próxima data.');
+      await db.executar(
+        `update reminders set title = ?, notes = ?, remind_at = ?, priority = ?, alarm = ?, recurrence = ?,
+         done_at = null, updated_at = ?, dirty = 1 where id = ?`,
+        [m.titulo.trim() || atual.title, m.notas?.trim() || null, quando, m.prioridade ?? atual.priority,
+          m.alarme ? 1 : 0, rec ? JSON.stringify(rec) : null, agora(), id],
+      );
+      mudouLocal();
+    },
+    /** Concluir: o fixo passa para a próxima ocorrência (mesma hora); o único fica concluído. */
+    async concluir(id: string) {
+      const l = await umLembrete(id);
+      if (!l) return;
+      const t = agora();
+      if (l.recurrence) {
+        const { data, hora } = partesSP(l.remind_at);
+        const hoje = hojeSP();
+        const prox = proximaData(l.recurrence, data > hoje ? data : hoje, false);
+        if (prox) {
+          await db.executar(`update reminders set remind_at = ?, updated_at = ?, dirty = 1 where id = ?`,
+            [instanteSP(prox, hora), t, id]);
+          mudouLocal();
+          return;
+        }
+      }
+      await db.executar(`update reminders set done_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, id]);
+      mudouLocal();
+    },
+    /**
+     * Soneca: avisa de novo daqui a `minutos`. Devolve false para lembrete fixo: nele a hora da série
+     * não muda (a soneca fica só no app que avisou).
+     */
+    async adiar(id: string, minutos = 10): Promise<boolean> {
+      if ((await umLembrete(id))?.recurrence) return false;
+      const quando = new Date(Date.now() + minutos * 60_000).toISOString();
+      await db.executar(`update reminders set remind_at = ?, done_at = null, updated_at = ?, dirty = 1 where id = ?`,
+        [quando, agora(), id]);
+      mudouLocal();
+      return true;
+    },
+    async reabrir(id: string) {
+      await db.executar(`update reminders set done_at = null, updated_at = ?, dirty = 1 where id = ?`, [agora(), id]);
+      mudouLocal();
+    },
+    /** Exclusão suave. */
+    async apagar(id: string) {
+      const t = agora();
+      await db.executar(`update reminders set deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, id]);
       mudouLocal();
     },
   };
@@ -631,6 +736,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     iniciar,
     auth,
     tarefas,
+    lembretes,
     atividades,
     chat,
     ia,

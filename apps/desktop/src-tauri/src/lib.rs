@@ -21,6 +21,7 @@ pub fn run() {
         // Auto-update: baixa do GitHub Releases e confere a assinatura.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             terminal::abrir_terminal,
             terminal::abrir_link,

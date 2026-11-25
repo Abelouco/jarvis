@@ -181,3 +181,23 @@ test('repetição: a cópia do servidor é igual à do app', () => {
   const corpo = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8').replace(/\r/g, '').split('\n').slice(2).join('\n');
   assert.equal(corpo('./recorrencia.ts'), corpo('../../../packages/core/src/recorrencia.ts'));
 });
+
+// ---------- lembretes ----------
+import { proximoInstante, resolverInstante } from './lembretes.ts';
+
+test('lembretes: hora calculada no servidor', () => {
+  const hoje = '2026-11-25'; // quarta, 12:42 em SP
+  const r = (a: Record<string, unknown>) => {
+    const x = resolverInstante(a, hoje, QUARTA);
+    return typeof x === 'string' ? x : x.iso;
+  };
+  assert.equal(r({ em_minutos: 20 }), '2026-11-25T16:02:00.000Z');
+  assert.equal(r({ hora: '15:00' }), '2026-11-25T18:00:00.000Z'); // ainda dá hoje
+  assert.equal(r({ hora: '09:00' }), '2026-11-26T12:00:00.000Z'); // já passou: amanhã
+  assert.equal(r({ quando: 'amanha', hora: '9h' }), '2026-11-26T12:00:00.000Z');
+  assert.equal(r({ repetir: { freq: 'semanal', dias_semana: ['seg'] }, hora: '20:00' }), '2026-11-30T23:00:00.000Z');
+  assert.equal(typeof resolverInstante({ quando: 'amanha' }, hoje, QUARTA), 'string'); // falta a hora
+  // Lembrete fixo concluído: próxima segunda, mesma hora.
+  const l = { remind_at: '2026-11-30T23:00:00.000Z', recurrence: { freq: 'semanal' as const, dias: [1] } };
+  assert.equal(proximoInstante(l, new Date('2026-11-30T23:05:00Z')), '2026-12-07T23:00:00.000Z');
+});

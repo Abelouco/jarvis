@@ -119,3 +119,14 @@ export function descreverRecorrencia(r: Recorrencia | null | undefined): string 
     }
   }
 }
+
+/** Data e hora em São Paulo -> instante ISO (UTC). São Paulo não tem horário de verão desde 2019: UTC-3. */
+export function instanteSP(data: string, hora: string): string {
+  return new Date(`${data}T${hora}:00-03:00`).toISOString();
+}
+
+/** Instante ISO -> data e hora em São Paulo. */
+export function partesSP(iso: string): { data: string; hora: string } {
+  const d = new Date(iso);
+  return { data: hojeSP(d), hora: agoraHHMM(d) };
+}

@@ -14,6 +14,7 @@ import {
 import { aprender, blocoMemoria, lembrar } from './memoria.ts';
 import { blocoTrechos, buscar, fontesDe, temBusca, type PesquisaAnterior, type Trecho } from './busca.ts';
 import { resumoFalado } from './fala.ts';
+import './lembretes.ts'; // registra as ferramentas de lembretes no planejador
 import { carregarAbertas, confirmacaoPendente, executar, pareceTarefa, planejar, textoFinal } from './tarefas.ts';
 
 // Trabalho depois da resposta (aprender), sem atrasar o chat. Existe no runtime do Supabase.

@@ -25,6 +25,18 @@ export interface Task extends Base {
   position: number;
 }
 
+export interface Reminder extends Base {
+  title: string;
+  notes: string | null;
+  /** instante ISO (UTC) */
+  remind_at: string;
+  channel: string;
+  priority: Prioridade;
+  alarm: boolean;
+  recurrence: import('./recorrencia').Recorrencia | null;
+  done_at: string | null;
+}
+
 export interface Conversation extends Base {
   title: string | null;
 }

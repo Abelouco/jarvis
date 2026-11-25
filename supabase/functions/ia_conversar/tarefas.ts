@@ -128,7 +128,7 @@ const RESPOSTA_CURTA = /^(sim|pode|confirm\w*|isso|ok|manda|vai|nao|cancel\w*|de
 
 export function pareceTarefa(texto: string, temPendente: boolean): boolean {
   const t = normalizar(texto).trim();
-  if (SOBRE_TAREFAS.test(t)) return true;
+  if (SOBRE_TAREFAS.test(t) || EXTENSOES.some((e) => e.detector.test(t))) return true;
   return temPendente && RESPOSTA_CURTA.test(t) && t.split(/\s+/).length <= 6;
 }
 
@@ -190,9 +190,9 @@ REPETIR (tarefa fixa) = {freq: "diaria"|"dias_uteis"|"fim_de_semana"|"semanal"|"
 function promptPlanejador(hoje: string, abertas: Tarefa[], pendente: string | null) {
   const agora = new Date().toLocaleTimeString('pt-BR', { timeZone: FUSO, hour: '2-digit', minute: '2-digit' });
   return [
-    'Você decide se a última mensagem do dono pede uma ação nas TAREFAS dele (afazeres) e quais ferramentas chamar.',
+    'Você decide se a última mensagem do dono pede uma ação nas TAREFAS (afazeres) ou nos LEMBRETES (avisos numa hora certa) dele e quais ferramentas chamar.',
     'Responda só JSON: {"acoes": [{"ferramenta": "...", "args": {...}}]}. Se a mensagem não for sobre tarefas (ex.: pergunta geral, conversa, pesquisa), responda {"acoes": []}.',
-    'Ferramentas:', FERRAMENTAS,
+    'Ferramentas:', FERRAMENTAS, ...EXTENSOES.map((e) => e.ferramentas),
     '',
     'Regras:',
     '- NUNCA escreva a data de um dia da semana: use dia_semana. "amanhã às 9h" -> quando:"amanha", hora:"09:00". Horas HH:MM em 24 h: "8 da noite" = "20:00", "meio-dia" = "12:00". "de manhã" sem hora: não invente hora.',
@@ -201,6 +201,7 @@ function promptPlanejador(hoje: string, abertas: Tarefa[], pendente: string | nu
     '- Para concluir/editar/apagar, use o título exato da lista de tarefas abertas abaixo quando der para saber qual é (ex.: "a do mercado" -> "Ir ao mercado"). Se não der, repita as palavras do dono.',
     '- "o que tenho hoje?" -> tarefas_listar {filtro:"hoje"} (já inclui as atrasadas). "essa semana" -> periodo de hoje até domingo.',
     '- Várias tarefas numa frase = várias ações tarefas_criar.',
+    ...EXTENSOES.flatMap((e) => e.regras),
     '- Não invente prioridade: só use se o dono disser (urgente/importante = alta).',
     pendente ? `- HÁ uma confirmação esperando resposta: ${pendente}. "sim/pode/confirma" -> jarvis_confirmar; "não/cancela/deixa" -> jarvis_cancelar.` : '- Não há confirmação pendente.',
     '',
@@ -240,7 +241,7 @@ export async function planejar(
 
 // ---------- execução ----------
 
-interface Ctx {
+export interface Ctx {
   sb: SupabaseClient;
   hoje: string;
 }
@@ -259,14 +260,16 @@ export async function carregarAbertas(sb: SupabaseClient) {
   return abertasDe(sb).catch(() => [] as Tarefa[]);
 }
 
-async function recibo(sb: SupabaseClient, action: string, antes: Tarefa | null, depois: Tarefa | null) {
+export async function recibo(
+  sb: SupabaseClient, action: string, antes: { id: string } | null, depois: { id: string } | null, tabela = 'tasks',
+) {
   const { error } = await sb.from('undo_receipts').insert({
-    action, entity_type: 'tasks', entity_id: (depois ?? antes)?.id, before: antes, after: depois,
+    action, entity_type: tabela, entity_id: (depois ?? antes)?.id, before: antes, after: depois,
   });
   if (error) console.warn('tarefas: recibo não gravado', error.message);
 }
 
-const falha = (ferramenta: string, resumo: string, fatos: Record<string, unknown> = {}): ResultadoFerramenta =>
+export const falha = (ferramenta: string, resumo: string, fatos: Record<string, unknown> = {}): ResultadoFerramenta =>
   ({ ferramenta, ok: false, resumo, fatos, texto: resumo, ids: [] });
 
 const linha = (t: Tarefa, hoje: string) =>
@@ -301,8 +304,8 @@ function avisoReferencias(r: { ambiguas: { ref: string; opcoes: string[] }[]; fa
   return partes.join('\n');
 }
 
-async function pedirConfirmacao(
-  sb: SupabaseClient, ferramenta: string, alvo: Tarefa[], descricao: string,
+export async function pedirConfirmacao(
+  sb: SupabaseClient, ferramenta: string, alvo: { id: string; title: string }[], descricao: string,
 ): Promise<ResultadoFerramenta> {
   // Uma confirmação nova substitui a anterior que ainda não foi respondida.
   await sb.from('pending_confirmations').update({ used_at: new Date().toISOString() })
@@ -357,7 +360,7 @@ async function apagarVarias(ctx: Ctx, alvo: Tarefa[]) {
   return apagadas;
 }
 
-type Executor = (ctx: Ctx, args: Record<string, unknown>) => Promise<ResultadoFerramenta>;
+export type Executor = (ctx: Ctx, args: Record<string, unknown>) => Promise<ResultadoFerramenta>;
 
 const EXECUTORES: Record<string, Executor> = {
   async tarefas_criar(ctx, a) {
@@ -538,6 +541,8 @@ const EXECUTORES: Record<string, Executor> = {
       .eq('code', p.code).is('used_at', null).select('code').maybeSingle();
     if (!usada) return falha('jarvis_confirmar', 'Essa confirmação já foi usada.');
     const ids: string[] = p.preview?.ids ?? [];
+    const outra = EXTENSOES.find((e) => e.confirmar?.[p.action]);
+    if (outra) return outra.confirmar![p.action]!(ctx, ids);
     const { data: linhas } = await ctx.sb.from('tasks').select(CAMPOS).in('id', ids).is('deleted_at', null);
     const alvo = (linhas ?? []) as Tarefa[];
     if (!alvo.length) return falha('jarvis_confirmar', 'As tarefas não existem mais.');
@@ -561,28 +566,29 @@ const EXECUTORES: Record<string, Executor> = {
 
   async jarvis_desfazer(ctx) {
     const { data: rec } = await ctx.sb.from('undo_receipts').select('*')
-      .eq('entity_type', 'tasks').is('undone_at', null).eq('irreversible', false).gt('expires_at', new Date().toISOString())
+      .in('entity_type', ['tasks', 'reminders']).is('undone_at', null).eq('irreversible', false).gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (!rec) return falha('jarvis_desfazer', 'Não há ação recente para desfazer (o prazo é de 24 h).');
     // Ações feitas juntas (mesma confirmação) são desfeitas juntas.
     const { data: lote } = await ctx.sb.from('undo_receipts').select('*')
-      .eq('entity_type', 'tasks').eq('action', rec.action).is('undone_at', null)
+      .eq('entity_type', rec.entity_type).eq('action', rec.action).is('undone_at', null)
       .gte('created_at', new Date(Date.parse(rec.created_at) - 5000).toISOString());
     const recibos = (lote ?? [rec]) as typeof rec[];
     const desfeitas: string[] = [];
     for (const r of recibos) {
       const antes = r.before as Tarefa | null;
+      // Volta todos os campos de antes (menos os de controle); desfazer uma criação = apagar (suave).
       const mudanca = antes
-        ? { title: antes.title, notes: antes.notes, priority: antes.priority, due_date: antes.due_date,
-          due_time: antes.due_time, done_at: antes.done_at, deleted_at: antes.deleted_at, recurrence: antes.recurrence ?? null }
-        : { deleted_at: new Date().toISOString() }; // desfazer uma criação = apagar (suave)
-      const { error } = await ctx.sb.from('tasks').update(mudanca).eq('id', r.entity_id);
+        ? Object.fromEntries(Object.entries(antes).filter(([k]) => !['id', 'user_id', 'created_at', 'updated_at', 'busca'].includes(k)))
+        : { deleted_at: new Date().toISOString() };
+      const { error } = await ctx.sb.from(r.entity_type).update(mudanca).eq('id', r.entity_id);
       if (error) continue;
       await ctx.sb.from('undo_receipts').update({ undone_at: new Date().toISOString() }).eq('id', r.id);
       desfeitas.push((antes ?? (r.after as Tarefa | null))?.title ?? 'tarefa');
     }
     const nome: Record<string, string> = {
-      tarefas_criar: 'criação', tarefas_concluir: 'conclusão', tarefas_apagar: 'exclusão', tarefas_editar: 'edição', tarefas_reabrir: 'reabertura',
+      tarefas_criar: 'criação', lembretes_criar: 'criação', lembretes_concluir: 'conclusão', lembretes_apagar: 'exclusão',
+      lembretes_editar: 'edição', lembretes_adiar: 'mudança', tarefas_concluir: 'conclusão', tarefas_apagar: 'exclusão', tarefas_editar: 'edição', tarefas_reabrir: 'reabertura',
     };
     return {
       ferramenta: 'jarvis_desfazer', ok: desfeitas.length > 0, resumo: `desfeita ${rec.action}`, fatos: { acao: rec.action, tarefas: desfeitas },
@@ -591,6 +597,20 @@ const EXECUTORES: Record<string, Executor> = {
     };
   },
 };
+
+/** Outros domínios (lembretes...) entram no mesmo planejador e na mesma confirmação/desfazer. */
+export interface Extensao {
+  ferramentas: string;
+  regras: string[];
+  detector: RegExp;
+  executores: Record<string, Executor>;
+  confirmar?: Record<string, (ctx: Ctx, ids: string[]) => Promise<ResultadoFerramenta>>;
+}
+const EXTENSOES: Extensao[] = [];
+export function registrar(e: Extensao) {
+  EXTENSOES.push(e);
+  Object.assign(EXECUTORES, e.executores);
+}
 
 export async function executar(sb: SupabaseClient, acoes: Acao[], hoje = hojeSP()): Promise<ResultadoFerramenta[]> {
   const ctx: Ctx = { sb, hoje };

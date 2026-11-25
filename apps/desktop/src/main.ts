@@ -13,6 +13,7 @@ import {
 } from './markdown';
 import { montarControlesJanela } from './janela';
 import { htmlFormTarefa, ligarFormTarefa } from './formTarefa';
+import { htmlLembretes, ligarLembretes } from './lembretes';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const esc = (s: string) =>
@@ -131,11 +132,11 @@ let tarefasVistas: Set<string> | null = null;
 // Ids já desenhados: só os novos entram com animação.
 let atividadesVistas = new Set<number>();
 
-type Aba = 'conversa' | 'tarefas' | 'memoria';
+type Aba = 'conversa' | 'tarefas' | 'lembretes' | 'memoria';
 const lerAba = (): Aba => {
   try {
     const salva = localStorage.getItem('jarvis.aba');
-    return salva === 'tarefas' || salva === 'memoria' ? salva : 'conversa';
+    return salva === 'tarefas' || salva === 'lembretes' || salva === 'memoria' ? salva : 'conversa';
   } catch {
     return 'conversa';
   }
@@ -184,6 +185,7 @@ async function montarPainel() {
             <nav class="abas-painel" id="abas">
               <button type="button" data-aba="conversa">Conversa</button>
               <button type="button" data-aba="tarefas">Tarefas</button>
+              <button type="button" data-aba="lembretes">Lembretes</button>
               <button type="button" data-aba="memoria">Memória</button>
             </nav>
             <div class="vista" id="vista-conversa">
@@ -203,6 +205,7 @@ async function montarPainel() {
                 Peça no chat para lembrar ou esquecer algo, ou esqueça por aqui.</p>
               <div id="memorias"></div>
             </div>
+            <div class="vista" id="vista-lembretes">${htmlLembretes()}</div>
             <div class="vista" id="vista-tarefas">
             ${htmlFormTarefa()}
             <p class="dica-tarefas">Ou peça na conversa: <em>"toda segunda às 20h, pelada"</em>, <em>"o que tenho hoje?"</em>, <em>"conclui a do mercado"</em>. Clique numa tarefa para editar.</p>
@@ -221,6 +224,7 @@ async function montarPainel() {
   $<HTMLButtonElement>('#sair').onclick = () => void jarvis.auth.sair();
 
   const formTarefa = ligarFormTarefa($<HTMLFormElement>('#nova'));
+  ligarLembretes($<HTMLDivElement>('#vista-lembretes'), { pulsar: () => nucleo?.pulsar(0.8, 'criado') });
 
   // Um único ouvinte de clique para a lista inteira.
   $<HTMLDivElement>('#listas').onclick = (e) => {
@@ -327,6 +331,7 @@ async function montarPainel() {
     );
     $<HTMLDivElement>('#vista-conversa').hidden = aba !== 'conversa';
     $<HTMLDivElement>('#vista-tarefas').hidden = aba !== 'tarefas';
+    $<HTMLDivElement>('#vista-lembretes').hidden = aba !== 'lembretes';
     $<HTMLDivElement>('#vista-memoria').hidden = aba !== 'memoria';
     if (aba === 'conversa') campoFala.focus();
   };
