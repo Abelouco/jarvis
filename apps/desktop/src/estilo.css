@@ -78,7 +78,7 @@ input { font: inherit; }
 .nucleo3d canvas { position: absolute; inset: 0; }
 .nucleo3d.hero { width: min(440px, 80vw); aspect-ratio: 1; margin: -60px 0 -70px; }
 /* Núcleo fixo no topo da coluna, maior e centralizado; só as atividades rolam. */
-.lateral-nucleo { width: 100%; max-width: 400px; aspect-ratio: 1; margin: 0 auto 10px; flex-shrink: 0; }
+.lateral-nucleo { width: calc(100% + 44px); aspect-ratio: 1; margin: -18px -22px 4px; flex-shrink: 0; }
 .sinal {
   width: 10px; height: 10px; border-radius: 50%;
   background: radial-gradient(circle at 40% 35%, #d9fffb, #38e1cf 60%);
@@ -278,11 +278,12 @@ input { font: inherit; }
 .lateral h3 { flex-shrink: 0; }
 .lateral .atividades { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 24px; }
 .lateral h3 { margin: 0 0 18px; font-family: var(--mono); font-weight: 400; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--apagado); }
-.atividades { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 1px solid var(--borda); display: flex; flex-direction: column; gap: 14px; }
+.atividades { list-style: none; margin: 0; padding: 10px 0 0 30px;
+  background: linear-gradient(var(--borda), var(--borda)) no-repeat 15px 0 / 1px 100%; background-attachment: local; display: flex; flex-direction: column; gap: 14px; }
 .atividade { position: relative; }
 .atividade.nova { animation: entrar 0.3s ease-out; }
 .atividade::before {
-  content: ''; position: absolute; left: -18.5px; top: 5px;
+  content: ''; position: absolute; left: -20px; top: 5px;
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--fundo); border: 1.5px solid var(--ciano);
 }

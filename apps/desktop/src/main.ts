@@ -24,7 +24,8 @@ const $ = <T extends HTMLElement>(sel: string) => app.querySelector<T>(sel)!;
 let nucleo: NucleoMontado | null = null;
 function trocarNucleo(caixa: HTMLElement | null, densidade = 1) {
   nucleo?.destruir();
-  nucleo = caixa ? montarNucleo(caixa, densidade) : null;
+  // Na coluna lateral a câmera fica mais longe: os anéis cabem inteiros, sem bater na borda do quadro.
+  nucleo = caixa ? montarNucleo(caixa, densidade, caixa.classList.contains('lateral-nucleo') ? 10.5 : undefined) : null;
 }
 
 const NOME_PRIO: Record<Prioridade, string> = { alta: 'alta', media: 'média', baixa: 'baixa' };

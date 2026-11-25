@@ -10,6 +10,8 @@ export interface OpcoesNucleo {
   dpr?: number;
   /** 1 = cheio (PC). Menos no celular para poupar bateria. */
   densidade?: number;
+  /** Distância da câmera (padrão 8.4). Maior = núcleo menor no quadro, sem cortar as bordas dos anéis. */
+  distancia?: number;
 }
 
 /**
@@ -317,7 +319,7 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
 
   const cena = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, op.largura / op.altura, 0.1, 100);
-  camera.position.set(0, 0, 8.4);
+  camera.position.set(0, 0, op.distancia ?? 8.4);
 
   renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(dpr);
