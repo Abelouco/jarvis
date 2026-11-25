@@ -683,11 +683,10 @@ async function finalizarGravacao() {
   }
 }
 
-/** Reserva quando o servidor não mandou o resumo: as duas primeiras frases. */
+/** Reserva quando o servidor não mandou o resumo: as primeiras frases. */
 function resumoLocal(texto: string): string {
   const frases = texto.match(/[^.!?]+[.!?]+/g) ?? [texto];
-  const curto = frases.slice(0, 2).join(' ').trim();
-  return frases.length > 2 ? `${curto} Os detalhes estão na tela.` : curto;
+  return frases.slice(0, 4).join(' ').trim();
 }
 
 // Resposta de uma pergunta feita por voz: lê em voz alta (sem Markdown, citações nem código).

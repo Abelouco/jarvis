@@ -1,15 +1,17 @@
 // Resumo para falar: quando a pergunta foi feita por voz, a tela mostra a resposta completa e o
-// J.A.R.V.I.S. fala só um resumo curto. A voz do PC (Piper pt-BR) só sabe ler português, então
-// as palavras em inglês vão escritas como se pronunciam ("pike" → "páique").
+// J.A.R.V.I.S. fala a resposta inteira, resumida (quem só ouvir
+// precisa ficar sabendo a resposta). A voz do PC (Piper pt-BR) só sabe ler português, então as palavras em inglês vão escritas como se pronunciam ("pike" → "páique").
 // Só Groq: a resposta pode ter assunto sensível, e sensível nunca vai para o Gemini grátis.
 import { conversar } from './provedores.ts';
 
 const SISTEMA = [
-  'Você é o J.A.R.V.I.S. e vai FALAR em voz alta com o dono. A resposta completa já está na tela dele.',
-  'Escreva só o que vai ser dito: um resumo curto, direto e coerente da resposta, em 1 a 3 frases (no máximo 45 palavras), em português do Brasil.',
+  'Você é o J.A.R.V.I.S. e vai FALAR em voz alta com o dono.',
+  'Escreva só o que vai ser dito: a resposta completa, mas resumida, direta e coerente, em português do Brasil. O dono pode não estar olhando a tela: ele precisa sair sabendo a resposta só de ouvir.',
+  'Tamanho: o mínimo para responder por inteiro (em geral 2 a 5 frases, até uns 90 palavras). Inclua o que é essencial: a resposta, os itens/materiais/passos principais em poucas palavras, os números que importam.',
+  '- NUNCA diga que algo está na tela, no app ou que há mais detalhes em outro lugar.',
   'Tom: calmo, confiante, elegante, um pouco distante. Pode chamar o dono de "Senhor" no máximo uma vez.',
   '- Texto para falar: sem Markdown, listas, emojis, links, citações [n], código ou tabelas.',
-  '- Vá ao essencial: a resposta em si, a decisão ou o número que importa. Se houver passos, listas ou detalhes, diga que estão na tela.',
+  '- Passos e listas viram uma frase corrida (ex.: "primeiro..., depois..., por fim..."). Corte enfeites e repetições, nunca o que é preciso para responder.',
   '- Mantenha os fatos da resposta. Não acrescente nada que não esteja nela.',
   '- PRONÚNCIA (importante): o leitor de voz só sabe ler português. Toda palavra ou nome em inglês deve ser escrito do jeito que se fala, com grafia do português. Exemplos: "bags" → "bégs", "pike" → "páique", "hood" → "rúd", "Medieval Dynasty" → "Midíval Dáinasti", "Steam" → "Stím", "Windows" → "Uíndous", "upgrade" → "âpgreide", "The Witcher" → "Dâ Uítcher". Palavras em português ficam normais.',
   '- Números e unidades do jeito que se fala ("10 kg" → "dez quilos").',
@@ -30,12 +32,12 @@ function limpar(texto: string): string {
 export async function resumoFalado(pergunta: string, resposta: string): Promise<string | null> {
   const r = await conversar('groq', [
     { role: 'system', content: SISTEMA },
-    { role: 'user', content: `Pergunta do dono: ${pergunta.slice(0, 600)}\n\nResposta completa (na tela):\n${resposta.slice(0, 6000)}` },
-  ], { temperatura: 0.3, maxTokens: 400 });
+    { role: 'user', content: `Pergunta do dono: ${pergunta.slice(0, 600)}\n\nResposta completa:\n${resposta.slice(0, 6000)}` },
+  ], { temperatura: 0.3, maxTokens: 600 });
   if (!r.ok) {
     console.warn('fala: resumo falhou', r.erro);
     return null;
   }
   const fala = limpar(r.texto);
-  return fala.length >= 3 ? fala.slice(0, 600) : null;
+  return fala.length >= 3 ? fala.slice(0, 900) : null;
 }
