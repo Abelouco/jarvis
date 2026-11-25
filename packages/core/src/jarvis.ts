@@ -328,7 +328,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
   /** Pede a resposta de uma pergunta já gravada. true = respondida. */
   /** Perguntas feitas por voz: a resposta delas é lida em voz alta. */
   const porVoz = new Set<string>();
-  const ouvintesResposta = new Set<(m: Message, voz: boolean) => void>();
+  const ouvintesResposta = new Set<(m: Message, voz: boolean, fala: string | null) => void>();
 
   async function pedirResposta(m: Pick<Message, 'id' | 'conversation_id' | 'content'>): Promise<boolean> {
     pensando = true;
@@ -338,6 +338,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
       const { data, error } = await sb.functions.invoke('ia_conversar', {
         body: {
           conversation_id: m.conversation_id, message_id: m.id, text: m.content,
+          voz: porVoz.has(m.id),
           app: versaoApp ? await Promise.resolve(versaoApp()).catch(() => '') : '',
         },
       });
@@ -346,7 +347,9 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
         await gravarDoServidor(TABELA_MSG, data.mensagem as Record<string, unknown>);
         const resposta = { ...(data.mensagem as Message), sources: (data.mensagem as Message).sources ?? null };
         const voz = porVoz.delete(m.id);
-        ouvintesResposta.forEach((f) => f(resposta, voz));
+        // Pergunta por voz: o servidor manda também um resumo curto para falar.
+        const fala = typeof data.fala === 'string' && data.fala.trim() ? data.fala.trim() : null;
+        ouvintesResposta.forEach((f) => f(resposta, voz, fala));
       }
       falhasAqui.delete(m.id);
       return true;
@@ -402,7 +405,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
      * Devolve false se não deu para enviar agora (o texto deve voltar para o campo).
      */
     /** Avisa quando chega a resposta da IA (voz = a pergunta foi feita falando). */
-    aoResponder(f: (m: Message, voz: boolean) => void) {
+    aoResponder(f: (m: Message, voz: boolean, fala: string | null) => void) {
       ouvintesResposta.add(f);
       return () => { ouvintesResposta.delete(f); };
     },

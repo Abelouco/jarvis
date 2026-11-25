@@ -12,6 +12,8 @@ Assistente de IA pessoal do dono deste repositório, no PC (Windows) e no celula
 - IA, só serviços gratuitos por enquanto: Groq (caminho rápido + transcrição Whisper) e Gemini Flash (raciocínio), com troca automática quando um bater o limite. Nada sensível vai para o Gemini grátis (pode treinar com os dados).
 - Pesquisa na web: Tavily (secret `TAVILY_API_KEY`); o Groq gera as consultas e o `gpt-oss-120b` escreve a resposta só com os trechos. As chaves (Groq, Gemini, Tavily) são do dono e ficam no servidor: se houver outros usuários, todos gastam a cota dele (pensar em limite por pessoa).
 - Voz falada: voz própria no perfil "confiante e distante" (o dono achou lenta demais: ritmo natural). Nunca clonar voz de pessoa real. No PC: Piper local (voz pt_BR-faber-medium, ~85 MB baixados pelo app na pasta do programa, conferidos por SHA-256; `src-tauri/src/voz.rs`), um pouco mais grave via Web Audio; reserva: voz do Windows.
+- Resposta por voz: a tela mostra a resposta completa; a voz fala só um resumo curto (`fala.ts`, Groq), com palavras em inglês escritas como se pronunciam (o Piper pt-BR só lê português).
+- Memória de pesquisas: pesquisa que deu resposta citada fica em `web_searches` (trechos); pergunta igual sobre algo que não muda reaproveita (0 crédito). O Groq decide no mesmo passo que gera as consultas.
 - Transcrição: Groq Whisper large-v3 com dica de vocabulário + contexto da conversa, e uma revisão por LLM do Groq que só corrige nomes em inglês "aportuguesados" (`ia_transcrever`).
 - Cérebro: WebGL (Three.js) alimentado pela tabela `events` via Supabase Realtime.
 

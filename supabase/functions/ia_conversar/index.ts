@@ -12,7 +12,8 @@ import {
   conversar, pesquisarGemini, pesquisarGroq, temChave, type Fonte, type MensagemIA, type NomeProvedor,
 } from './provedores.ts';
 import { aprender, blocoMemoria, lembrar } from './memoria.ts';
-import { blocoTrechos, buscar, fontesDe, temBusca } from './busca.ts';
+import { blocoTrechos, buscar, fontesDe, temBusca, type PesquisaAnterior, type Trecho } from './busca.ts';
+import { resumoFalado } from './fala.ts';
 
 // Trabalho depois da resposta (aprender), sem atrasar o chat. Existe no runtime do Supabase.
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
@@ -152,7 +153,7 @@ Deno.serve(async (req) => {
   if (erroUser || !u.user) return responder(401, { erro: 'Sessão inválida. Entre de novo.' });
   const userId = u.user.id;
 
-  let corpo: { conversation_id?: string; message_id?: string; text?: string; app?: string };
+  let corpo: { conversation_id?: string; message_id?: string; text?: string; app?: string; voz?: boolean };
   try {
     corpo = await req.json();
   } catch {
@@ -251,11 +252,23 @@ Deno.serve(async (req) => {
   if (rota === 'pesquisa' && !conversaSensivel && temBusca()) {
     // Avisa os aparelhos: o chat mostra "Pesquisando na internet…" e o núcleo fica violeta.
     await sb.from('events').insert({ kind: 'searching', payload: { conversation_id: corpo.conversation_id } });
-    const { trechos, creditos } = await buscar(conversa).catch((e) => {
-      erros.push(`busca: ${e instanceof Error ? e.message : e}`);
-      return { trechos: [], creditos: 0 };
+    // Memória de pesquisas: se algo igual já foi pesquisado, reaproveita (rápido e sem crédito).
+    const perguntaAnterior = [...conversa].reverse().find((m, i) => i > 0 && m.role === 'user')?.content ?? '';
+    const { data: anteriores } = await sb.rpc('buscar_pesquisas', {
+      consulta: `${texto} ${perguntaAnterior}`.slice(0, 600), limite: 3,
     });
+    const carregar = async (id: string) => {
+      const { data } = await sb.from('web_searches').select('results, reused').eq('id', id).maybeSingle();
+      if (data) await sb.from('web_searches').update({ reused: (data.reused ?? 0) + 1 }).eq('id', id);
+      return (data?.results as Trecho[] | undefined) ?? null;
+    };
+    const { trechos, creditos, consultas, reusada } = await buscar(conversa, (anteriores ?? []) as PesquisaAnterior[], carregar)
+      .catch((e) => {
+        erros.push(`busca: ${e instanceof Error ? e.message : e}`);
+        return { trechos: [] as Trecho[], creditos: 0, consultas: [] as string[], reusada: null };
+      });
     if (creditos) await registrarUso(sb, userId, 'tavily', creditos, creditos);
+    if (reusada) console.log('ia_conversar: pesquisa reaproveitada', reusada);
     if (trechos.length) {
       for (const provedor of ['groq', 'gemini'] as NomeProvedor[]) {
         if (!temChave(provedor) || bloqueadoAte.get(provedor)) continue;
@@ -267,6 +280,13 @@ Deno.serve(async (req) => {
           const { texto: comCitacoes, fontes } = fontesCitadas(r.texto, fontesDe(trechos));
           resposta = { provedor, texto: comCitacoes, modelo: r.modelo, fontes };
           await registrarUso(sb, userId, provedor, r.tokens);
+          // Guarda a pesquisa nova só se ela serviu (a resposta citou as fontes).
+          if (!reusada && /\[\d{1,2}\]/.test(comCitacoes)) {
+            const { error } = await sb.from('web_searches').insert({
+              question: texto.slice(0, 1000), queries: consultas.join('\n'), results: trechos,
+            });
+            if (error) console.warn('ia_conversar: não guardei a pesquisa', error.message);
+          }
           break;
         }
         erros.push(r.erro);
@@ -345,6 +365,9 @@ Deno.serve(async (req) => {
     resposta.texto = `> **Não consegui pesquisar na internet agora**, então esta resposta não foi verificada em fontes. Confira antes de confiar.\n\n${resposta.texto}`;
   }
 
+  // Pergunta feita por voz: além da resposta completa (tela), um resumo curto para falar.
+  const falaPronta = corpo.voz ? resumoFalado(texto, resposta.texto).catch(() => null) : Promise.resolve(null);
+
   const salva = await sb.from('messages')
     .insert({
       conversation_id: corpo.conversation_id, role: 'assistant', content: resposta.texto,
@@ -366,5 +389,5 @@ Deno.serve(async (req) => {
     else await tarefa;
   }
 
-  return responder(200, { mensagem: salva.data });
+  return responder(200, { mensagem: salva.data, fala: await falaPronta });
 });

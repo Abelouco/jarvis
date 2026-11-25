@@ -683,13 +683,21 @@ async function finalizarGravacao() {
   }
 }
 
+/** Reserva quando o servidor não mandou o resumo: as duas primeiras frases. */
+function resumoLocal(texto: string): string {
+  const frases = texto.match(/[^.!?]+[.!?]+/g) ?? [texto];
+  const curto = frases.slice(0, 2).join(' ').trim();
+  return frases.length > 2 ? `${curto} Os detalhes estão na tela.` : curto;
+}
+
 // Resposta de uma pergunta feita por voz: lê em voz alta (sem Markdown, citações nem código).
-jarvis.chat.aoResponder((m, voz) => {
+jarvis.chat.aoResponder((m, voz, fala) => {
   if (!voz) return;
   aguardandoVoz = false;
   falandoAgora = true;
   atualizarMicrofone();
-  falar(paraFala(m.content), () => nucleo?.pulsar(0.18), () => {
+  // Fala o resumo curto do servidor; sem ele, só o começo da resposta (o resto está na tela).
+  falar(fala ?? resumoLocal(paraFala(m.content)), () => nucleo?.pulsar(0.18), () => {
     falandoAgora = false;
     atualizarMicrofone();
   });
