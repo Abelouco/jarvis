@@ -532,7 +532,7 @@ tr.md-destaque > td { background: rgba(60, 196, 255, 0.08); }
 .tarefa .rep { font-family: var(--mono); font-size: 11px; color: var(--ciano); opacity: 0.85; white-space: nowrap; }
 .tarefa .nota { color: var(--apagado); font-size: 13px; }
 .tarefa.feita .rep { opacity: 0.35; }
-.dica-tarefas { margin: -6px 0 18px; font-size: 12px; color: var(--apagado); }
+.dica-tarefas { margin: 14px 0 20px; line-height: 1.5; font-size: 12px; color: var(--apagado); }
 .dica-tarefas em { font-style: normal; color: var(--texto-2); }
 .tarefa .quando {
   font-family: var(--mono); font-size: 11px; color: var(--texto-2); opacity: 0.75; white-space: nowrap;
