@@ -326,6 +326,10 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
   }
 
   /** Pede a resposta de uma pergunta já gravada. true = respondida. */
+  /** Perguntas feitas por voz: a resposta delas é lida em voz alta. */
+  const porVoz = new Set<string>();
+  const ouvintesResposta = new Set<(m: Message, voz: boolean) => void>();
+
   async function pedirResposta(m: Pick<Message, 'id' | 'conversation_id' | 'content'>): Promise<boolean> {
     pensando = true;
     erroChat = null;
@@ -338,7 +342,12 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
         },
       });
       if (error) throw error;
-      if (data?.mensagem) await gravarDoServidor(TABELA_MSG, data.mensagem as Record<string, unknown>);
+      if (data?.mensagem) {
+        await gravarDoServidor(TABELA_MSG, data.mensagem as Record<string, unknown>);
+        const resposta = { ...(data.mensagem as Message), sources: (data.mensagem as Message).sources ?? null };
+        const voz = porVoz.delete(m.id);
+        ouvintesResposta.forEach((f) => f(resposta, voz));
+      }
       falhasAqui.delete(m.id);
       return true;
     } catch (e) {
@@ -392,7 +401,20 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
      * Envia uma pergunta. Se houver outra em aberto, responde aquela primeiro.
      * Devolve false se não deu para enviar agora (o texto deve voltar para o campo).
      */
-    async enviar(texto: string): Promise<boolean> {
+    /** Avisa quando chega a resposta da IA (voz = a pergunta foi feita falando). */
+    aoResponder(f: (m: Message, voz: boolean) => void) {
+      ouvintesResposta.add(f);
+      return () => { ouvintesResposta.delete(f); };
+    },
+    /** Transcreve um áudio gravado (Groq Whisper, no servidor). */
+    async transcrever(audio: Blob, nome = 'fala.webm'): Promise<string> {
+      const form = new FormData();
+      form.append('audio', audio, nome);
+      const { data, error } = await sb.functions.invoke('ia_transcrever', { body: form });
+      if (error) throw new Error(await mensagemDeErro(error));
+      return String(data?.texto ?? '').trim();
+    },
+    async enviar(texto: string, opcoes: { voz?: boolean } = {}): Promise<boolean> {
       const limpo = texto.trim();
       if (!limpo || pensando) return false;
       const s = await auth.sessao();
@@ -415,6 +437,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
          values (?, ?, ?, 'user', ?, ?, ?, 1)`,
         [idMsg, s.user.id, conversa, limpo, t, t],
       );
+      if (opcoes.voz) porVoz.add(idMsg);
       await pedirResposta({ id: idMsg, conversation_id: conversa, content: limpo });
       return true;
     },

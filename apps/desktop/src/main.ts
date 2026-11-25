@@ -4,6 +4,8 @@ import './estilo.css';
 import { montarNucleo, type NucleoMontado } from './nucleo3d';
 import { ligarAtualizacao } from './atualizacao';
 import { ligarMenuCopiar } from './menuCopiar';
+import { calar, falar, gravar, type Gravacao } from './voz';
+import { paraFala } from '@jarvis/core';
 import { invoke } from '@tauri-apps/api/core';
 import type { Shell } from '@jarvis/core';
 import {
@@ -189,6 +191,7 @@ async function montarPainel() {
                 <form class="nova falar" id="falar">
                   <input name="m" placeholder="Fale com o J.A.R.V.I.S." autocomplete="off" maxlength="4000" />
                   <button type="button" class="nova-conversa" id="nova-conversa" title="Começar outra conversa">nova</button>
+                  <button type="button" class="microfone" id="microfone" title="Falar (Ctrl+Espaço)"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
                   <button class="adicionar" title="Enviar (Enter)">↑</button>
                 </form>
               </div>
@@ -324,6 +327,8 @@ async function montarPainel() {
     const botao = msg.nextElementSibling?.querySelector<HTMLElement>('[data-copiar]');
     return botao ? textosCopiaveis[Number(botao.dataset.copiar)] : undefined;
   });
+  $<HTMLButtonElement>('#microfone').onclick = () => void alternarVoz();
+  atualizarMicrofone();
   $<HTMLButtonElement>('#nova-conversa').onclick = () => {
     jarvis.chat.novaConversa();
     campoFala.focus();
@@ -549,15 +554,137 @@ jarvis.aoMudar(() => {
   });
 });
 
+// ======================= voz =======================
+
+type ModoVoz = 'parado' | 'ouvindo' | 'transcrevendo';
+let modoVoz: ModoVoz = 'parado';
+let gravacao: Gravacao | null = null;
+/** Uma pergunta feita por voz está esperando resposta (a resposta será falada). */
+let aguardandoVoz = false;
+let falandoAgora = false;
+
+function avisoVoz(texto: string) {
+  const el = document.querySelector<HTMLParagraphElement>('#erro-chat');
+  if (el) el.textContent = texto;
+}
+
+function atualizarMicrofone() {
+  const b = document.querySelector<HTMLButtonElement>('#microfone');
+  if (b) {
+    b.dataset.modo = falandoAgora ? 'falando' : modoVoz;
+    b.title = falandoAgora ? 'Parar de falar (Esc)'
+      : modoVoz === 'ouvindo' ? 'Terminar e enviar (Ctrl+Espaço)'
+        : modoVoz === 'transcrevendo' ? 'Entendendo o que você disse…'
+          : 'Falar (Ctrl+Espaço)';
+  }
+  nucleo?.definirEstado(estadoDoNucleo());
+}
+
+async function alternarVoz() {
+  if (falandoAgora) {
+    calar();
+    falandoAgora = false;
+    atualizarMicrofone();
+    return;
+  }
+  if (modoVoz === 'ouvindo') return finalizarGravacao();
+  if (modoVoz === 'transcrevendo' || jarvis.chat.estado().pensando) return;
+  try {
+    avisoVoz('');
+    gravacao = await gravar({
+      // O núcleo pulsa com o volume da sua voz.
+      aoNivel: (n) => nucleo?.pulsar(n * 0.018),
+      aoTerminar: () => void finalizarGravacao(),
+    });
+    modoVoz = 'ouvindo';
+  } catch (e) {
+    avisoVoz(`Não consegui usar o microfone: ${e instanceof Error ? e.message : e}`);
+  }
+  atualizarMicrofone();
+}
+
+async function finalizarGravacao() {
+  if (modoVoz !== 'ouvindo' || !gravacao) return;
+  modoVoz = 'transcrevendo';
+  atualizarMicrofone();
+  const g = gravacao;
+  gravacao = null;
+  try {
+    const audio = await g.parar();
+    if (!audio) {
+      avisoVoz('Não ouvi nada. Toque no microfone e fale.');
+      return;
+    }
+    const texto = await jarvis.chat.transcrever(audio);
+    if (!texto) {
+      avisoVoz('Não entendi o que você disse. Tente de novo.');
+      return;
+    }
+    aguardandoVoz = true;
+    void jarvis.chat.enviar(texto, { voz: true }).then((ok) => {
+      if (!ok) aguardandoVoz = false;
+    });
+  } catch (e) {
+    avisoVoz(e instanceof Error ? e.message : String(e));
+  } finally {
+    modoVoz = 'parado';
+    atualizarMicrofone();
+  }
+}
+
+// Resposta de uma pergunta feita por voz: lê em voz alta (sem Markdown, citações nem código).
+jarvis.chat.aoResponder((m, voz) => {
+  if (!voz) return;
+  aguardandoVoz = false;
+  falandoAgora = true;
+  atualizarMicrofone();
+  falar(paraFala(m.content), () => nucleo?.pulsar(0.18), () => {
+    falandoAgora = false;
+    atualizarMicrofone();
+  });
+});
+
+// Ctrl+Espaço: falar / terminar de falar. Esc: cala a voz ou cancela a gravação.
+addEventListener('keydown', (e) => {
+  if (tela !== 'painel') return;
+  if (e.ctrlKey && e.code === 'Space') {
+    e.preventDefault();
+    void alternarVoz();
+  } else if (e.key === 'Escape') {
+    if (falandoAgora) {
+      calar();
+      falandoAgora = false;
+      atualizarMicrofone();
+    } else if (modoVoz === 'ouvindo' && gravacao) {
+      gravacao.cancelar();
+      gravacao = null;
+      modoVoz = 'parado';
+      atualizarMicrofone();
+    }
+  }
+});
+
 // O núcleo mostra o que a IA está fazendo (estado contínuo) e cada evento real vira uma descarga:
 // verde = algo criado, vermelho = algo apagado, neutro = mudança ou pensamento.
 function estadoDoNucleo() {
+  if (modoVoz === 'ouvindo') return 'ouvindo';
+  if (falandoAgora) return 'falando';
+  if (modoVoz === 'transcrevendo') return 'pensando';
   const ia = jarvis.ia.estado();
   if (ia === 'pesquisando') return 'agindo';
   if (ia !== 'repouso') return ia;
   return jarvis.chat.estado().erro ? 'erro' : 'repouso';
 }
 jarvis.aoEvento((e) => {
+  // Pergunta feita por voz que vai precisar de pesquisa: avisa antes de sumir pesquisando.
+  if (e.kind === 'searching' && aguardandoVoz && !falandoAgora) {
+    falandoAgora = true;
+    atualizarMicrofone();
+    falar('Só um momento, Senhor...', () => nucleo?.pulsar(0.18), () => {
+      falandoAgora = false;
+      atualizarMicrofone();
+    });
+  }
   if (e.kind === 'deleted') nucleo?.pulsar(1, 'apagado');
   else if (e.kind === 'created' && e.entity_type !== 'messages' && e.entity_type !== 'conversations') nucleo?.pulsar(0.8, 'criado');
   else if (e.kind === 'thinking') nucleo?.pulsar(0.5);

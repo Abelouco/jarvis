@@ -293,3 +293,52 @@ export function textoPuro(f: Inline[]): string {
     }
   }).join('');
 }
+
+/** Texto falado de um trecho: sem citações [n] nem marcas. */
+function falaInline(f: Inline[]): string {
+  return f.map((x) => {
+    switch (x.t) {
+      case 'txt': case 'cod': return x.v;
+      case 'cita': return '';
+      case 'quebra': return ' ';
+      default: return falaInline(x.f);
+    }
+  }).join('').replace(/\s+/g, ' ').replace(/\s+([.,;:!?])/g, '$1').trim();
+}
+
+function falaBloco(b: Bloco, partes: string[]) {
+  switch (b.t) {
+    case 'titulo': case 'par': {
+      const t = falaInline(b.f);
+      if (t) partes.push(/[.!?:;]$/.test(t) ? t : `${t}.`);
+      break;
+    }
+    case 'lista':
+      b.itens.forEach((it, i) => {
+        const t = falaInline(it.f);
+        if (t) partes.push(`${b.ordenada ? `${b.inicio + i}. ` : ''}${/[.!?:;]$/.test(t) ? t : `${t}.`}`);
+        it.filhos.forEach((f) => falaBloco(f, partes));
+      });
+      break;
+    case 'citacao': b.filhos.forEach((f) => falaBloco(f, partes)); break;
+    case 'tabela': partes.push('Deixei uma tabela na tela.'); break;
+    case 'codigo': partes.push('Deixei o código na tela.'); break;
+    case 'comando': partes.push('Deixei o comando na tela, pronto para rodar.'); break;
+    case 'texto': partes.push(`O texto "${b.titulo}" está pronto na tela para copiar.`); break;
+    case 'opcoes':
+      partes.push(`${b.pergunta || 'Escolha uma opção.'} ${b.itens.map((x, i) => `${i + 1}: ${x}`).join('; ')}.`);
+      break;
+    case 'linha': break;
+  }
+}
+
+/**
+ * Transforma uma resposta em texto para ler em voz alta: tira Markdown, citações e links;
+ * troca tabelas, código e cartões por um aviso curto ("Deixei ... na tela").
+ */
+export function paraFala(texto: string): string {
+  const partes: string[] = [];
+  lerMarkdown(texto).forEach((b) => falaBloco(b, partes));
+  // Avisos iguais em sequência viram um só.
+  return partes.filter((p, i) => p !== partes[i - 1]).join(' ').replace(/\s+/g, ' ').trim();
+}

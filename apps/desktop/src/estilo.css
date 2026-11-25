@@ -470,3 +470,14 @@ tr.md-destaque > td { background: rgba(60, 196, 255, 0.08); }
 .md strong { cursor: context-menu; border-radius: 4px; transition: background 0.15s; }
 .md strong:hover { background: rgba(127, 216, 255, 0.1); }
 .md strong.md-destaque, .md code.md-destaque { outline: 1px solid var(--ciano); outline-offset: 2px; background: rgba(60, 196, 255, 0.16); }
+
+/* ---------- microfone ---------- */
+.microfone { display: grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0; border: 1px solid var(--borda); border-radius: 11px; background: none; color: var(--texto-2); transition: 0.15s; }
+.microfone svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.microfone:hover { color: var(--ciano); border-color: var(--borda-forte); background: rgba(60, 196, 255, 0.08); }
+.microfone[data-modo='ouvindo'] { color: #fff; border-color: #ff6b81; background: rgba(255, 107, 129, 0.22); animation: ouvindo 1.2s ease-in-out infinite; }
+.microfone[data-modo='transcrevendo'] { color: var(--ciano); border-color: var(--borda-forte); animation: piscar 0.9s infinite; }
+.microfone[data-modo='falando'] { color: #5cf2d6; border-color: rgba(92, 242, 214, 0.5); background: rgba(92, 242, 214, 0.1); }
+.microfone[data-modo='falando'] svg { display: none; }
+.microfone[data-modo='falando']::before { content: ''; width: 12px; height: 12px; border-radius: 3px; background: currentColor; }
+@keyframes ouvindo { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 129, 0.45); } 50% { box-shadow: 0 0 0 7px rgba(255, 107, 129, 0); } }

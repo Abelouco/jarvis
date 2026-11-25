@@ -1,7 +1,7 @@
 // Rodar: node --test packages/core/src/markdown.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lerInline, lerMarkdown } from './markdown.ts';
+import { lerInline, lerMarkdown, paraFala } from './markdown.ts';
 
 test('títulos, parágrafos e linha', () => {
   const b = lerMarkdown('## 1. Visão geral\n\nTexto normal\ncontinua\n\n---\n#### Fim');
@@ -71,6 +71,11 @@ test('cerca sem fechar (resposta cortada) não quebra', () => {
 test('citações de fonte [n]', () => {
   const f = lerInline('Use madeira [1][3] e corda.');
   assert.deepEqual(f.map((x) => x.t), ['txt', 'cita', 'cita', 'txt']);
+});
+
+test('texto para fala: sem marcas, citações e com avisos', () => {
+  const t = paraFala('## Vara de pesca\n\nUse **madeira** [1].\n\n1. Abra o menu\n2. Clique em `Criar`\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```powershell\nnode -v\n```');
+  assert.equal(t, 'Vara de pesca. Use madeira. 1. Abra o menu. 2. Clique em Criar. Deixei uma tabela na tela. Deixei o comando na tela, pronto para rodar.');
 });
 
 test('citação', () => {

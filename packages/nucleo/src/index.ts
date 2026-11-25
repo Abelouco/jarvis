@@ -17,7 +17,7 @@ export interface OpcoesNucleo {
  * repouso: teal calmo · pensando: azul, giro rápido e pulsação contínua · agindo: violeta
  * permissao: âmbar, respiração lenta e forte (esperando o dono) · erro: vermelho apagado
  */
-export type EstadoNucleo = 'repouso' | 'pensando' | 'agindo' | 'permissao' | 'erro';
+export type EstadoNucleo = 'repouso' | 'ouvindo' | 'pensando' | 'falando' | 'agindo' | 'permissao' | 'erro';
 
 /** Cor da descarga de um evento: criado (verde), apagado (vermelho), neutro (a cor do estado). */
 export type TomPulso = 'neutro' | 'criado' | 'apagado';
@@ -64,6 +64,8 @@ interface Perfil {
 
 const PERFIS: Record<EstadoNucleo, Perfil> = {
   repouso: { cor: TEAL, mistura: 0, velocidade: 1, energia: 0, ritmo: 0, batida: 0 },
+  ouvindo: { cor: new THREE.Color('#a8f0ff'), mistura: 0.6, velocidade: 1.3, energia: 0.1, ritmo: 0, batida: 0 },
+  falando: { cor: new THREE.Color('#5cf2d6'), mistura: 0.45, velocidade: 1.25, energia: 0.12, ritmo: 0, batida: 0 },
   pensando: { cor: new THREE.Color('#7aa8ff'), mistura: 0.78, velocidade: 2.6, energia: 0.22, ritmo: 1.7, batida: 0.22 },
   agindo: { cor: new THREE.Color('#b58cff'), mistura: 0.74, velocidade: 1.9, energia: 0.18, ritmo: 1.1, batida: 0.16 },
   permissao: { cor: new THREE.Color('#ffc56b'), mistura: 0.88, velocidade: 0.55, energia: 0.1, ritmo: 0.45, batida: 0.32 },
