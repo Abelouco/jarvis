@@ -9,7 +9,7 @@ export interface Sensibilidade {
 
 /** minúsculas e sem acento, para as regras ficarem simples */
 export function normalizar(texto: string): string {
-  return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
 function luhnValido(digitos: string): boolean {

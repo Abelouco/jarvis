@@ -30,6 +30,15 @@ export interface NoMemoria {
   importancia: number;
 }
 
+/** Um projeto real: nó dourado mais afastado, com as tarefas dele em volta. */
+export interface NoProjeto {
+  id: string;
+  /** 0 a 1 (tarefas concluídas / total) */
+  progresso: number;
+  /** ids das tarefas do projeto (cada uma vira um ponto ligado ao nó) */
+  tarefas: string[];
+}
+
 export interface Nucleo {
   /** Desenha um quadro. `tempo` em milissegundos (requestAnimationFrame). */
   quadro(tempo: number): void;
@@ -39,6 +48,8 @@ export interface Nucleo {
   definirEstado(estado: EstadoNucleo): void;
   /** Cada memória real vira um nó em volta da esfera (posição fixa pelo id; brilho pela importância). */
   definirMemorias(memorias: NoMemoria[]): void;
+  /** Cada projeto real vira um nó dourado; as tarefas dele, pontos ligados ao nó. */
+  definirProjetos(projetos: NoProjeto[]): void;
   /** Gira o núcleo pelo arraste (dx, dy em pixels desde o último movimento). */
   arrastar(dx: number, dy: number): void;
   /** Fim do arraste: o giro continua por inércia e desacelera. */
@@ -49,6 +60,7 @@ export interface Nucleo {
 
 const TEAL = new THREE.Color('#38e1cf');
 const CIANO = new THREE.Color('#7fd8ff');
+const OURO = new THREE.Color('#ffc56b');
 
 interface Perfil {
   cor: THREE.Color;
@@ -419,6 +431,20 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
   let fiosNos: THREE.LineSegments | null = null;
   let assinaturaNos = '';
 
+  // Nós de projeto (dourados) e as tarefas de cada um.
+  const matProj = new THREE.ShaderMaterial({
+    vertexShader: NOS_VERT,
+    fragmentShader: PONTO_FRAG,
+    uniforms: { ...uComuns, uCor: { value: OURO }, uCor2: { value: new THREE.Color('#fff4dc') }, uOpacidade: { value: 1 } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const matFiosProj = new THREE.LineBasicMaterial({
+    color: OURO, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  let pontosProj: THREE.Points | null = null;
+  let fiosProj: THREE.LineSegments | null = null;
+  let assinaturaProj = '';
+
   const brilho = new THREE.Mesh(
     new THREE.PlaneGeometry(3.2, 3.2),
     new THREE.ShaderMaterial({
@@ -496,6 +522,7 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
       corArestas.copy(TEAL).lerp(tinta, uComuns.uMistura!.value as number);
       matFios.color.copy(CIANO).lerp(tinta, uComuns.uMistura!.value as number);
       matFios.opacity = 0.28 + energiaTotal * 0.3;
+      matFiosProj.opacity = 0.22 + energiaTotal * 0.3;
 
       if (!segurando) {
         // inércia: continua girando e desacelera
@@ -565,6 +592,55 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
       geoFios.setAttribute('position', new THREE.BufferAttribute(fios, 3));
       fiosNos = new THREE.LineSegments(geoFios, matFios);
       nos.add(fiosNos, pontosNos);
+    },
+    definirProjetos(projetos) {
+      const lista = projetos.slice(0, 60);
+      const assinatura = lista.map((p) => `${p.id}:${Math.round(p.progresso * 20)}:${p.tarefas.slice(0, 24).join('.')}`).join(',');
+      if (assinatura === assinaturaProj) return;
+      assinaturaProj = assinatura;
+      if (pontosProj) { nos.remove(pontosProj); pontosProj.geometry.dispose(); pontosProj = null; }
+      if (fiosProj) { nos.remove(fiosProj); fiosProj.geometry.dispose(); fiosProj = null; }
+      if (!lista.length) return;
+
+      const pos: number[] = [];
+      const sem: number[] = [];
+      const tam: number[] = [];
+      const fios: number[] = [];
+      for (const p of lista) {
+        const [a, b, c] = hashId(`projeto:${p.id}`);
+        const dir = new THREE.Vector3(
+          Math.sin(Math.acos(2 * b - 1)) * Math.cos(a * Math.PI * 2),
+          Math.sin(Math.acos(2 * b - 1)) * Math.sin(a * Math.PI * 2),
+          2 * b - 1,
+        );
+        // projeto mais longe que as memórias; quanto mais perto de terminar, mais forte brilha
+        const centro = dir.clone().multiplyScalar(1.4 + c * 0.1);
+        pos.push(centro.x, centro.y, centro.z);
+        sem.push(c);
+        tam.push(0.55 + Math.min(1, Math.max(0, p.progresso)) * 0.45);
+        const base = dir.clone().multiplyScalar(0.64);
+        fios.push(base.x, base.y, base.z, centro.x, centro.y, centro.z);
+        // tarefas: pontos pequenos em volta do nó, cada um preso a ele
+        for (const tid of p.tarefas.slice(0, 24)) {
+          const [x, y, z] = hashId(tid);
+          const off = new THREE.Vector3(x - 0.5, y - 0.5, z - 0.5).normalize().multiplyScalar(0.1 + z * 0.08);
+          const q = centro.clone().add(off);
+          pos.push(q.x, q.y, q.z);
+          sem.push(x);
+          tam.push(0.02);
+          fios.push(centro.x, centro.y, centro.z, q.x, q.y, q.z);
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+      geo.setAttribute('aSemente', new THREE.BufferAttribute(new Float32Array(sem), 1));
+      geo.setAttribute('aTam', new THREE.BufferAttribute(new Float32Array(tam), 1));
+      pontosProj = new THREE.Points(geo, matProj);
+      pontosProj.frustumCulled = false;
+      const geoFios = new THREE.BufferGeometry();
+      geoFios.setAttribute('position', new THREE.BufferAttribute(new Float32Array(fios), 3));
+      fiosProj = new THREE.LineSegments(geoFios, matFiosProj);
+      nos.add(fiosProj, pontosProj);
     },
     arrastar(dx, dy) {
       const agora = Date.now() / 1000;

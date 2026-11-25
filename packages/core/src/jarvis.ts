@@ -3,7 +3,9 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { criarCliente, ouvirEventos, type ArmazenamentoSessao } from './supabase';
 import { novoId, prepararBanco, TABELAS_SYNC, type BancoLocal, type TabelaSync, type Valor } from './local';
-import type { Fonte, JarvisEvent, Memory, Message, Prioridade, Reminder, Task } from './types';
+import type {
+  ColunaQuadro, Fonte, JarvisEvent, Memory, Message, Milestone, Prioridade, Project, Reminder, StatusProjeto, Task,
+} from './types';
 import {
   dataAposConcluir, hojeSP, instanteSP, normalizarRecorrencia, partesSP, primeiraData, proximaData, type Recorrencia,
 } from './recorrencia';
@@ -32,12 +34,14 @@ export interface Atividade {
 }
 
 const NOME_ENTIDADE: Record<string, string> = {
-  tasks: 'Tarefa', projects: 'Projeto', reminders: 'Lembrete', habits: 'Hábito',
+  tasks: 'Tarefa', projects: 'Projeto', project_milestones: 'Marco', reminders: 'Lembrete', habits: 'Hábito',
   habit_logs: 'Registro de hábito', memories: 'Memória', memory_links: 'Ligação de memória',
 };
+/** Entidades de nome feminino ("Tarefa criada"); as outras ficam no masculino ("Projeto criado"). */
+const FEMININAS = new Set(['tasks', 'memories', 'memory_links']);
 /** Entidades que aparecem em "Atividades recentes" (mensagens só fazem o cérebro pulsar). */
 const ENTIDADES_ATIVIDADE = Object.keys(NOME_ENTIDADE);
-const NOME_ACAO: Record<string, string> = { created: 'criada', updated: 'atualizada', deleted: 'apagada' };
+const NOME_ACAO: Record<string, string> = { created: 'criad', updated: 'atualizad', deleted: 'apagad' };
 
 /** "14:15" se for hoje, "ontem 14:15", ou "21/11 14:15". */
 export function quandoCurto(iso: string, agoraRef = new Date()): string {
@@ -139,15 +143,18 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
      * Com `repetir`, a data vira a primeira ocorrência da série (se não vier, é calculada).
      */
     async criar(titulo: string, prioridade: Prioridade = 'media', data: string | null = null, hora: string | null = null,
-      extra: { repetir?: Recorrencia | null; notas?: string | null } = {}) {
+      extra: { repetir?: Recorrencia | null; notas?: string | null; projeto?: string | null; marco?: string | null;
+        coluna?: ColunaQuadro } = {}) {
       const t = agora();
       const user = (await auth.sessao())?.user.id ?? null;
       const rec = extra.repetir ? normalizarRecorrencia(extra.repetir) : null;
       const dia = rec ? (data && proximaData(rec, data, true)) || primeiraData(rec, hora) : data;
       await db.executar(
-        `insert into tasks (id, user_id, title, notes, priority, due_date, due_time, recurrence, created_at, updated_at, dirty)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-        [novoId(), user, titulo.trim(), extra.notas?.trim() || null, prioridade, dia, dia ? hora : null,
+        `insert into tasks (id, user_id, project_id, milestone_id, board_column, title, notes, priority, due_date, due_time,
+         recurrence, created_at, updated_at, dirty)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        [novoId(), user, extra.projeto ?? null, extra.projeto ? extra.marco ?? null : null, extra.coluna ?? 'a_fazer',
+          titulo.trim(), extra.notas?.trim() || null, prioridade, dia, dia ? hora : null,
           rec ? JSON.stringify(rec) : null, t, t],
       );
       mudouLocal();
@@ -193,6 +200,123 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     async apagar(id: string) {
       const t = agora();
       await db.executar(`update tasks set deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, id]);
+      mudouLocal();
+    },
+    /**
+     * Move no quadro: projeto, marco e coluna (os ausentes ficam como estão).
+     * Coluna 'feito' conclui; ir para outra coluna reabre. Trocar de projeto tira do marco.
+     */
+    async mover(id: string, m: { projeto?: string | null; marco?: string | null; coluna?: ColunaQuadro | 'feito' }) {
+      const [atual] = (await db.consultar<Parameters<typeof lerTarefa>[0]>(`select * from tasks where id = ?`, [id])).map(lerTarefa);
+      if (!atual) return;
+      const projeto = m.projeto === undefined ? atual.project_id : m.projeto;
+      let marco = m.marco === undefined ? atual.milestone_id : m.marco;
+      if (!projeto || (projeto !== atual.project_id && m.marco === undefined)) marco = null;
+      const t = agora();
+      let done = atual.done_at;
+      let coluna = atual.board_column ?? 'a_fazer';
+      if (m.coluna === 'feito') done ??= t;
+      else if (m.coluna) {
+        coluna = m.coluna;
+        done = null;
+      }
+      await db.executar(
+        `update tasks set project_id = ?, milestone_id = ?, board_column = ?, done_at = ?, updated_at = ?, dirty = 1 where id = ?`,
+        [projeto, marco, coluna, done, t, id],
+      );
+      mudouLocal();
+    },
+  };
+
+  // ---------- projetos e marcos (banco local) ----------
+  type LinhaProjeto = Omit<Project, 'archived'> & { archived: number };
+  const lerProjeto = (p: LinhaProjeto): Project => ({ ...p, archived: !!p.archived });
+  const ORDEM_STATUS = `case p.status when 'em_andamento' then 0 when 'planejamento' then 1 when 'pausado' then 2 else 3 end`;
+  const projetos = {
+    /** Projetos com o progresso (tarefas concluídas / total, marcos feitos / total). */
+    async listar(): Promise<ProjetoResumo[]> {
+      const linhas = await db.consultar<LinhaProjeto & { total: number; feitas: number; marcos: number; marcos_feitos: number }>(
+        `select p.*,
+           (select count(*) from tasks t where t.project_id = p.id and t.deleted_at is null) as total,
+           (select count(*) from tasks t where t.project_id = p.id and t.deleted_at is null and t.done_at is not null) as feitas,
+           (select count(*) from project_milestones m where m.project_id = p.id and m.deleted_at is null) as marcos,
+           (select count(*) from project_milestones m where m.project_id = p.id and m.deleted_at is null
+              and m.done_at is not null) as marcos_feitos
+         from projects p where p.deleted_at is null and p.archived = 0
+         order by ${ORDEM_STATUS}, p.due_date is null, p.due_date, p.updated_at desc`,
+      );
+      return linhas.map((l) => ({
+        ...lerProjeto(l), total: Number(l.total), feitas: Number(l.feitas),
+        marcos: Number(l.marcos), marcosFeitos: Number(l.marcos_feitos),
+      }));
+    },
+    async criar(nome: string, extra: { descricao?: string | null; prazo?: string | null; prioridade?: Prioridade;
+      status?: StatusProjeto } = {}): Promise<string> {
+      const t = agora();
+      const id = novoId();
+      const user = (await auth.sessao())?.user.id ?? null;
+      await db.executar(
+        `insert into projects (id, user_id, name, description, priority, status, due_date, created_at, updated_at, dirty)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        [id, user, nome.trim(), extra.descricao?.trim() || null, extra.prioridade ?? 'media',
+          extra.status ?? 'em_andamento', extra.prazo ?? null, t, t],
+      );
+      mudouLocal();
+      return id;
+    },
+    async editar(id: string, m: { nome?: string; descricao?: string | null; prazo?: string | null; prioridade?: Prioridade;
+      status?: StatusProjeto }) {
+      const [atual] = (await db.consultar<LinhaProjeto>(`select * from projects where id = ?`, [id])).map(lerProjeto);
+      if (!atual) return;
+      await db.executar(
+        `update projects set name = ?, description = ?, due_date = ?, priority = ?, status = ?, updated_at = ?, dirty = 1 where id = ?`,
+        [m.nome?.trim() || atual.name, m.descricao === undefined ? atual.description : m.descricao?.trim() || null,
+          m.prazo === undefined ? atual.due_date : m.prazo, m.prioridade ?? atual.priority, m.status ?? atual.status, agora(), id],
+      );
+      mudouLocal();
+    },
+    /** Exclusão suave do projeto. As tarefas guardam o vínculo (se o projeto voltar, voltam junto). */
+    async apagar(id: string) {
+      const t = agora();
+      await db.executar(`update projects set deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, id]);
+      mudouLocal();
+    },
+    async marcos(projetoId: string): Promise<Milestone[]> {
+      return db.consultar<Milestone>(
+        `select * from project_milestones where project_id = ? and deleted_at is null
+         order by due_date is null, due_date, position, created_at`,
+        [projetoId],
+      );
+    },
+    async criarMarco(projetoId: string, titulo: string, prazo: string | null = null) {
+      const t = agora();
+      const user = (await auth.sessao())?.user.id ?? null;
+      await db.executar(
+        `insert into project_milestones (id, user_id, project_id, title, due_date, created_at, updated_at, dirty)
+         values (?, ?, ?, ?, ?, ?, ?, 1)`,
+        [novoId(), user, projetoId, titulo.trim(), prazo, t, t],
+      );
+      mudouLocal();
+    },
+    async editarMarco(id: string, m: { titulo?: string; prazo?: string | null }) {
+      const [atual] = await db.consultar<Milestone>(`select * from project_milestones where id = ?`, [id]);
+      if (!atual) return;
+      await db.executar(`update project_milestones set title = ?, due_date = ?, updated_at = ?, dirty = 1 where id = ?`,
+        [m.titulo?.trim() || atual.title, m.prazo === undefined ? atual.due_date : m.prazo, agora(), id]);
+      mudouLocal();
+    },
+    async alternarMarco(id: string) {
+      const t = agora();
+      await db.executar(
+        `update project_milestones set done_at = case when done_at is null then ? else null end, updated_at = ?, dirty = 1 where id = ?`,
+        [t, t, id],
+      );
+      mudouLocal();
+    },
+    /** Exclusão suave do marco; as tarefas dele continuam no projeto (o app trata marco apagado como "sem marco"). */
+    async apagarMarco(id: string) {
+      const t = agora();
+      await db.executar(`update project_milestones set deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, id]);
       mudouLocal();
     },
   };
@@ -662,7 +786,10 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     /** As últimas coisas que aconteceram, já em texto, com o nome do item (vem do banco local). */
     async listar(): Promise<Atividade[]> {
       const titulos = new Map<string, string>();
-      for (const [tabela, coluna] of [['tasks', 'title'], ['memories', "coalesce(title, content)"]] as const) {
+      for (const [tabela, coluna] of [
+        ['tasks', 'title'], ['memories', 'coalesce(title, content)'], ['reminders', 'title'],
+        ['projects', 'name'], ['project_milestones', 'title'],
+      ] as const) {
         const ids = eventosRecentes.filter((e) => e.entity_type === tabela && e.entity_id).map((e) => e.entity_id!);
         if (!ids.length) continue;
         const linhas = await db.consultar<{ id: string; titulo: string }>(
@@ -673,7 +800,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
       }
       return eventosRecentes.map((e) => ({
         id: e.id,
-        texto: `${NOME_ENTIDADE[e.entity_type ?? ''] ?? 'Item'} ${NOME_ACAO[e.kind] ?? e.kind}`,
+        texto: `${NOME_ENTIDADE[e.entity_type ?? ''] ?? 'Item'} ${NOME_ACAO[e.kind] ? NOME_ACAO[e.kind] + (FEMININAS.has(e.entity_type ?? '') ? 'a' : 'o') : e.kind}`,
         detalhe: (e.entity_id && titulos.get(e.entity_id)) || null,
         quando: e.created_at,
       }));
@@ -736,6 +863,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     iniciar,
     auth,
     tarefas,
+    projetos,
     lembretes,
     atividades,
     chat,
@@ -757,3 +885,6 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
 }
 
 export type Jarvis = ReturnType<typeof criarJarvis>;
+
+/** Projeto com o progresso, como a lista mostra. */
+export type ProjetoResumo = Project & { total: number; feitas: number; marcos: number; marcosFeitos: number };

@@ -12,8 +12,33 @@ export interface Base {
   deleted_at: string | null;
 }
 
+export type StatusProjeto = 'planejamento' | 'em_andamento' | 'pausado' | 'concluido';
+
+export interface Project extends Base {
+  name: string;
+  description: string | null;
+  priority: Prioridade;
+  status: StatusProjeto;
+  due_date: string | null; // AAAA-MM-DD
+  archived: boolean;
+}
+
+/** Etapa de um projeto, com data-alvo. */
+export interface Milestone extends Base {
+  project_id: string;
+  title: string;
+  due_date: string | null;
+  done_at: string | null;
+  position: number;
+}
+
+/** Coluna do quadro do projeto (concluída = `done_at`). */
+export type ColunaQuadro = 'a_fazer' | 'fazendo';
+
 export interface Task extends Base {
   project_id: string | null;
+  milestone_id: string | null;
+  board_column: ColunaQuadro;
   title: string;
   notes: string | null;
   priority: Prioridade;

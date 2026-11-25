@@ -9,8 +9,17 @@ export interface BancoLocal {
 }
 
 /** Colunas de `tasks` iguais às do Supabase (sem o controle local `dirty`). */
+export const COLUNAS_PROJECTS = [
+  'id', 'user_id', 'name', 'description', 'priority', 'status', 'due_date', 'archived',
+  'created_at', 'updated_at', 'deleted_at',
+] as const;
+
+export const COLUNAS_MILESTONES = [
+  'id', 'user_id', 'project_id', 'title', 'due_date', 'done_at', 'position', 'created_at', 'updated_at', 'deleted_at',
+] as const;
+
 export const COLUNAS_TASKS = [
-  'id', 'user_id', 'project_id', 'title', 'notes', 'priority', 'due_date', 'due_time',
+  'id', 'user_id', 'project_id', 'milestone_id', 'board_column', 'title', 'notes', 'priority', 'due_date', 'due_time',
   'done_at', 'archived', 'position', 'recurrence', 'created_at', 'updated_at', 'deleted_at',
 ] as const;
 
@@ -42,6 +51,8 @@ export interface TabelaSync {
   json?: readonly string[];
 }
 export const TABELAS_SYNC: readonly TabelaSync[] = [
+  { nome: 'projects', colunas: COLUNAS_PROJECTS, booleanas: ['archived'] },
+  { nome: 'project_milestones', colunas: COLUNAS_MILESTONES, booleanas: [] },
   { nome: 'tasks', colunas: COLUNAS_TASKS, booleanas: ['archived'], json: ['recurrence'] },
   { nome: 'reminders', colunas: COLUNAS_REMINDERS, booleanas: ['alarm'], json: ['recurrence'] },
   { nome: 'conversations', colunas: COLUNAS_CONVERSATIONS, booleanas: [] },
@@ -55,10 +66,41 @@ export const TABELAS_SYNC: readonly TabelaSync[] = [
 ];
 
 export const SCHEMA_LOCAL = [
+  `create table if not exists projects (
+    id text primary key,
+    user_id text,
+    name text not null,
+    description text,
+    priority text not null default 'media',
+    status text not null default 'planejamento',
+    due_date text,
+    archived integer not null default 0,
+    created_at text not null,
+    updated_at text not null,
+    deleted_at text,
+    dirty integer not null default 0
+  )`,
+  `create index if not exists projects_dirty_idx on projects (dirty)`,
+  `create table if not exists project_milestones (
+    id text primary key,
+    user_id text,
+    project_id text not null,
+    title text not null,
+    due_date text,
+    done_at text,
+    position real not null default 0,
+    created_at text not null,
+    updated_at text not null,
+    deleted_at text,
+    dirty integer not null default 0
+  )`,
+  `create index if not exists project_milestones_dirty_idx on project_milestones (dirty)`,
   `create table if not exists tasks (
     id text primary key,
     user_id text,
     project_id text,
+    milestone_id text,
+    board_column text not null default 'a_fazer',
     title text not null,
     notes text,
     priority text not null default 'media',
@@ -140,6 +182,8 @@ export const SCHEMA_LOCAL = [
 const COLUNAS_NOVAS: [tabela: string, coluna: string, tipo: string][] = [
   ['messages', 'sources', 'text'],
   ['tasks', 'recurrence', 'text'],
+  ['tasks', 'milestone_id', 'text'],
+  ['tasks', 'board_column', "text not null default 'a_fazer'"],
 ];
 
 export async function prepararBanco(db: BancoLocal) {

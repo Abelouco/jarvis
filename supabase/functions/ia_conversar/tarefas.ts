@@ -30,6 +30,9 @@ export interface Tarefa {
   done_at: string | null;
   deleted_at: string | null;
   recurrence: Recorrencia | null;
+  project_id?: string | null;
+  milestone_id?: string | null;
+  board_column?: 'a_fazer' | 'fazendo';
 }
 
 /** Resposta em camadas: resumo, fatos estruturados, texto pronto e ids. */
@@ -86,7 +89,7 @@ export function dataHumana(data: string | null, hoje: string): string {
   return `${diaDaSemana(data)}, ${d}/${m}`;
 }
 
-const quando = (t: Pick<Tarefa, 'due_date' | 'due_time' | 'recurrence'>, hoje: string) => {
+export const quando = (t: Pick<Tarefa, 'due_date' | 'due_time' | 'recurrence'>, hoje: string) => {
   const hora = t.due_time ? ` às ${t.due_time.slice(0, 5)}` : '';
   if (t.recurrence) {
     return `${descreverRecorrencia(t.recurrence)}${hora}${t.due_date ? ` (próxima: ${dataHumana(t.due_date, hoje)})` : ''}`;
@@ -169,7 +172,7 @@ export function acharPorNome<T extends Pick<Tarefa, 'id' | 'title'>>(ref: string
 // ---------- o planejador (Groq em JSON; Gemini só se não for sensível) ----------
 
 const FERRAMENTAS = `
-tarefas_criar {titulo, QUANDO?, hora?: "HH:MM", repetir?: REPETIR, prioridade?: "alta"|"media"|"baixa", notas?}
+tarefas_criar {titulo, QUANDO?, hora?: "HH:MM", repetir?: REPETIR, prioridade?: "alta"|"media"|"baixa", notas?, projeto?: "nome do projeto", marco?: "nome do marco"}
 tarefas_listar {filtro: "hoje"|"atrasadas"|"proximas"|"abertas"|"concluidas"|"periodo", de?: "AAAA-MM-DD", ate?: "AAAA-MM-DD", termo?}
 tarefas_concluir {refs: ["nome ou id", ...]}
 tarefas_reabrir {refs: ["nome ou id", ...]}
@@ -187,10 +190,10 @@ QUANDO = UM destes campos (você NUNCA calcula a data; o app calcula):
   data: "AAAA-MM-DD"   (só quando o dono disser dia E mês, ex.: "5 de dezembro")
 REPETIR (tarefa fixa) = {freq: "diaria"|"dias_uteis"|"fim_de_semana"|"semanal"|"mensal", dias_semana?: ["seg", ...] (semanal), dia_mes?: número (mensal), ate?: "AAAA-MM-DD"}`;
 
-function promptPlanejador(hoje: string, abertas: Tarefa[], pendente: string | null) {
+function promptPlanejador(hoje: string, abertas: Tarefa[], pendente: string | null, contexto: string) {
   const agora = new Date().toLocaleTimeString('pt-BR', { timeZone: FUSO, hour: '2-digit', minute: '2-digit' });
   return [
-    'Você decide se a última mensagem do dono pede uma ação nas TAREFAS (afazeres) ou nos LEMBRETES (avisos numa hora certa) dele e quais ferramentas chamar.',
+    'Você decide se a última mensagem do dono pede uma ação nas TAREFAS (afazeres), nos LEMBRETES (avisos numa hora certa) ou nos PROJETOS dele e quais ferramentas chamar.',
     'Responda só JSON: {"acoes": [{"ferramenta": "...", "args": {...}}]}. Se a mensagem não for sobre tarefas (ex.: pergunta geral, conversa, pesquisa), responda {"acoes": []}.',
     'Ferramentas:', FERRAMENTAS, ...EXTENSOES.map((e) => e.ferramentas),
     '',
@@ -212,17 +215,18 @@ function promptPlanejador(hoje: string, abertas: Tarefa[], pendente: string | nu
     abertas.length
       ? abertas.slice(0, 60).map((t) => `- ${t.title} | ${t.due_date ?? '-'} | ${t.due_time?.slice(0, 5) ?? '-'}${t.recurrence ? ` | ${descreverRecorrencia(t.recurrence)}` : ''}`).join('\n')
       : '(nenhuma)',
+    ...(contexto ? ['', contexto] : []),
   ].join('\n');
 }
 
 export async function planejar(
-  conversa: MensagemIA[], hoje: string, abertas: Tarefa[], pendente: string | null, sensivel: boolean,
+  conversa: MensagemIA[], hoje: string, abertas: Tarefa[], pendente: string | null, sensivel: boolean, contexto = '',
 ): Promise<{ acoes: Acao[]; provedor: NomeProvedor | null; tokens: number }> {
   const recente = conversa.slice(-6);
   const provedores: NomeProvedor[] = sensivel ? ['groq'] : ['groq', 'gemini'];
   for (const p of provedores) {
     if (!temChave(p)) continue;
-    const r = await conversar(p, [{ role: 'system', content: promptPlanejador(hoje, abertas, pendente) }, ...recente],
+    const r = await conversar(p, [{ role: 'system', content: promptPlanejador(hoje, abertas, pendente, contexto) }, ...recente],
       { json: true, temperatura: 0, maxTokens: 700 });
     if (!r.ok) continue;
     try {
@@ -246,7 +250,8 @@ export interface Ctx {
   hoje: string;
 }
 
-const CAMPOS = 'id, title, notes, priority, due_date, due_time, done_at, deleted_at, recurrence';
+export const CAMPOS_TAREFA = 'id, title, notes, priority, due_date, due_time, done_at, deleted_at, recurrence, project_id, milestone_id, board_column';
+const CAMPOS = CAMPOS_TAREFA;
 
 async function abertasDe(sb: SupabaseClient): Promise<Tarefa[]> {
   const { data, error } = await sb.from('tasks').select(CAMPOS)
@@ -276,6 +281,10 @@ const linha = (t: Tarefa, hoje: string) =>
   `- **${t.title}** · ${quando(t, hoje)}${t.priority === 'alta' ? ' · prioridade alta' : ''}`;
 
 /** Resolve várias referências; devolve as achadas e o que ficou ambíguo ou não existe. */
+export async function resolverTarefas(sb: SupabaseClient, refs: unknown, incluirFeitas = false) {
+  return resolver(sb, refs, incluirFeitas);
+}
+
 async function resolver(sb: SupabaseClient, refs: unknown, incluirFeitas = false) {
   const lista = (Array.isArray(refs) ? refs : [refs]).map(String).map((s) => s.trim()).filter(Boolean).slice(0, 20);
   let base = await abertasDe(sb);
@@ -297,7 +306,7 @@ async function resolver(sb: SupabaseClient, refs: unknown, incluirFeitas = false
   return { achadas, ambiguas, faltando };
 }
 
-function avisoReferencias(r: { ambiguas: { ref: string; opcoes: string[] }[]; faltando: string[] }) {
+export function avisoReferencias(r: { ambiguas: { ref: string; opcoes: string[] }[]; faltando: string[] }) {
   const partes: string[] = [];
   for (const a of r.ambiguas) partes.push(`"${a.ref}" bate com mais de uma: ${a.opcoes.map((o) => `**${o}**`).join(', ')}. Qual delas?`);
   if (r.faltando.length) partes.push(`Não achei tarefa aberta para ${r.faltando.map((f) => `"${f}"`).join(', ')}.`);
@@ -328,7 +337,7 @@ export async function pedirConfirmacao(
   };
 }
 
-async function atualizar(ctx: Ctx, t: Tarefa, mudanca: Partial<Tarefa>, acao: string): Promise<Tarefa | null> {
+export async function atualizar(ctx: Ctx, t: Tarefa, mudanca: Partial<Tarefa>, acao: string): Promise<Tarefa | null> {
   const { data, error } = await ctx.sb.from('tasks').update(mudanca).eq('id', t.id).select(CAMPOS).single();
   if (error) {
     console.warn('tarefas: update falhou', error.message);
@@ -371,6 +380,14 @@ const EXECUTORES: Record<string, Executor> = {
     const pedida = resolverQuando(a, ctx.hoje) ?? null;
     const data = rec ? (pedida && proximaData(rec, pedida, true)) || primeiraData(rec, hora) : pedida;
     const prioridade: Prioridade = PRIOS.includes(a.prioridade as Prioridade) ? a.prioridade as Prioridade : 'media';
+    // Projeto/marco (vem da extensão de projetos).
+    let vinculo: Record<string, unknown> = {};
+    for (const e of EXTENSOES) {
+      if (!e.aoCriarTarefa) continue;
+      const r = await e.aoCriarTarefa(ctx, a);
+      if (typeof r === 'string') return falha('tarefas_criar', r);
+      vinculo = { ...vinculo, ...r };
+    }
     // Não duplica uma tarefa aberta igual.
     const abertas = await abertasDe(ctx.sb);
     const igual = abertas.find((t) => normalizar(t.title) === normalizar(titulo) && t.due_date === data);
@@ -381,15 +398,16 @@ const EXECUTORES: Record<string, Executor> = {
       };
     }
     const { data: nova, error } = await ctx.sb.from('tasks').insert({
-      title: titulo, priority: prioridade, due_date: data, due_time: data ? hora : null, recurrence: rec,
+      ...Object.fromEntries(Object.entries(vinculo).filter(([k]) => k !== 'nome_projeto')), title: titulo, priority: prioridade, due_date: data, due_time: data ? hora : null, recurrence: rec,
       notes: typeof a.notas === 'string' && a.notas.trim() ? a.notas.trim().slice(0, 2000) : null,
     }).select(CAMPOS).single();
     if (error) return falha('tarefas_criar', `Não consegui criar a tarefa (${error.message}).`);
     await recibo(ctx.sb, 'tarefas_criar', null, nova as Tarefa);
     const t = nova as Tarefa;
+    const noProjeto = typeof vinculo.nome_projeto === 'string' ? ` · projeto **${vinculo.nome_projeto}**` : '';
     return {
       ferramenta: 'tarefas_criar', ok: true, resumo: `criada "${t.title}"`, fatos: { tarefa: t },
-      texto: `Anotado: **${t.title}** · ${quando(t, ctx.hoje)}${t.priority === 'alta' ? ' · prioridade alta' : ''}.${rec ? ' Ao concluir, ela passa para a próxima data.' : ''}`,
+      texto: `Anotado: **${t.title}** · ${quando(t, ctx.hoje)}${t.priority === 'alta' ? ' · prioridade alta' : ''}${noProjeto}.${rec ? ' Ao concluir, ela passa para a próxima data.' : ''}`,
       ids: [t.id],
     };
   },
@@ -566,17 +584,17 @@ const EXECUTORES: Record<string, Executor> = {
 
   async jarvis_desfazer(ctx) {
     const { data: rec } = await ctx.sb.from('undo_receipts').select('*')
-      .in('entity_type', ['tasks', 'reminders']).is('undone_at', null).eq('irreversible', false).gt('expires_at', new Date().toISOString())
+      .in('entity_type', ['tasks', 'reminders', 'projects', 'project_milestones']).is('undone_at', null).eq('irreversible', false).gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (!rec) return falha('jarvis_desfazer', 'Não há ação recente para desfazer (o prazo é de 24 h).');
     // Ações feitas juntas (mesma confirmação) são desfeitas juntas.
     const { data: lote } = await ctx.sb.from('undo_receipts').select('*')
-      .eq('entity_type', rec.entity_type).eq('action', rec.action).is('undone_at', null)
+      .in('entity_type', ['tasks', 'reminders', 'projects', 'project_milestones']).eq('action', rec.action).is('undone_at', null)
       .gte('created_at', new Date(Date.parse(rec.created_at) - 5000).toISOString());
     const recibos = (lote ?? [rec]) as typeof rec[];
     const desfeitas: string[] = [];
     for (const r of recibos) {
-      const antes = r.before as Tarefa | null;
+      const antes = r.before as (Tarefa & { name?: string }) | null;
       // Volta todos os campos de antes (menos os de controle); desfazer uma criação = apagar (suave).
       const mudanca = antes
         ? Object.fromEntries(Object.entries(antes).filter(([k]) => !['id', 'user_id', 'created_at', 'updated_at', 'busca'].includes(k)))
@@ -584,11 +602,14 @@ const EXECUTORES: Record<string, Executor> = {
       const { error } = await ctx.sb.from(r.entity_type).update(mudanca).eq('id', r.entity_id);
       if (error) continue;
       await ctx.sb.from('undo_receipts').update({ undone_at: new Date().toISOString() }).eq('id', r.id);
-      desfeitas.push((antes ?? (r.after as Tarefa | null))?.title ?? 'tarefa');
+      const item = (antes ?? r.after) as { title?: string; name?: string } | null;
+      desfeitas.push(item?.title ?? item?.name ?? 'item');
     }
     const nome: Record<string, string> = {
       tarefas_criar: 'criação', lembretes_criar: 'criação', lembretes_concluir: 'conclusão', lembretes_apagar: 'exclusão',
-      lembretes_editar: 'edição', lembretes_adiar: 'mudança', tarefas_concluir: 'conclusão', tarefas_apagar: 'exclusão', tarefas_editar: 'edição', tarefas_reabrir: 'reabertura',
+      lembretes_editar: 'edição', lembretes_adiar: 'mudança', projetos_criar: 'criação', projetos_editar: 'edição',
+      projetos_apagar: 'exclusão', projetos_criar_marco: 'criação', projetos_concluir_marco: 'conclusão',
+      projetos_mover_tarefas: 'mudança', tarefas_concluir: 'conclusão', tarefas_apagar: 'exclusão', tarefas_editar: 'edição', tarefas_reabrir: 'reabertura',
     };
     return {
       ferramenta: 'jarvis_desfazer', ok: desfeitas.length > 0, resumo: `desfeita ${rec.action}`, fatos: { acao: rec.action, tarefas: desfeitas },
@@ -605,11 +626,21 @@ export interface Extensao {
   detector: RegExp;
   executores: Record<string, Executor>;
   confirmar?: Record<string, (ctx: Ctx, ids: string[]) => Promise<ResultadoFerramenta>>;
+  /** Texto extra para o planejador (ex.: nomes dos projetos abertos). */
+  contexto?: (sb: SupabaseClient) => Promise<string>;
+  /** Campos a mais ao criar uma tarefa (ex.: project_id). Texto = erro para o dono. */
+  aoCriarTarefa?: (ctx: Ctx, args: Record<string, unknown>) => Promise<Record<string, unknown> | string>;
 }
 const EXTENSOES: Extensao[] = [];
 export function registrar(e: Extensao) {
   EXTENSOES.push(e);
   Object.assign(EXECUTORES, e.executores);
+}
+
+/** Contexto das extensões para o planejador (falha numa não derruba as outras). */
+export async function contextoExtensoes(sb: SupabaseClient): Promise<string> {
+  const partes = await Promise.all(EXTENSOES.map((e) => e.contexto?.(sb).catch(() => '') ?? Promise.resolve('')));
+  return partes.filter(Boolean).join('\n\n');
 }
 
 export async function executar(sb: SupabaseClient, acoes: Acao[], hoje = hojeSP()): Promise<ResultadoFerramenta[]> {

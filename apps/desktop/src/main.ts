@@ -14,6 +14,7 @@ import {
 import { montarControlesJanela } from './janela';
 import { htmlFormTarefa, ligarFormTarefa } from './formTarefa';
 import { htmlLembretes, ligarLembretes } from './lembretes';
+import { htmlProjetos, ligarProjetos } from './projetos';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const esc = (s: string) =>
@@ -133,11 +134,11 @@ let tarefasVistas: Set<string> | null = null;
 // Ids já desenhados: só os novos entram com animação.
 let atividadesVistas = new Set<number>();
 
-type Aba = 'conversa' | 'tarefas' | 'lembretes' | 'memoria';
+type Aba = 'conversa' | 'tarefas' | 'projetos' | 'lembretes' | 'memoria';
 const lerAba = (): Aba => {
   try {
     const salva = localStorage.getItem('jarvis.aba');
-    return salva === 'tarefas' || salva === 'lembretes' || salva === 'memoria' ? salva : 'conversa';
+    return salva === 'tarefas' || salva === 'projetos' || salva === 'lembretes' || salva === 'memoria' ? salva : 'conversa';
   } catch {
     return 'conversa';
   }
@@ -186,6 +187,7 @@ async function montarPainel() {
             <nav class="abas-painel" id="abas">
               <button type="button" data-aba="conversa">Conversa</button>
               <button type="button" data-aba="tarefas">Tarefas</button>
+              <button type="button" data-aba="projetos">Projetos</button>
               <button type="button" data-aba="lembretes">Lembretes</button>
               <button type="button" data-aba="memoria">Memória</button>
             </nav>
@@ -207,6 +209,7 @@ async function montarPainel() {
               <div id="memorias"></div>
             </div>
             <div class="vista" id="vista-lembretes">${htmlLembretes()}</div>
+            <div class="vista" id="vista-projetos">${htmlProjetos()}</div>
             <div class="vista" id="vista-tarefas">
             ${htmlFormTarefa()}
             <p class="dica-tarefas">Ou peça na conversa: <em>"toda segunda às 20h, pelada"</em>, <em>"o que tenho hoje?"</em>, <em>"conclui a do mercado"</em>. Clique numa tarefa para editar.</p>
@@ -226,6 +229,7 @@ async function montarPainel() {
 
   const formTarefa = ligarFormTarefa($<HTMLFormElement>('#nova'));
   ligarLembretes($<HTMLDivElement>('#vista-lembretes'), { pulsar: () => nucleo?.pulsar(0.8, 'criado') });
+  ligarProjetos($<HTMLDivElement>('#vista-projetos'), { pulsar: () => nucleo?.pulsar(0.8, 'criado') });
 
   // Um único ouvinte de clique para a lista inteira.
   $<HTMLDivElement>('#listas').onclick = (e) => {
@@ -333,6 +337,7 @@ async function montarPainel() {
     $<HTMLDivElement>('#vista-conversa').hidden = aba !== 'conversa';
     $<HTMLDivElement>('#vista-tarefas').hidden = aba !== 'tarefas';
     $<HTMLDivElement>('#vista-lembretes').hidden = aba !== 'lembretes';
+    $<HTMLDivElement>('#vista-projetos').hidden = aba !== 'projetos';
     $<HTMLDivElement>('#vista-memoria').hidden = aba !== 'memoria';
     if (aba === 'conversa') campoFala.focus();
   };
@@ -375,6 +380,8 @@ function rotuloData(data: string, hoje: string) {
   return `${SEMANA[new Date(`${data}T12:00:00Z`).getUTCDay()]} ${d}/${m}`;
 }
 
+let nomeProjeto = new Map<string, string>();
+
 function itemTarefa(t: Task, hoje: string, novas: Set<string>) {
   const atrasada = !t.done_at && !!t.due_date && t.due_date < hoje;
   const rep = t.recurrence ? `<span class="rep" title="Tarefa fixa: ao concluir, passa para a próxima data">↻ ${descreverRecorrencia(t.recurrence)}</span>` : '';
@@ -386,7 +393,7 @@ function itemTarefa(t: Task, hoje: string, novas: Set<string>) {
     <li class="tarefa ${t.done_at ? 'feita' : ''} ${novas.has(t.id) ? 'recem' : ''}" data-id="${t.id}" data-p="${t.priority}">
       <button class="check" title="${t.done_at ? 'Reabrir' : 'Concluir'}">✓</button>
       <span class="titulo" title="Clique para editar">${esc(t.title)}</span>
-      ${nota}${rep}${quando}
+      ${nota}${t.project_id && nomeProjeto.has(t.project_id) ? `<span class="tag-projeto" title="Projeto">▣ ${esc(nomeProjeto.get(t.project_id)!)}</span>` : ''}${rep}${quando}
       ${t.priority !== 'media' ? `<span class="tag">${NOME_PRIO[t.priority]}</span>` : ''}
       <button class="apagar" title="Apagar">×</button>
     </li>`;
@@ -409,7 +416,13 @@ function secao(titulo: string, lista: Task[], hoje: string, novas: Set<string>, 
 
 async function atualizarPainel() {
   if (tela !== 'painel') return;
-  const lista = await jarvis.tarefas.listar();
+  const [lista, projetos] = await Promise.all([jarvis.tarefas.listar(), jarvis.projetos.listar()]);
+  nomeProjeto = new Map(projetos.map((p) => [p.id, p.name]));
+  // Cada projeto real é um nó dourado do cérebro; as tarefas dele, pontos em volta.
+  nucleo?.definirProjetos(projetos.filter((p) => p.status !== 'concluido').map((p) => ({
+    id: p.id, progresso: p.total ? p.feitas / p.total : 0,
+    tarefas: lista.filter((t) => t.project_id === p.id && !t.done_at).map((t) => t.id),
+  })));
   const hoje = hojeSP();
   const abertas = lista.filter((t) => !t.done_at).sort(porPrazo);
   const atrasadas = abertas.filter((t) => t.due_date && t.due_date < hoje);

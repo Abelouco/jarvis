@@ -201,3 +201,17 @@ test('lembretes: hora calculada no servidor', () => {
   const l = { remind_at: '2026-11-30T23:00:00.000Z', recurrence: { freq: 'semanal' as const, dias: [1] } };
   assert.equal(proximoInstante(l, new Date('2026-11-30T23:05:00Z')), '2026-12-07T23:00:00.000Z');
 });
+
+import './projetos.ts';
+
+test('projetos: o detector local chama o planejador', () => {
+  for (const t of [
+    'Cria o projeto Reformar o quarto',
+    'como está o projeto do app?',
+    'coloca a tarefa comprar tinta no projeto reforma',
+    'adiciona o marco Pintura no projeto Reforma',
+  ]) {
+    assert.equal(pareceTarefa(t, false), true, t);
+  }
+  assert.equal(pareceTarefa('Qual a capital da França?', false), false);
+});

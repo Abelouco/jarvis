@@ -37,7 +37,7 @@ export function agoraHHMM(base = new Date()): string {
 export function numeroDoDia(x: unknown): number | null {
   if (typeof x === 'number' && Number.isInteger(x) && x >= 0 && x <= 6) return x;
   if (typeof x !== 'string') return null;
-  const t = x.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().slice(0, 3);
+  const t = x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().slice(0, 3);
   const i = (NOMES_DIA as readonly string[]).indexOf(t);
   return i >= 0 ? i : null;
 }

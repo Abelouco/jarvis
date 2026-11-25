@@ -15,7 +15,10 @@ import { aprender, blocoMemoria, lembrar } from './memoria.ts';
 import { blocoTrechos, buscar, fontesDe, temBusca, type PesquisaAnterior, type Trecho } from './busca.ts';
 import { resumoFalado } from './fala.ts';
 import './lembretes.ts'; // registra as ferramentas de lembretes no planejador
-import { carregarAbertas, confirmacaoPendente, executar, pareceTarefa, planejar, textoFinal } from './tarefas.ts';
+import './projetos.ts'; // idem, projetos e marcos
+import {
+  carregarAbertas, confirmacaoPendente, contextoExtensoes, executar, pareceTarefa, planejar, textoFinal,
+} from './tarefas.ts';
 
 // Trabalho depois da resposta (aprender), sem atrasar o chat. Existe no runtime do Supabase.
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
@@ -85,6 +88,7 @@ function promptSistema(rota: Rota, pesquisando = false, nosDeMemoria = 0, app = 
     '- Esfera geodésica no centro: é você. Gira mais rápido e brilha mais quando você trabalha.',
     '- Anéis de filamentos de partículas em volta: o seu campo de atividade. Ondulam o tempo todo e se abrem e aceleram quando você pensa, pesquisa ou age.',
     '- Pontos de luz presos à esfera por linhas finas: as memórias que você guardou sobre o dono, um nó por memória. Os mais importantes brilham mais e ficam mais perto do centro; a posição de cada nó é fixa (vem da própria memória). Quando o dono esquece uma memória, o nó some.',
+    '- Pontos dourados mais afastados: os projetos do dono, um nó por projeto aberto (brilha mais conforme o progresso); os pontinhos dourados em volta de cada um são as tarefas abertas daquele projeto.',
     '- Partículas soltas no fundo: só ambiente.',
     '- Pulsos (descargas rápidas): cada um é um evento real no banco de dados. Verde = algo foi criado (tarefa, memória...); vermelho = algo foi apagado; branco/neutro = uma mudança ou você começando a pensar.',
     '- Cor contínua do núcleo = seu estado: verde-água em repouso; azul pulsando como um coração = pensando; violeta = pesquisando na internet ou agindo; âmbar com respiração lenta = esperando a permissão do dono; vermelho apagado = deu erro.',
@@ -233,8 +237,8 @@ Deno.serve(async (req) => {
   const pendente = await confirmacaoPendente(sb).catch(() => null);
   if (pareceTarefa(texto, !!pendente)) {
     const hoje = hojeSP();
-    const abertas = await carregarAbertas(sb);
-    const plano = await planejar(conversa, hoje, abertas, pendente, conversaSensivel);
+    const [abertas, contexto] = await Promise.all([carregarAbertas(sb), contextoExtensoes(sb)]);
+    const plano = await planejar(conversa, hoje, abertas, pendente, conversaSensivel, contexto);
     if (plano.provedor) await registrarUso(sb, userId, plano.provedor, plano.tokens);
     if (plano.acoes.length) {
       await sb.from('events').insert({
