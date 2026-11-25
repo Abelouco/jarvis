@@ -14,6 +14,7 @@ import {
 import { aprender, blocoMemoria, lembrar } from './memoria.ts';
 import { blocoTrechos, buscar, fontesDe, temBusca, type PesquisaAnterior, type Trecho } from './busca.ts';
 import { resumoFalado } from './fala.ts';
+import { carregarAbertas, confirmacaoPendente, executar, pareceTarefa, planejar, textoFinal } from './tarefas.ts';
 
 // Trabalho depois da resposta (aprender), sem atrasar o chat. Existe no runtime do Supabase.
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
@@ -201,6 +202,7 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (jaRespondida.data) return responder(200, { mensagem: jaRespondida.data, repetida: true });
 
+  const inicioAcao = Date.now();
   // Pulso de "pensando" no cérebro.
   await sb.from('events').insert({ kind: 'thinking', payload: { conversation_id: corpo.conversation_id } });
 
@@ -226,6 +228,31 @@ Deno.serve(async (req) => {
   // Memória: o que ele já sabe e que tem a ver com a pergunta. Sensível nunca vai para o Gemini.
   const memorias = await lembrar(sb, texto).catch(() => []);
   const conversa: MensagemIA[] = historico.map((m) => ({ role: m.role, content: m.content }));
+  // Tarefas por conversa: se a mensagem pede uma ação nas tarefas, executa e responde na hora.
+  const pendente = await confirmacaoPendente(sb).catch(() => null);
+  if (pareceTarefa(texto, !!pendente)) {
+    const hoje = hojeSP();
+    const abertas = await carregarAbertas(sb);
+    const plano = await planejar(conversa, hoje, abertas, pendente, conversaSensivel);
+    if (plano.provedor) await registrarUso(sb, userId, plano.provedor, plano.tokens);
+    if (plano.acoes.length) {
+      await sb.from('events').insert({
+        kind: 'tool_call', payload: { conversation_id: corpo.conversation_id, ferramentas: plano.acoes.map((a) => a.ferramenta) },
+      });
+      const resultados = await executar(sb, plano.acoes, hoje);
+      const conteudo = textoFinal(resultados) || 'Feito.';
+      const falaPronta = corpo.voz ? resumoFalado(texto, conteudo).catch(() => null) : Promise.resolve(null);
+      const salva = await sb.from('messages').insert({
+        conversation_id: corpo.conversation_id, role: 'assistant', content: conteudo,
+        provider: plano.provedor, model: 'ferramentas', latency_ms: Date.now() - inicioAcao,
+        route: 'acao', sensitive: conversaSensivel,
+      }).select().single();
+      if (salva.error) return responder(500, { erro: salva.error.message });
+      console.log('ia_conversar: ferramentas', resultados.map((r) => `${r.ferramenta}:${r.ok ? 'ok' : 'falhou'} ${r.resumo}`));
+      return responder(200, { mensagem: salva.data, fala: await falaPronta, ferramentas: resultados });
+    }
+  }
+
   const { count: nosDeMemoria } = await sb.from('memories')
     .select('id', { count: 'exact', head: true }).is('deleted_at', null);
   const sistemaPara = (provedor: NomeProvedor, pesquisando = false) => {

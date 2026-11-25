@@ -122,13 +122,14 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
       );
       return linhas.map((t) => ({ ...t, archived: !!t.archived }));
     },
-    async criar(titulo: string, prioridade: Prioridade = 'media') {
+    /** `data` AAAA-MM-DD e `hora` HH:MM (fuso America/Sao_Paulo), ambos opcionais. */
+    async criar(titulo: string, prioridade: Prioridade = 'media', data: string | null = null, hora: string | null = null) {
       const t = agora();
       const user = (await auth.sessao())?.user.id ?? null;
       await db.executar(
-        `insert into tasks (id, user_id, title, priority, created_at, updated_at, dirty)
-         values (?, ?, ?, ?, ?, ?, 1)`,
-        [novoId(), user, titulo.trim(), prioridade, t, t],
+        `insert into tasks (id, user_id, title, priority, due_date, due_time, created_at, updated_at, dirty)
+         values (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        [novoId(), user, titulo.trim(), prioridade, data, data ? hora : null, t, t],
       );
       mudouLocal();
     },

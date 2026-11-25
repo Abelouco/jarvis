@@ -78,3 +78,44 @@ test('rota: assuntos do dono e textos para escrever vão pelo raciocínio, sem b
     assert.equal(escolherRota(t), 'inteligente', t);
   }
 });
+
+// ---------- tarefas (funções puras) ----------
+import { acharPorNome, calendario, dataHumana, dataValida, normalizarHora, pareceTarefa, somarDias } from './tarefas.ts';
+
+test('tarefas: datas e horas', () => {
+  assert.equal(somarDias('2026-11-30', 1), '2026-12-01');
+  assert.equal(somarDias('2026-12-31', 1), '2027-01-01');
+  assert.ok(dataValida('2026-02-28'));
+  assert.ok(!dataValida('2026-02-30'));
+  assert.ok(!dataValida('amanhã'));
+  assert.equal(normalizarHora('9h'), '09:00');
+  assert.equal(normalizarHora('9h30'), '09:30');
+  assert.equal(normalizarHora('14:05'), '14:05');
+  assert.equal(normalizarHora('25:00'), null);
+  assert.equal(dataHumana('2026-11-26', '2026-11-25'), 'amanhã');
+  assert.equal(dataHumana('2026-11-29', '2026-11-25'), 'domingo, 29/11');
+  assert.match(calendario('2026-11-25', 2), /2026-11-25 quarta \(hoje\)\n2026-11-26 quinta \(amanhã\)/);
+});
+
+test('tarefas: achar por nome ou id', () => {
+  const lista = [
+    { id: 'aaaaaaaa-0000-4000-8000-000000000001', title: 'Ir ao mercado' },
+    { id: 'bbbbbbbb-0000-4000-8000-000000000002', title: 'Pagar a conta de luz' },
+    { id: 'cccccccc-0000-4000-8000-000000000003', title: 'Ligar para o mecânico' },
+    { id: 'dddddddd-0000-4000-8000-000000000004', title: 'Comprar pão no mercado' },
+  ];
+  assert.deepEqual(acharPorNome('a do mercado', lista).map((t) => t.title), ['Ir ao mercado', 'Comprar pão no mercado']);
+  assert.deepEqual(acharPorNome('ir ao mercado', lista).map((t) => t.title), ['Ir ao mercado']);
+  assert.deepEqual(acharPorNome('luz', lista).map((t) => t.title), ['Pagar a conta de luz']);
+  assert.deepEqual(acharPorNome('mecanico', lista).map((t) => t.title), ['Ligar para o mecânico']);
+  assert.deepEqual(acharPorNome('cccccccc', lista).map((t) => t.title), ['Ligar para o mecânico']);
+  assert.deepEqual(acharPorNome('academia', lista), []);
+});
+
+test('tarefas: detector local', () => {
+  for (const t of ['cria uma tarefa para amanhã às 9h', 'o que tenho hoje?', 'conclui a do mercado', 'apaga a tarefa do pão', 'desfaz', 'minhas tarefas']) {
+    assert.ok(pareceTarefa(t, false), t);
+  }
+  for (const t of ['Qual a capital da França?', 'quem é você?', 'sim']) assert.ok(!pareceTarefa(t, false), t);
+  assert.ok(pareceTarefa('sim, pode', true));
+});

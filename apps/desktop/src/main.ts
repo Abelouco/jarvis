@@ -126,6 +126,9 @@ function montarLogin() {
 // ======================= painel =======================
 
 let prioridade: Prioridade = 'media';
+let quandoNova: '' | 'hoje' | 'amanha' = '';
+/** Tarefas já desenhadas: as que surgem depois (criadas pela IA ou noutro aparelho) chegam com brilho verde. */
+let tarefasVistas: Set<string> | null = null;
 // Ids já desenhados: só os novos entram com animação.
 let atividadesVistas = new Set<number>();
 
@@ -209,8 +212,14 @@ async function montarPainel() {
                   .map((p) => `<button type="button" class="prio" data-p="${p}">${NOME_PRIO[p]}</button>`)
                   .join('')}
               </div>
+              <div class="quando-nova" id="quando-nova">
+                <button type="button" data-q="hoje">Hoje</button>
+                <button type="button" data-q="amanha">Amanhã</button>
+                <button type="button" data-q="" class="ativa">Sem data</button>
+              </div>
               <button class="adicionar" title="Adicionar (Enter)">+</button>
             </form>
+            <p class="dica-tarefas">Ou peça na conversa: <em>"cria uma tarefa para amanhã às 9h"</em>, <em>"o que tenho hoje?"</em>, <em>"conclui a do mercado"</em>.</p>
             <div id="listas"></div>
             </div>
           </div>
@@ -241,8 +250,20 @@ async function montarPainel() {
     const titulo = campo.value.trim();
     if (!titulo) return;
     campo.value = '';
-    await jarvis.tarefas.criar(titulo, prioridade);
+    const data = quandoNova === 'hoje' ? hojeSP() : quandoNova === 'amanha' ? somarDias(hojeSP(), 1) : null;
+    await jarvis.tarefas.criar(titulo, prioridade, data);
   };
+  const marcarQuando = () =>
+    $<HTMLDivElement>('#quando-nova').querySelectorAll<HTMLButtonElement>('button').forEach((b) =>
+      b.classList.toggle('ativa', b.dataset.q === quandoNova));
+  $<HTMLDivElement>('#quando-nova').onclick = (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-q]');
+    if (!b) return;
+    quandoNova = b.dataset.q as typeof quandoNova;
+    marcarQuando();
+    campo.focus();
+  };
+  marcarQuando();
 
   // Um único ouvinte de clique para a lista inteira.
   $<HTMLDivElement>('#listas').onclick = (e) => {
@@ -315,6 +336,7 @@ async function montarPainel() {
     const id = b.dataset.esquecer!;
     if (memoriaConfirmando === id) {
       memoriaConfirmando = null;
+  tarefasVistas = null;
       void jarvis.memorias.esquecer(id);
     } else {
       memoriaConfirmando = id;
@@ -370,40 +392,86 @@ async function montarPainel() {
   await atualizarPainel();
 }
 
-function itemTarefa(t: Task) {
+const hojeSP = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+function somarDias(data: string, dias: number) {
+  const d = new Date(`${data}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+const SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+function rotuloData(data: string, hoje: string) {
+  if (data === hoje) return 'hoje';
+  if (data === somarDias(hoje, 1)) return 'amanhã';
+  if (data === somarDias(hoje, -1)) return 'ontem';
+  const [, m, d] = data.split('-');
+  return `${SEMANA[new Date(`${data}T12:00:00Z`).getUTCDay()]} ${d}/${m}`;
+}
+
+function itemTarefa(t: Task, hoje: string, novas: Set<string>) {
+  const atrasada = !t.done_at && !!t.due_date && t.due_date < hoje;
+  const quando = t.due_date
+    ? `<span class="quando ${atrasada ? 'atrasada' : ''}">${rotuloData(t.due_date, hoje)}${t.due_time ? ` · ${t.due_time.slice(0, 5)}` : ''}</span>`
+    : '';
   return `
-    <li class="tarefa ${t.done_at ? 'feita' : ''}" data-id="${t.id}" data-p="${t.priority}">
+    <li class="tarefa ${t.done_at ? 'feita' : ''} ${novas.has(t.id) ? 'recem' : ''}" data-id="${t.id}" data-p="${t.priority}">
       <button class="check" title="${t.done_at ? 'Reabrir' : 'Concluir'}">✓</button>
       <span class="titulo">${esc(t.title)}</span>
-      <span class="tag">${NOME_PRIO[t.priority]}</span>
+      ${quando}
+      ${t.priority !== 'media' ? `<span class="tag">${NOME_PRIO[t.priority]}</span>` : ''}
       <button class="apagar" title="Apagar">×</button>
     </li>`;
 }
 
 const PESO: Record<Prioridade, number> = { alta: 0, media: 1, baixa: 2 };
+const porPrazo = (a: Task, b: Task) =>
+  (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999')
+  || (a.due_time ?? '99').localeCompare(b.due_time ?? '99')
+  || PESO[a.priority] - PESO[b.priority];
+
+function secao(titulo: string, lista: Task[], hoje: string, novas: Set<string>, classe = '') {
+  if (!lista.length) return '';
+  return `
+    <section class="secao ${classe}">
+      <h3>${titulo} <b>${lista.length}</b></h3>
+      <ul class="lista">${lista.map((t) => itemTarefa(t, hoje, novas)).join('')}</ul>
+    </section>`;
+}
 
 async function atualizarPainel() {
   if (tela !== 'painel') return;
   const lista = await jarvis.tarefas.listar();
-  const abertas = lista.filter((t) => !t.done_at).sort((a, b) => PESO[a.priority] - PESO[b.priority]);
-  const feitas = lista.filter((t) => t.done_at);
+  const hoje = hojeSP();
+  const abertas = lista.filter((t) => !t.done_at).sort(porPrazo);
+  const atrasadas = abertas.filter((t) => t.due_date && t.due_date < hoje);
+  const deHoje = abertas.filter((t) => t.due_date === hoje);
+  const proximas = abertas.filter((t) => t.due_date && t.due_date > hoje);
+  const semData = abertas.filter((t) => !t.due_date).sort((a, b) => PESO[a.priority] - PESO[b.priority]);
+  // Concluídas: só as dos últimos 7 dias (as mais recentes primeiro).
+  const corte = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const feitas = lista.filter((t) => t.done_at && t.done_at >= corte)
+    .sort((a, b) => (b.done_at ?? '').localeCompare(a.done_at ?? '')).slice(0, 10);
 
-  $<HTMLDivElement>('#resumo').textContent = abertas.length
-    ? `${abertas.length} pendente${abertas.length > 1 ? 's' : ''} · ${feitas.length} concluída${feitas.length === 1 ? '' : 's'}`
-    : feitas.length ? 'Tudo em dia.' : '';
+  const novas = new Set<string>();
+  if (tarefasVistas) for (const t of lista) if (!tarefasVistas.has(t.id)) novas.add(t.id);
+  tarefasVistas = new Set(lista.map((t) => t.id));
 
-  const htmlListas = lista.length
-    ? `
-      <section class="secao">
-        <h3>Pendentes <b>${abertas.length}</b></h3>
-        <ul class="lista">${abertas.map(itemTarefa).join('')}</ul>
-      </section>
-      ${feitas.length ? `
-      <section class="secao">
-        <h3>Concluídas <b>${feitas.length}</b></h3>
-        <ul class="lista">${feitas.map(itemTarefa).join('')}</ul>
-      </section>` : ''}`
-    : `<div class="vazio"><strong>Nenhuma tarefa por aqui.</strong>Escreva acima e aperte Enter.</div>`;
+  const partes = [
+    atrasadas.length ? `${atrasadas.length} atrasada${atrasadas.length > 1 ? 's' : ''}` : '',
+    `${deHoje.length} para hoje`,
+    proximas.length ? `${proximas.length} próxima${proximas.length > 1 ? 's' : ''}` : '',
+  ].filter(Boolean);
+  $<HTMLDivElement>('#resumo').textContent = abertas.length ? partes.join(' · ') : feitas.length ? 'Tudo em dia.' : '';
+
+  const htmlListas = abertas.length || feitas.length
+    ? [
+      secao('Atrasadas', atrasadas, hoje, novas, 'secao-atrasadas'),
+      secao('Hoje', deHoje, hoje, novas, 'secao-hoje'),
+      secao('Próximas', proximas, hoje, novas),
+      secao('Sem data', semData, hoje, novas),
+      !abertas.length ? '<div class="vazio"><strong>Tudo em dia.</strong>Nenhuma tarefa aberta.</div>' : '',
+      secao('Concluídas', feitas, hoje, novas, 'secao-feitas'),
+    ].join('')
+    : `<div class="vazio"><strong>Nenhuma tarefa por aqui.</strong>Escreva acima, ou peça ao J.A.R.V.I.S. na conversa.</div>`;
   if (htmlListas !== assinaturaListas) {
     assinaturaListas = htmlListas;
     $<HTMLDivElement>('#listas').innerHTML = htmlListas;
