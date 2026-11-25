@@ -102,3 +102,28 @@ export interface JarvisEvent {
   payload: Record<string, unknown>;
   created_at: string;
 }
+
+/** Hábito: constância (feito ou não, minutos ou quantidade por dia). */
+export interface Habit extends Base {
+  name: string;
+  kind: 'boolean' | 'duration' | 'quantity';
+  unit: string | null;
+  daily_target: number | null;
+  /** 0 = domingo ... 6 = sábado; nulo = todo dia */
+  weekdays: number[] | null;
+  times_per_week: number | null;
+  monthly_target: number | null;
+  /** HH:MM (o servidor devolve HH:MM:SS) */
+  time_of_day: string | null;
+  color: string;
+  position: number;
+  paused: boolean;
+}
+
+/** Registro de um hábito num dia (um por dia; desmarcar = deleted_at). */
+export interface HabitLog extends Base {
+  habit_id: string;
+  day: string;
+  value: number | null;
+  note: string | null;
+}

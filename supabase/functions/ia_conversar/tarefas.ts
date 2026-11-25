@@ -104,6 +104,7 @@ export const quando = (t: Pick<Tarefa, 'due_date' | 'due_time' | 'recurrence'>, 
 export function resolverQuando(a: Record<string, unknown>, hoje: string): string | null | undefined {
   const q = typeof a.quando === 'string' ? normalizar(a.quando).trim().replace(/\s+/g, '_') : '';
   if (q === 'hoje') return hoje;
+  if (q === 'ontem') return somarDias(hoje, -1);
   if (q === 'amanha') return somarDias(hoje, 1);
   if (q === 'depois_de_amanha') return somarDias(hoje, 2);
   if (q === 'sem_data' || a.data === null) return null;
@@ -183,7 +184,7 @@ jarvis_cancelar {}    (o dono desistiu da confirmação pendente)
 jarvis_desfazer {}    (desfaz a última ação, até 24 h)
 
 QUANDO = UM destes campos (você NUNCA calcula a data; o app calcula):
-  quando: "hoje"|"amanha"|"depois_de_amanha"|"sem_data"
+  quando: "hoje"|"amanha"|"depois_de_amanha"|"ontem" (só para registrar algo que já aconteceu)|"sem_data"
   dia_semana: "dom"|"seg"|"ter"|"qua"|"qui"|"sex"|"sab"   (ex.: "na segunda" -> "seg"; some semana_que_vem: true se o dono disser "da semana que vem")
   daqui_dias: número   (ex.: "daqui a 3 dias" -> 3)
   dia_mes: número      (ex.: "dia 5" sem mês -> 5)
@@ -193,7 +194,7 @@ REPETIR (tarefa fixa) = {freq: "diaria"|"dias_uteis"|"fim_de_semana"|"semanal"|"
 function promptPlanejador(hoje: string, abertas: Tarefa[], pendente: string | null, contexto: string) {
   const agora = new Date().toLocaleTimeString('pt-BR', { timeZone: FUSO, hour: '2-digit', minute: '2-digit' });
   return [
-    'Você decide se a última mensagem do dono pede uma ação nas TAREFAS (afazeres), nos LEMBRETES (avisos numa hora certa) ou nos PROJETOS dele e quais ferramentas chamar.',
+    'Você decide se a última mensagem do dono pede uma ação nas TAREFAS (afazeres), nos LEMBRETES (avisos numa hora certa), nos PROJETOS ou nos HÁBITOS dele e quais ferramentas chamar.',
     'Responda só JSON: {"acoes": [{"ferramenta": "...", "args": {...}}]}. Se a mensagem não for sobre tarefas (ex.: pergunta geral, conversa, pesquisa), responda {"acoes": []}.',
     'Ferramentas:', FERRAMENTAS, ...EXTENSOES.map((e) => e.ferramentas),
     '',
@@ -370,6 +371,9 @@ async function apagarVarias(ctx: Ctx, alvo: Tarefa[]) {
 }
 
 export type Executor = (ctx: Ctx, args: Record<string, unknown>) => Promise<ResultadoFerramenta>;
+
+/** Tabelas que o "desfaz" da conversa alcança (memórias têm o próprio caminho). */
+const TIPOS_DESFAZER = ['tasks', 'reminders', 'projects', 'project_milestones', 'habits', 'habit_logs'];
 
 const EXECUTORES: Record<string, Executor> = {
   async tarefas_criar(ctx, a) {
@@ -584,12 +588,12 @@ const EXECUTORES: Record<string, Executor> = {
 
   async jarvis_desfazer(ctx) {
     const { data: rec } = await ctx.sb.from('undo_receipts').select('*')
-      .in('entity_type', ['tasks', 'reminders', 'projects', 'project_milestones']).is('undone_at', null).eq('irreversible', false).gt('expires_at', new Date().toISOString())
+      .in('entity_type', TIPOS_DESFAZER).is('undone_at', null).eq('irreversible', false).gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (!rec) return falha('jarvis_desfazer', 'Não há ação recente para desfazer (o prazo é de 24 h).');
     // Ações feitas juntas (mesma confirmação) são desfeitas juntas.
     const { data: lote } = await ctx.sb.from('undo_receipts').select('*')
-      .in('entity_type', ['tasks', 'reminders', 'projects', 'project_milestones']).eq('action', rec.action).is('undone_at', null)
+      .in('entity_type', TIPOS_DESFAZER).eq('action', rec.action).is('undone_at', null)
       .gte('created_at', new Date(Date.parse(rec.created_at) - 5000).toISOString());
     const recibos = (lote ?? [rec]) as typeof rec[];
     const desfeitas: string[] = [];
@@ -603,13 +607,14 @@ const EXECUTORES: Record<string, Executor> = {
       if (error) continue;
       await ctx.sb.from('undo_receipts').update({ undone_at: new Date().toISOString() }).eq('id', r.id);
       const item = (antes ?? r.after) as { title?: string; name?: string } | null;
-      desfeitas.push(item?.title ?? item?.name ?? 'item');
+      desfeitas.push(item?.title ?? item?.name ?? (r.entity_type === 'habit_logs' ? 'registro do hábito' : 'item'));
     }
     const nome: Record<string, string> = {
       tarefas_criar: 'criação', lembretes_criar: 'criação', lembretes_concluir: 'conclusão', lembretes_apagar: 'exclusão',
       lembretes_editar: 'edição', lembretes_adiar: 'mudança', projetos_criar: 'criação', projetos_editar: 'edição',
       projetos_apagar: 'exclusão', projetos_criar_marco: 'criação', projetos_concluir_marco: 'conclusão',
-      projetos_mover_tarefas: 'mudança', tarefas_concluir: 'conclusão', tarefas_apagar: 'exclusão', tarefas_editar: 'edição', tarefas_reabrir: 'reabertura',
+      projetos_mover_tarefas: 'mudança', habitos_criar: 'criação', habitos_marcar: 'marcação', habitos_desmarcar: 'mudança',
+      habitos_editar: 'edição', habitos_apagar: 'exclusão', tarefas_concluir: 'conclusão', tarefas_apagar: 'exclusão', tarefas_editar: 'edição', tarefas_reabrir: 'reabertura',
     };
     return {
       ferramenta: 'jarvis_desfazer', ok: desfeitas.length > 0, resumo: `desfeita ${rec.action}`, fatos: { acao: rec.action, tarefas: desfeitas },

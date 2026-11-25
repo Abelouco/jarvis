@@ -4,8 +4,9 @@ import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { criarCliente, ouvirEventos, type ArmazenamentoSessao } from './supabase';
 import { novoId, prepararBanco, TABELAS_SYNC, type BancoLocal, type TabelaSync, type Valor } from './local';
 import type {
-  ColunaQuadro, Fonte, JarvisEvent, Memory, Message, Milestone, Prioridade, Project, Reminder, StatusProjeto, Task,
+  ColunaQuadro, Fonte, Habit, JarvisEvent, Memory, Message, Milestone, Prioridade, Project, Reminder, StatusProjeto, Task,
 } from './types';
+import { cumpriu, idRegistro, previstoNoDia, semana, sequencia, vezesNoMes, type TipoHabito } from './habitos';
 import {
   dataAposConcluir, hojeSP, instanteSP, normalizarRecorrencia, partesSP, primeiraData, proximaData, type Recorrencia,
 } from './recorrencia';
@@ -56,6 +57,11 @@ export function quandoCurto(iso: string, agoraRef = new Date()): string {
 }
 
 const agora = () => new Date().toISOString();
+const somarDiasLocal = (data: string, dias: number) => {
+  const d = new Date(`${data}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+};
 
 function lerFontes(bruto: string | null): Fonte[] | null {
   if (!bruto) return null;
@@ -318,6 +324,137 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
       const t = agora();
       await db.executar(`update project_milestones set deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, id]);
       mudouLocal();
+    },
+  };
+
+  // ---------- hábitos (banco local; o registro do dia tem id fixo por hábito+dia) ----------
+  type LinhaHabito = Omit<Habit, 'weekdays' | 'paused'> & { weekdays: string | null; paused: number };
+  const lerHabito = (h: LinhaHabito): Habit => {
+    let weekdays: number[] | null = null;
+    try {
+      const w = h.weekdays ? JSON.parse(h.weekdays) : null;
+      weekdays = Array.isArray(w) && w.length ? w.map(Number).filter((n) => n >= 0 && n <= 6) : null;
+    } catch {
+      /* dias ilegíveis: todo dia */
+    }
+    return {
+      ...h, weekdays, paused: !!h.paused, time_of_day: h.time_of_day ? h.time_of_day.slice(0, 5) : null,
+      daily_target: h.daily_target == null ? null : Number(h.daily_target),
+    };
+  };
+  const umHabito = async (id: string) =>
+    (await db.consultar<LinhaHabito>(`select * from habits where id = ?`, [id])).map(lerHabito)[0];
+  const valorDoDia = async (habitId: string, dia: string) => {
+    const [l] = await db.consultar<{ value: number | null }>(
+      `select value from habit_logs where habit_id = ? and day = ? and deleted_at is null`, [habitId, dia]);
+    return l ? (l.value == null ? 1 : Number(l.value)) : null;
+  };
+  type OpcoesHabito = {
+    nome?: string; tipo?: TipoHabito; meta?: number | null; unidade?: string | null; dias?: number[] | null;
+    vezesSemana?: number | null; metaMes?: number | null; horario?: string | null; cor?: string; pausado?: boolean;
+  };
+  const habitos = {
+    /** Hábitos com o dia de hoje, a sequência, a semana, o mês e os últimos 14 dias. */
+    async listar(hoje = hojeSP()): Promise<HabitoResumo[]> {
+      const hs = (await db.consultar<LinhaHabito>(
+        `select * from habits where deleted_at is null order by paused, position, created_at`,
+      )).map(lerHabito);
+      const desde = somarDiasLocal(hoje, -400);
+      const logs = await db.consultar<{ habit_id: string; day: string; value: number | null }>(
+        `select habit_id, day, value from habit_logs where deleted_at is null and day >= ?`, [desde]);
+      const valores = new Map<string, Map<string, number>>();
+      for (const l of logs) {
+        if (!valores.has(l.habit_id)) valores.set(l.habit_id, new Map());
+        valores.get(l.habit_id)!.set(l.day, l.value == null ? 1 : Number(l.value));
+      }
+      return hs.map((h) => {
+        const v = valores.get(h.id) ?? new Map<string, number>();
+        const feitos = new Set([...v].filter(([, x]) => cumpriu(h, x)).map(([d]) => d));
+        return {
+          ...h,
+          hojeValor: v.get(hoje) ?? null,
+          feitoHoje: feitos.has(hoje),
+          previstoHoje: previstoNoDia(h, hoje),
+          sequencia: sequencia(h, feitos, hoje),
+          semana: semana(h, feitos, hoje),
+          mes: vezesNoMes(feitos, hoje),
+          ultimos: Array.from({ length: 14 }, (_, i) => {
+            const dia = somarDiasLocal(hoje, i - 13);
+            return { dia, valor: v.get(dia) ?? null, feito: feitos.has(dia), previsto: previstoNoDia(h, dia) };
+          }),
+        };
+      });
+    },
+    async criar(nome: string, op: OpcoesHabito = {}): Promise<string> {
+      const t = agora();
+      const id = novoId();
+      const user = (await auth.sessao())?.user.id ?? null;
+      const tipo = op.tipo ?? 'boolean';
+      await db.executar(
+        `insert into habits (id, user_id, name, kind, unit, daily_target, weekdays, times_per_week, monthly_target, time_of_day,
+           color, position, paused, created_at, updated_at, dirty)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)`,
+        [id, user, nome.trim(), tipo, tipo === 'boolean' ? null : op.unidade?.trim() || null,
+          tipo === 'boolean' ? null : op.meta ?? null, op.dias?.length ? JSON.stringify(op.dias) : null,
+          op.vezesSemana ?? null, op.metaMes ?? null, op.horario ?? null, op.cor ?? 'verde_agua', Date.now() / 1000, t, t],
+      );
+      mudouLocal();
+      return id;
+    },
+    async editar(id: string, m: OpcoesHabito) {
+      const h = await umHabito(id);
+      if (!h) return;
+      const tipo = m.tipo ?? h.kind;
+      const dias = m.dias === undefined ? h.weekdays : m.dias;
+      await db.executar(
+        `update habits set name = ?, kind = ?, unit = ?, daily_target = ?, weekdays = ?, times_per_week = ?, monthly_target = ?,
+           time_of_day = ?, color = ?, paused = ?, updated_at = ?, dirty = 1 where id = ?`,
+        [m.nome?.trim() || h.name, tipo, tipo === 'boolean' ? null : (m.unidade === undefined ? h.unit : m.unidade?.trim() || null),
+          tipo === 'boolean' ? null : (m.meta === undefined ? h.daily_target : m.meta),
+          dias?.length ? JSON.stringify(dias) : null,
+          m.vezesSemana === undefined ? h.times_per_week : m.vezesSemana,
+          m.metaMes === undefined ? h.monthly_target : m.metaMes,
+          m.horario === undefined ? h.time_of_day : m.horario, m.cor ?? h.color,
+          (m.pausado ?? h.paused) ? 1 : 0, agora(), id],
+      );
+      mudouLocal();
+    },
+    async apagar(id: string) {
+      const t = agora();
+      await db.executar(`update habits set deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, id]);
+      mudouLocal();
+    },
+    /** Valor do dia (absoluto). null = desmarcar (exclusão suave do registro). */
+    async registrar(habitId: string, dia: string, valor: number | null) {
+      const t = agora();
+      const [existe] = await db.consultar<{ id: string }>(
+        `select id from habit_logs where habit_id = ? and day = ? order by deleted_at is not null limit 1`, [habitId, dia]);
+      if (existe) {
+        await db.executar(
+          `update habit_logs set value = ?, deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`,
+          [valor, valor == null ? t : null, t, existe.id],
+        );
+      } else if (valor != null) {
+        const user = (await auth.sessao())?.user.id ?? null;
+        await db.executar(
+          `insert into habit_logs (id, user_id, habit_id, day, value, created_at, updated_at, dirty) values (?, ?, ?, ?, ?, ?, ?, 1)`,
+          [idRegistro(habitId, dia), user, habitId, dia, valor, t, t],
+        );
+      }
+      mudouLocal();
+    },
+    /** Marca/desmarca o dia: sim/não vira 1; minutos/quantidade vai direto para a meta (ou zera). */
+    async alternar(habitId: string, dia = hojeSP()) {
+      const h = await umHabito(habitId);
+      if (!h) return;
+      const atual = await valorDoDia(habitId, dia);
+      await habitos.registrar(habitId, dia, cumpriu(h, atual) ? null : (h.kind === 'boolean' ? 1 : h.daily_target ?? 1));
+    },
+    /** Soma ao valor do dia (minutos ou quantidade). */
+    async somar(habitId: string, delta: number, dia = hojeSP()) {
+      const atual = (await valorDoDia(habitId, dia)) ?? 0;
+      const novo = Math.round((atual + delta) * 100) / 100;
+      await habitos.registrar(habitId, dia, novo > 0 ? novo : null);
     },
   };
 
@@ -788,7 +925,8 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
       const titulos = new Map<string, string>();
       for (const [tabela, coluna] of [
         ['tasks', 'title'], ['memories', 'coalesce(title, content)'], ['reminders', 'title'],
-        ['projects', 'name'], ['project_milestones', 'title'],
+        ['projects', 'name'], ['project_milestones', 'title'], ['habits', 'name'],
+        ['habit_logs', '(select h.name from habits h where h.id = habit_logs.habit_id)'],
       ] as const) {
         const ids = eventosRecentes.filter((e) => e.entity_type === tabela && e.entity_id).map((e) => e.entity_id!);
         if (!ids.length) continue;
@@ -864,6 +1002,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     auth,
     tarefas,
     projetos,
+    habitos,
     lembretes,
     atividades,
     chat,
@@ -888,3 +1027,14 @@ export type Jarvis = ReturnType<typeof criarJarvis>;
 
 /** Projeto com o progresso, como a lista mostra. */
 export type ProjetoResumo = Project & { total: number; feitas: number; marcos: number; marcosFeitos: number };
+
+/** Hábito com o que a tela mostra: hoje, sequência, semana, mês e os últimos 14 dias. */
+export type HabitoResumo = Habit & {
+  hojeValor: number | null;
+  feitoHoje: boolean;
+  previstoHoje: boolean;
+  sequencia: { n: number; unidade: 'dias' | 'semanas' };
+  semana: { feitas: number; meta: number };
+  mes: number;
+  ultimos: { dia: string; valor: number | null; feito: boolean; previsto: boolean }[];
+};

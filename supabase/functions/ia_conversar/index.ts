@@ -16,6 +16,7 @@ import { blocoTrechos, buscar, fontesDe, temBusca, type PesquisaAnterior, type T
 import { pronunciasEnsinadas, resumoFalado } from './fala.ts';
 import './lembretes.ts'; // registra as ferramentas de lembretes no planejador
 import './projetos.ts'; // idem, projetos e marcos
+import './habitos.ts'; // idem, hábitos
 import {
   carregarAbertas, confirmacaoPendente, contextoExtensoes, executar, pareceTarefa, planejar, textoFinal,
 } from './tarefas.ts';

@@ -28,6 +28,15 @@ export const COLUNAS_REMINDERS = [
   'done_at', 'created_at', 'updated_at', 'deleted_at',
 ] as const;
 
+export const COLUNAS_HABITS = [
+  'id', 'user_id', 'name', 'kind', 'unit', 'daily_target', 'weekdays', 'times_per_week', 'monthly_target', 'time_of_day',
+  'color', 'position', 'paused', 'created_at', 'updated_at', 'deleted_at',
+] as const;
+
+export const COLUNAS_HABIT_LOGS = [
+  'id', 'user_id', 'habit_id', 'day', 'value', 'note', 'created_at', 'updated_at', 'deleted_at',
+] as const;
+
 export const COLUNAS_CONVERSATIONS = ['id', 'user_id', 'title', 'created_at', 'updated_at', 'deleted_at'] as const;
 
 export const COLUNAS_MESSAGES = [
@@ -55,6 +64,8 @@ export const TABELAS_SYNC: readonly TabelaSync[] = [
   { nome: 'project_milestones', colunas: COLUNAS_MILESTONES, booleanas: [] },
   { nome: 'tasks', colunas: COLUNAS_TASKS, booleanas: ['archived'], json: ['recurrence'] },
   { nome: 'reminders', colunas: COLUNAS_REMINDERS, booleanas: ['alarm'], json: ['recurrence'] },
+  { nome: 'habits', colunas: COLUNAS_HABITS, booleanas: ['paused'], json: ['weekdays'] },
+  { nome: 'habit_logs', colunas: COLUNAS_HABIT_LOGS, booleanas: [] },
   { nome: 'conversations', colunas: COLUNAS_CONVERSATIONS, booleanas: [] },
   {
     nome: 'messages', colunas: COLUNAS_MESSAGES, booleanas: ['sensitive'],
@@ -133,6 +144,40 @@ export const SCHEMA_LOCAL = [
     dirty integer not null default 0
   )`,
   `create index if not exists reminders_dirty_idx on reminders (dirty)`,
+  `create table if not exists habits (
+    id text primary key,
+    user_id text,
+    name text not null,
+    kind text not null default 'boolean',
+    unit text,
+    daily_target real,
+    weekdays text,
+    times_per_week integer,
+    monthly_target integer,
+    time_of_day text,
+    color text not null default 'verde_agua',
+    position real not null default 0,
+    paused integer not null default 0,
+    created_at text not null,
+    updated_at text not null,
+    deleted_at text,
+    dirty integer not null default 0
+  )`,
+  `create index if not exists habits_dirty_idx on habits (dirty)`,
+  `create table if not exists habit_logs (
+    id text primary key,
+    user_id text,
+    habit_id text not null,
+    day text not null,
+    value real,
+    note text,
+    created_at text not null,
+    updated_at text not null,
+    deleted_at text,
+    dirty integer not null default 0
+  )`,
+  `create index if not exists habit_logs_dirty_idx on habit_logs (dirty)`,
+  `create index if not exists habit_logs_habito_idx on habit_logs (habit_id, day)`,
   `create table if not exists conversations (
     id text primary key,
     user_id text,

@@ -318,7 +318,7 @@ input { font: inherit; }
 .faixa-voz { bottom: 72px; }
 
 /* ---------- abas do painel ---------- */
-.abas-painel { align-self: flex-start; display: inline-grid; grid-template-columns: repeat(5, auto); padding: 4px; margin-bottom: 18px; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--borda); border-radius: 12px; }
+.abas-painel { align-self: flex-start; display: inline-grid; grid-template-columns: repeat(6, auto); padding: 4px; margin-bottom: 18px; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--borda); border-radius: 12px; }
 .abas-painel button { border: 0; background: none; color: var(--texto-2); padding: 8px 20px; border-radius: 9px; font-size: 13.5px; transition: 0.2s; }
 .abas-painel button.ativa { background: rgba(127, 216, 255, 0.12); color: var(--ciano); box-shadow: inset 0 0 0 1px var(--borda-forte); }
 .vista[hidden] { display: none; }
@@ -663,3 +663,57 @@ tr.md-destaque > td { background: rgba(60, 196, 255, 0.08); }
 .card-acoes button { border: 0; background: none; color: var(--texto-2); font-size: 13px; padding: 2px 6px; border-radius: 6px; }
 .card-acoes button:hover { color: var(--ciano); background: rgba(127, 216, 255, 0.1); }
 .card-acoes button[data-tirar]:hover { color: var(--erro); }
+
+/* ---------- hábitos ---------- */
+.form-tarefa .num { width: 72px; }
+.form-tarefa .unidade { width: 150px; }
+.form-tarefa .num, .form-tarefa .unidade {
+  background: rgba(14, 22, 36, 0.6); border: 1px solid var(--borda); border-radius: 10px;
+  color: var(--texto); padding: 5px 8px; font: inherit; font-size: 12.5px; outline: none; color-scheme: dark;
+}
+.form-tarefa .ft-campo .rotulo.curto { width: auto; margin-left: 12px; }
+.form-tarefa .dica { font-size: 12.5px; color: var(--apagado); }
+.habitos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.habito {
+  position: relative; display: flex; align-items: center; gap: 14px; padding: 11px 14px; border-radius: 12px;
+  background: rgba(14, 22, 36, 0.45); border: 1px solid var(--borda); animation: entrar 0.25s ease-out; overflow: hidden;
+}
+.habito::after {
+  content: ''; position: absolute; left: 0; bottom: 0; height: 2px; width: var(--p, 0%);
+  background: var(--ciano-forte); box-shadow: 0 0 8px var(--ciano-glow); transition: width 0.3s ease;
+}
+.habito.feito::after { width: 100%; background: var(--baixa); box-shadow: none; opacity: 0.6; }
+.habito:hover { border-color: var(--borda-forte); }
+.habito.pausado { opacity: 0.55; }
+.habito .check {
+  width: 26px; height: 26px; flex-shrink: 0; border-radius: 50%; border: 1.5px solid var(--borda-forte);
+  background: none; color: transparent; font-size: 13px; transition: 0.15s;
+}
+.habito .check:hover { border-color: var(--ciano); color: var(--ciano); }
+.habito.feito .check { background: var(--baixa); border-color: var(--baixa); color: #031018; box-shadow: 0 0 12px rgba(107, 227, 176, 0.35); }
+.hab-corpo { flex: 1; min-width: 0; }
+.hab-topo { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.hab-nome { font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
+.habito.feito .hab-nome { color: var(--texto-2); }
+.hab-seq { font-family: var(--mono); font-size: 11px; color: var(--media); white-space: nowrap; }
+.hab-semana { font-family: var(--mono); font-size: 11px; color: var(--ciano); }
+.hab-sub { margin-top: 3px; font-size: 12px; color: var(--apagado); }
+.hab-valor { display: flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 12px; color: var(--texto-2); white-space: nowrap; }
+.hab-valor b { color: var(--texto); font-weight: 400; }
+.hab-valor button {
+  width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--borda); background: none; color: var(--texto-2); font-size: 13px; padding: 0;
+}
+.hab-valor button:hover { border-color: var(--ciano); color: var(--ciano); }
+.hab-dias { display: flex; gap: 3px; }
+.hab-dias .ponto { width: 9px; height: 9px; padding: 0; border-radius: 50%; border: 0; background: rgba(127, 216, 255, 0.12); }
+.hab-dias .ponto.livre { background: rgba(127, 216, 255, 0.04); }
+.hab-dias .ponto.parcial { background: rgba(60, 196, 255, 0.45); }
+.hab-dias .ponto.feito { background: var(--baixa); box-shadow: 0 0 6px rgba(107, 227, 176, 0.4); }
+.hab-dias .ponto:last-child { outline: 1px solid var(--borda-forte); outline-offset: 2px; }
+.hab-dias .ponto:hover { transform: scale(1.35); }
+.hab-acoes { display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; }
+.habito:hover .hab-acoes { opacity: 1; }
+.hab-acoes button { border: 0; background: none; color: var(--texto-2); font-size: 12.5px; padding: 3px 7px; border-radius: 6px; }
+.hab-acoes button:hover { color: var(--ciano); background: rgba(127, 216, 255, 0.1); }
+.hab-acoes button[data-apagar]:hover, .hab-acoes button.confirmar { color: var(--erro); opacity: 1; }
+.habito:has(.confirmar) .hab-acoes { opacity: 1; }
