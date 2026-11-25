@@ -7,6 +7,7 @@ import {
   type Frequencia, type Recorrencia, type Reminder,
 } from '@jarvis/core';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow, UserAttentionType } from '@tauri-apps/api/window';
 import { jarvis } from './jarvis';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -290,6 +291,22 @@ export function ligarLembretes(raiz: HTMLElement, op: Opcoes = {}) {
     }
   }
 
+  /** Pisca o ícone na barra de tarefas; com alarme, traz a janela para a frente. */
+  async function chamarAtencao(alarme: boolean) {
+    try {
+      const w = getCurrentWindow();
+      if (alarme) {
+        await w.unminimize();
+        await w.show();
+        await w.setFocus();
+      } else if (!(await w.isFocused())) {
+        await w.requestUserAttention(UserAttentionType.Critical);
+      }
+    } catch (e) {
+      console.warn('lembretes: não consegui chamar atenção', e);
+    }
+  }
+
   function tocarAlarme() {
     if (somAlarme) return;
     const ctx = new AudioContext();
@@ -343,6 +360,7 @@ export function ligarLembretes(raiz: HTMLElement, op: Opcoes = {}) {
     op.pulsar?.();
     if (l.alarm) tocarAlarme();
     op.falar?.(`Senhor, lembrete: ${l.title}.`);
+    void chamarAtencao(l.alarm);
     void notificarWindows(l.title, `Lembrete · ${quando(l)}${l.notes ? `
 ${l.notes}` : ''}`);
   }
