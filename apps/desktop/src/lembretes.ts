@@ -6,7 +6,7 @@ import {
   descreverRecorrencia, hojeSP, normalizarRecorrencia, partesSP, primeiraData, proximaData, somarDias,
   type Frequencia, type Recorrencia, type Reminder,
 } from '@jarvis/core';
-import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
+import { invoke } from '@tauri-apps/api/core';
 import { jarvis } from './jarvis';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -204,7 +204,6 @@ export function ligarLembretes(raiz: HTMLElement, op: Opcoes = {}) {
         await jarvis.lembretes.criar(t, campoData.value || dataEfetiva(), campoHora.value, dados);
       }
       limpar();
-      void pedirPermissao();
     } catch (err) {
       previa.textContent = err instanceof Error ? err.message : String(err);
     }
@@ -279,11 +278,15 @@ export function ligarLembretes(raiz: HTMLElement, op: Opcoes = {}) {
   document.body.append(faixa);
   let somAlarme: (() => void) | null = null;
 
-  async function pedirPermissao() {
+  /**
+   * Notificação do Windows pelo comando nativo do plugin. (O `sendNotification` do plugin usa a
+   * notificação do navegador embutido, que no WebView2 vem negada: por isso antes só aparecia no app.)
+   */
+  async function notificarWindows(titulo: string, corpo: string) {
     try {
-      if (!(await isPermissionGranted())) await requestPermission();
-    } catch {
-      /* fora do Tauri (navegador): só a faixa no app */
+      await invoke('plugin:notification|notify', { options: { title: titulo, body: corpo } });
+    } catch (e) {
+      console.warn('lembretes: notificação do Windows falhou', e);
     }
   }
 
@@ -340,13 +343,8 @@ export function ligarLembretes(raiz: HTMLElement, op: Opcoes = {}) {
     op.pulsar?.();
     if (l.alarm) tocarAlarme();
     op.falar?.(`Senhor, lembrete: ${l.title}.`);
-    void (async () => {
-      try {
-        if (await isPermissionGranted()) sendNotification({ title: l.title, body: `Lembrete · ${quando(l)}${l.notes ? `\n${l.notes}` : ''}` });
-      } catch {
-        /* sem notificação do sistema: a faixa no app basta */
-      }
-    })();
+    void notificarWindows(l.title, `Lembrete · ${quando(l)}${l.notes ? `
+${l.notes}` : ''}`);
   }
 
   async function vigiar() {
@@ -379,7 +377,6 @@ export function ligarLembretes(raiz: HTMLElement, op: Opcoes = {}) {
 
   jarvis.aoMudar(() => void desenharLista());
   void desenharLista();
-  void pedirPermissao();
   setInterval(() => void vigiar(), 15_000);
   setTimeout(() => void vigiar(), 3_000);
   // A lista muda de grupo com o tempo ("Hoje" -> "Já passaram").
