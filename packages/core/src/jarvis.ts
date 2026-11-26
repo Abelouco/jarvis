@@ -4,7 +4,7 @@ import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { criarCliente, ouvirEventos, type ArmazenamentoSessao } from './supabase';
 import { novoId, prepararBanco, TABELAS_SYNC, type BancoLocal, type TabelaSync, type Valor } from './local';
 import type {
-  ColunaQuadro, Fonte, Habit, Note, TipoNota, JarvisEvent, Memory, Message, Milestone, Prioridade, Project, Reminder, StatusProjeto, Task,
+  ColunaQuadro, Fonte, Habit, Note, Notice, NoticeRule, NoticeSettings, TipoNota, JarvisEvent, Memory, Message, Milestone, Prioridade, Project, Reminder, StatusProjeto, Task,
 } from './types';
 import { cumpriu, idRegistro, previstoNoDia, semana, sequencia, vezesNoMes, type TipoHabito } from './habitos';
 import {
@@ -1144,6 +1144,68 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
         { onConflict: 'id' },
       );
       await sb.from('notice_settings').upsert({ user_id: uid }, { onConflict: 'user_id', ignoreDuplicates: true });
+    },
+
+    // ----- aba Avisos: lê e escreve direto no Supabase (avisos não ficam no banco local) -----
+
+    /** Últimos avisos (os de dentro de um grupo vêm junto, com group_id). Sem internet: lança erro. */
+    async listar(limite = 60): Promise<Notice[]> {
+      const { data, error } = await sb.from('notices')
+        .select('id, kind, entity_type, entity_id, title, body, reason, priority, status, channels, scheduled_for, sent_at, read_at, group_id, created_at')
+        .is('deleted_at', null).order('created_at', { ascending: false }).limit(limite);
+      if (error) throw new Error(error.message);
+      return (data ?? []) as Notice[];
+    },
+    /** Quantos avisos enviados ainda não foram vistos (para o selo da aba). */
+    async naoLidos(): Promise<number> {
+      const { count } = await sb.from('notices').select('id', { count: 'exact', head: true })
+        .is('deleted_at', null).is('read_at', null).is('group_id', null).eq('status', 'enviado');
+      return count ?? 0;
+    },
+    /** Marca como vistos (todos os enviados, se `ids` não vier). */
+    async marcarLidos(ids?: string[]) {
+      let q = sb.from('notices').update({ read_at: new Date().toISOString() }).is('read_at', null).is('deleted_at', null);
+      q = ids?.length ? q.in('id', ids) : q.eq('status', 'enviado');
+      const { error } = await q;
+      if (error) throw new Error(error.message);
+    },
+    async preferencias(): Promise<NoticeSettings> {
+      const { data, error } = await sb.from('notice_settings')
+        .select('id, enabled, quiet_start, quiet_end, morning_at, evening_at').is('deleted_at', null).limit(1).maybeSingle();
+      if (error) throw new Error(error.message);
+      if (data) return data as NoticeSettings;
+      const r = await sb.from('notice_settings').insert({}).select('id, enabled, quiet_start, quiet_end, morning_at, evening_at').single();
+      if (r.error) throw new Error(r.error.message);
+      return r.data as NoticeSettings;
+    },
+    /** Muda as preferências. Horas em "HH:MM". */
+    async salvarPreferencias(m: Partial<Omit<NoticeSettings, 'id'>>): Promise<NoticeSettings> {
+      const atual = await avisos.preferencias();
+      const { data, error } = await sb.from('notice_settings').update(m).eq('id', atual.id)
+        .select('id, enabled, quiet_start, quiet_end, morning_at, evening_at').single();
+      if (error) throw new Error(error.message);
+      return data as NoticeSettings;
+    },
+    /** Regras que mudam algo (desligado, silenciado ainda valendo ou hora fixa). `nome` = item, quando é de um item só. */
+    async regras(): Promise<(NoticeRule & { nome: string | null })[]> {
+      const { data, error } = await sb.from('notice_rules')
+        .select('id, kind, entity_id, active, fixed_time, muted_until, note').is('deleted_at', null);
+      if (error) throw new Error(error.message);
+      const agora = Date.now();
+      const valendo = ((data ?? []) as NoticeRule[])
+        .filter((r) => !r.active || (r.muted_until && Date.parse(r.muted_until) > agora) || r.fixed_time);
+      // nome do item: procura no banco local (tarefas, lembretes, hábitos, projetos)
+      const nomes = new Map<string, string>();
+      for (const t of await tarefas.listar()) nomes.set(t.id, t.title);
+      for (const l of await lembretes.listar()) nomes.set(l.id, l.title);
+      for (const h of await habitos.listar()) nomes.set(h.id, h.name);
+      for (const p of await projetos.listar()) nomes.set(p.id, p.name);
+      return valendo.map((r) => ({ ...r, nome: r.entity_id ? nomes.get(r.entity_id) ?? 'item apagado' : null }));
+    },
+    /** Desfaz a regra: volta a avisar como padrão (exclusão suave). */
+    async removerRegra(id: string) {
+      const { error } = await sb.from('notice_rules').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+      if (error) throw new Error(error.message);
     },
   };
 

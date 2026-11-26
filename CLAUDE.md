@@ -65,4 +65,5 @@ Assistente de IA pessoal do dono deste repositório, no PC (Windows) e no celula
     - noite em `evening_at` (feito, hábitos, o que ficou, amanhã);
     - texto pronto, sem IA; "só às X" do dono muda a hora do resumo; no push, só a linha sensível some.
   - Etapa 5 (regras pela conversa) feita em 2026-11-26: `ia_conversar/avisos.ts` com `avisos_silenciar`, `avisos_ligar`, `avisos_desligar_todos`, `avisos_horario`, `avisos_configurar` e `avisos_listar` (motivo de cada aviso), com recibo para desfazer.
+  - Etapa 6 (aba Avisos): `jarvis.avisos.listar/naoLidos/marcarLidos/preferencias/salvarPreferencias/regras/removerRegra` no core (direto no Supabase, sem banco local) feitos em 2026-11-26; tela na ficha `docs/tarefas/aba-avisos.md` para o Cursor (`apps/desktop/src/abaAvisos.ts`).
 - Fase 4: ações no mundo (computador, calendário, e-mail), finanças e saúde opcionais.

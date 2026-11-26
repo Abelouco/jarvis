@@ -103,6 +103,52 @@ export interface JarvisEvent {
   created_at: string;
 }
 
+// ---------- avisos (Fase 3): só no servidor, a tela lê direto do Supabase ----------
+export type TipoAviso =
+  | 'tarefa_atrasada' | 'lembrete_hora' | 'habito_sequencia' | 'prazo_projeto'
+  | 'diario_vazio' | 'resumo_manha' | 'resumo_noite';
+
+/** Aviso que o vigia deu (ou segurou), com o motivo. */
+export interface Notice {
+  id: string;
+  kind: TipoAviso;
+  entity_type: string | null;
+  entity_id: string | null;
+  title: string;
+  body: string;
+  reason: string;
+  priority: 'urgente' | 'normal' | 'baixa';
+  status: 'enviado' | 'segurado_silencio' | 'juntado' | 'silenciado' | 'agendado';
+  /** 'pc', 'pc_local' (o app avisou sozinho) e/ou 'push' (celular) */
+  channels: string[];
+  scheduled_for: string | null;
+  sent_at: string | null;
+  read_at: string | null;
+  group_id: string | null;
+  created_at: string;
+}
+
+/** Preferências dos avisos (uma linha por dono). Horas "HH:MM:SS". */
+export interface NoticeSettings {
+  id: string;
+  enabled: boolean;
+  quiet_start: string;
+  quiet_end: string;
+  morning_at: string;
+  evening_at: string;
+}
+
+/** Regra pedida pelo dono: desligar, silenciar até, ou avisar só numa hora. entity_id = um item só. */
+export interface NoticeRule {
+  id: string;
+  kind: TipoAviso;
+  entity_id: string | null;
+  active: boolean;
+  fixed_time: string | null;
+  muted_until: string | null;
+  note: string | null;
+}
+
 /** Hábito: constância (feito ou não, minutos ou quantidade por dia). */
 export interface Habit extends Base {
   name: string;
