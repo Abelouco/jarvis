@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "url": "https://mcp.supabase.com/mcp?project_ref=pmqxeikcnuywvcxkeoep&read_only=true&features=database,docs"
+    },
+    "context-mode": {
+      "command": "node",
+      "args": [
+        "C:/Users/abeld/.claude/plugins/cache/context-mode/context-mode/2.2.4/server.mjs",
+        "--agent",
+        "vscode"
+      ]
+    }
+  }
+}

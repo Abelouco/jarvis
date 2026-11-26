@@ -8,3 +8,7 @@ Antes de mexer em qualquer coisa, leia `CLAUDE.md` (decisões e roteiro) e `arqu
 - Ao terminar: `pnpm.cmd typecheck` e `pnpm.cmd test`, e um commit pequeno terminado em uma linha dizendo que foi feito no Cursor.
 - Não faça deploy no Supabase nem release; deixe isso anotado para o Claude Code / o dono.
 - Se a tarefa veio de `docs/tarefas/<nome>.md`, toque só nos arquivos listados lá.
+- Economia de contexto (MCPs em `.cursor/mcp.json`):
+  - Saída longa (teste, build, log, arquivo grande): rode pelo `ctx_execute` do context-mode e imprima só o resultado; para achar algo já rodado, `ctx_search`.
+  - Dúvida sobre tabela, coluna ou função do banco: pergunte ao MCP `supabase` (só leitura) em vez de ler todas as migrações. Ele não escreve nada.
+  - Leia arquivos por trechos (o que a ficha aponta), não inteiros.

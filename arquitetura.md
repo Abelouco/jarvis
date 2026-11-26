@@ -149,7 +149,12 @@ Objetivo: gastar o mínimo de tokens caros sem perder qualidade. Regra geral: **
 | Revisão final antes de publicar | Claude | Uma passada só no diff, no fim |
 
 **Como passar trabalho de um para o outro (sem os dois mexerem no mesmo arquivo):**
-1. Quem desenha deixa a tarefa escrita em `docs/tarefas/<nome>.md`: o objetivo, os arquivos que pode tocar, o "pronto quando" e o molde a copiar. Essa pasta ainda não existe; quem escrever a primeira tarefa a cria.
+1. Quem desenha deixa a tarefa escrita em `docs/tarefas/<nome>.md`: o objetivo, os arquivos que pode tocar, o "pronto quando" e o molde a copiar. A primeira foi `docs/tarefas/aba-conhecimento.md`.
 2. O outro executa, roda `pnpm.cmd typecheck` e `pnpm.cmd test`, e faz um commit pequeno.
 3. Quem desenhou revisa só o `git diff` desse commit, e não o projeto inteiro.
 4. Nunca os dois editando ao mesmo tempo: o git é o ponto de encontro.
+
+**MCPs de cada lado (para gastar menos contexto):**
+- Claude Code: context-mode (corta saída longa), Graphify (mapa do código), Supabase (migração, SQL e deploy).
+- Cursor (`.cursor/mcp.json`): context-mode e Supabase **só leitura** (consulta o schema, nunca escreve). Na primeira vez, o Cursor pede para entrar na conta do Supabase; quem entra é o dono.
+- O context-mode do Cursor aponta para a pasta da versão instalada pelo Claude Code (`.../context-mode/2.2.4/`); se o plugin atualizar, troque o número no `mcp.json`.
