@@ -1,0 +1,10 @@
+---
+description: Contexto do J.A.R.V.I.S. (sempre)
+alwaysApply: true
+---
+Responda sempre em português do Brasil.
+Antes de mexer em qualquer coisa, leia `CLAUDE.md` (decisões e roteiro) e `arquitetura.md` (onde fica cada coisa, receita de novo domínio, regras que não podem quebrar).
+- Não mexa em `apps/mobile`. Nunca DELETE (só `deleted_at`); schema só por migração nova.
+- Ao terminar: `pnpm.cmd typecheck` e `pnpm.cmd test`, e um commit pequeno terminado em uma linha dizendo que foi feito no Cursor.
+- Não faça deploy no Supabase nem release; deixe isso anotado para o Claude Code / o dono.
+- Se a tarefa veio de `docs/tarefas/<nome>.md`, toque só nos arquivos listados lá.
