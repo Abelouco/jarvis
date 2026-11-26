@@ -285,3 +285,33 @@ test('conhecimento: nome da nota e etiquetas', () => {
   assert.deepEqual(lerEtiquetas('#Ideias, trabalho; ideias'), ['ideias', 'trabalho']);
   assert.deepEqual(lerEtiquetas(['  Casa ', '#casa']), ['casa']);
 });
+
+import { resolverAte, rotuloAte, tipoAviso } from './avisos.ts';
+
+test('avisos: tipo pelo nome que o dono usa', () => {
+  assert.equal(tipoAviso('resumo da manhã'), 'resumo_manha');
+  assert.equal(tipoAviso('resumo do dia'), 'resumo_noite');
+  assert.equal(tipoAviso('tarefas atrasadas'), 'tarefa_atrasada');
+  assert.equal(tipoAviso('hábito'), 'habito_sequencia');
+  assert.equal(tipoAviso('diário'), 'diario_vazio');
+  assert.equal(tipoAviso('prazo_projeto'), 'prazo_projeto');
+  assert.equal(tipoAviso('qualquer coisa'), null);
+});
+
+test('avisos: até quando silenciar', () => {
+  const agora = new Date('2026-11-26T15:00:00Z'); // 12:00 SP
+  assert.equal(resolverAte({ por_horas: 2 }, '2026-11-26', agora), '2026-11-26T17:00:00.000Z');
+  assert.equal(resolverAte({ por_dias: 3 }, '2026-11-26', agora), '2026-11-29T03:00:00.000Z');
+  assert.equal(resolverAte({ quando: 'amanha' }, '2026-11-26', agora), '2026-11-27T03:00:00.000Z');
+  assert.equal(resolverAte({ quando: 'hoje' }, '2026-11-26', agora), '2026-11-27T02:59:00.000Z');
+  assert.equal(resolverAte({}, '2026-11-26', agora), null);
+  assert.equal(rotuloAte(null, '2026-11-26'), 'até você pedir de volta');
+  assert.equal(rotuloAte('2026-11-27T03:00:00.000Z', '2026-11-26'), 'até 27/11');
+  assert.equal(rotuloAte('2026-11-26T17:00:00.000Z', '2026-11-26'), 'até hoje às 14:00');
+});
+
+test('avisos: o detector manda para o planejador', () => {
+  assert.equal(pareceTarefa('não me avisa mais do diário', false), true);
+  assert.equal(pareceTarefa('silencia os avisos de tarefa por 2 horas', false), true);
+  assert.equal(pareceTarefa('por que você me avisou?', false), true);
+});
