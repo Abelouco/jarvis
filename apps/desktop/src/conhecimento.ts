@@ -341,9 +341,15 @@ export function ligarConhecimento(raiz: HTMLElement, op: { pulsar?: () => void; 
     }
   };
 
-  async function desenhar() {
-    if (desenhando) return;
+  // Mudança que chega no meio de um desenho não se perde: desenha de novo ao terminar.
+  let deNovo = false;
+  async function desenhar(): Promise<void> {
+    if (desenhando) {
+      deNovo = true;
+      return;
+    }
     desenhando = true;
+    deNovo = false;
     try {
       if (secao === 'notas') {
         const [notas, cadernos, etiquetas] = await Promise.all([
@@ -373,6 +379,7 @@ export function ligarConhecimento(raiz: HTMLElement, op: { pulsar?: () => void; 
       op.aoMudar?.();
     } finally {
       desenhando = false;
+      if (deNovo) void desenhar();
     }
   }
 

@@ -107,7 +107,9 @@ export function ligarHoje(raiz: HTMLElement, op: { pulsar?: () => void; irPara?:
         }
         const seq = h.sequencia.n > 1 ? `<span class="hj-seq">🔥 ${h.sequencia.n}</span>` : '';
         return `<li>
-          <button type="button" class="hj-habito${h.feitoHoje ? ' feito' : ''}" data-habito="${h.id}" data-tipo="${h.kind}">
+          <button type="button" class="hj-habito${h.feitoHoje ? ' feito' : ''}" data-habito="${h.id}" data-tipo="${h.kind}"
+            data-meta="${h.daily_target ?? ''}" data-feito="${h.feitoHoje ? '1' : ''}"
+            title="${h.kind === 'quantity' ? '+1 (clique)' : h.feitoHoje ? 'Desmarcar' : 'Marcar como feito'}">
             <span>${esc(h.name)}</span>${meta}${seq}
           </button>
         </li>`;
@@ -196,9 +198,15 @@ export function ligarHoje(raiz: HTMLElement, op: { pulsar?: () => void; irPara?:
     selo.hidden = !(t.atrasadas === 0 && t.deHoje === 0 && h.total > 0 && h.faltando === 0);
   }
 
-  async function desenhar() {
-    if (desenhando) return;
+  // Mudança que chega no meio de um desenho não se perde: desenha de novo ao terminar.
+  let deNovo = false;
+  async function desenhar(): Promise<void> {
+    if (desenhando) {
+      deNovo = true;
+      return;
+    }
     desenhando = true;
+    deNovo = false;
     try {
       const hoje = hojeSP();
       const [tarefas, lembretes, habitos, diario, projetos] = await Promise.all([
@@ -213,6 +221,7 @@ export function ligarHoje(raiz: HTMLElement, op: { pulsar?: () => void; irPara?:
       desenharTopo(hoje, t, h);
     } finally {
       desenhando = false;
+      if (deNovo) void desenhar();
     }
   }
 
@@ -229,8 +238,12 @@ export function ligarHoje(raiz: HTMLElement, op: { pulsar?: () => void; irPara?:
     const hb = alvo.closest<HTMLElement>('[data-habito]');
     if (hb) {
       const id = hb.dataset.habito!;
-      if (hb.dataset.tipo === 'boolean') await jarvis.habitos.alternar(id);
-      else await jarvis.habitos.somar(id, 1);
+      const meta = Number(hb.dataset.meta) || 0;
+      // Quantidade soma 1 (copos, páginas...). Minutos: um clique cumpre a meta do dia, outro desmarca.
+      if (hb.dataset.tipo === 'quantity') await jarvis.habitos.somar(id, 1);
+      else if (hb.dataset.tipo === 'duration' && meta) {
+        await jarvis.habitos.registrar(id, hojeSP(), hb.dataset.feito ? null : meta);
+      } else await jarvis.habitos.alternar(id);
       op.pulsar?.();
       return void desenhar();
     }
