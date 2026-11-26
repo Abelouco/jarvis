@@ -24,6 +24,8 @@ export interface Candidato {
 export interface Preferencias {
   quiet_start: string; // HH:MM ou HH:MM:SS
   quiet_end: string;
+  morning_at?: string;
+  evening_at?: string;
 }
 
 export interface Regra {
@@ -232,18 +234,132 @@ function regraDe(c: Candidato, regras: Regra[]) {
 const calado = (r: Regra | undefined, agora: Date) =>
   !!r && (!r.active || (!!r.muted_until && new Date(r.muted_until).getTime() > agora.getTime()));
 
+// ---------- resumos ----------
+export const RESUMOS = new Set<string>(['resumo_manha', 'resumo_noite']);
+/** Até quanto tempo depois da hora o resumo ainda sai (vigia parado por um tempo, por exemplo). */
+export const JANELA_RESUMO_MIN = 120;
+
+/** Hora do resumo: a do "só às 9h" pedido pelo dono, senão a das preferências. */
+export function horaDoResumo(kind: 'resumo_manha' | 'resumo_noite', p: Preferencias, regras: Regra[]): string {
+  const r = regras.find((x) => x.kind === kind && !x.entity_id && x.fixed_time);
+  return r?.fixed_time ?? (kind === 'resumo_manha' ? p.morning_at ?? '08:00' : p.evening_at ?? '21:00');
+}
+export function resumoNaHora(hora: string, agora: Date): boolean {
+  const m = minutoSP(agora);
+  const h = emMin(hora);
+  return m >= h && m < h + JANELA_RESUMO_MIN;
+}
+/**
+ * Quando o silêncio solta o que segurou: na hora do resumo da manhã, se ela vier até 3 h depois do fim
+ * do silêncio (aí o segurado entra no resumo); senão, no fim do silêncio.
+ */
+export function fimDoSilencio(p: Preferencias): string {
+  if (!p.morning_at) return p.quiet_end;
+  const d = (emMin(p.morning_at) - emMin(p.quiet_end) + 1440) % 1440;
+  return d <= 180 ? p.morning_at : p.quiet_end;
+}
+
+const lista = (xs: string[], max = 4) => {
+  const ys = xs.slice(0, max).map((x) => `• ${x}`);
+  if (xs.length > max) ys.push(`• e mais ${xs.length - max}`);
+  return ys;
+};
+const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+const diasEntre = (de: string, ate: string) =>
+  Math.round((new Date(`${ate}T12:00:00Z`).getTime() - new Date(`${de}T12:00:00Z`).getTime()) / 86_400_000);
+
+export interface DadosManha {
+  tarefasHoje: { title: string; due_time: string | null }[];
+  atrasadas: number;
+  lembretesHoje: { title: string; remind_at: string }[];
+  habitosHoje: string[];
+  prazos: { name: string; due_date: string }[];
+  /** títulos do que o silêncio segurou durante a noite */
+  segurados: string[];
+}
+
+/** Resumo da manhã: o plano do dia e o que chegou durante o silêncio. Texto pronto, sem IA. */
+export function resumoManha(d: DadosManha, agora: Date): Candidato {
+  const hoje = diaSP(agora);
+  const linhas: string[] = [];
+  if (d.tarefasHoje.length) {
+    linhas.push(`${plural(d.tarefasHoje.length, 'tarefa', 'tarefas')} para hoje:`);
+    linhas.push(...lista(d.tarefasHoje.map((t) => (t.due_time ? `${hhmm(t.due_time)} ${t.title}` : t.title))));
+  }
+  if (d.lembretesHoje.length) {
+    linhas.push(`${plural(d.lembretesHoje.length, 'lembrete', 'lembretes')}:`);
+    linhas.push(...lista(d.lembretesHoje.map((l) => `${rotuloHora(new Date(l.remind_at))} ${l.title}`)));
+  }
+  if (d.habitosHoje.length) {
+    linhas.push(`Hábitos de hoje: ${d.habitosHoje.slice(0, 5).join(', ')}${d.habitosHoje.length > 5 ? '…' : ''}`);
+  }
+  if (d.atrasadas) linhas.push(`${plural(d.atrasadas, 'tarefa atrasada', 'tarefas atrasadas')} esperando.`);
+  for (const pr of d.prazos.slice(0, 3)) {
+    const falta = diasEntre(hoje, pr.due_date);
+    linhas.push(`Prazo: ${pr.name} ${falta === 0 ? 'hoje' : falta === 1 ? 'amanhã' : `em ${falta} dias`}`);
+  }
+  if (d.segurados.length) {
+    linhas.push(`Durante a noite (${d.segurados.length}):`);
+    linhas.push(...lista(d.segurados, 3));
+  }
+  return {
+    kind: 'resumo_manha', entity_type: null, entity_id: null,
+    title: linhas.length ? 'Bom dia, Senhor. O plano de hoje' : 'Bom dia, Senhor. Dia livre',
+    body: linhas.length ? linhas.join('\n') : 'Nada marcado para hoje.',
+    reason: 'Resumo da manhã, no horário que você escolheu.',
+    priority: 'normal',
+    dedupe_key: `resumo_manha:${hoje}`,
+  };
+}
+
+export interface DadosNoite {
+  feitas: string[];
+  pendentesHoje: string[];
+  habitos: { feitos: number; previstos: number };
+  amanha: number;
+}
+
+/** Hábitos previstos para o dia (nomes) e quantos deles já foram cumpridos. */
+export function habitosDoDia(habitos: HabitoBD[], registros: RegistroBD[], dia: string) {
+  const previstos = habitos.filter((h) => !h.paused && previstoNoDia(h, dia));
+  const feitos = previstos.filter((h) => cumpriu(h, registros.find((r) => r.habit_id === h.id && r.day === dia)?.value)).length;
+  return { nomes: previstos.map((h) => h.name), feitos, previstos: previstos.length };
+}
+
+/** Resumo da noite: o que foi feito e o que ficou. */
+export function resumoNoite(d: DadosNoite, agora: Date): Candidato {
+  const hoje = diaSP(agora);
+  const linhas: string[] = [d.feitas.length ? `Feito hoje (${d.feitas.length}):` : 'Nenhuma tarefa concluída hoje.'];
+  linhas.push(...lista(d.feitas, 3));
+  if (d.habitos.previstos) linhas.push(`Hábitos: ${d.habitos.feitos} de ${d.habitos.previstos}`);
+  if (d.pendentesHoje.length) {
+    linhas.push(`Ficou para depois (${d.pendentesHoje.length}):`);
+    linhas.push(...lista(d.pendentesHoje, 3));
+  }
+  if (d.amanha) linhas.push(`Amanhã: ${plural(d.amanha, 'tarefa', 'tarefas')}.`);
+  return {
+    kind: 'resumo_noite', entity_type: null, entity_id: null,
+    title: 'Resumo do dia',
+    body: linhas.join('\n'),
+    reason: 'Resumo da noite, no horário que você escolheu.',
+    priority: 'normal',
+    dedupe_key: `resumo_noite:${hoje}`,
+  };
+}
+
 /** Ordem: silenciado → hora fixa → silêncio (urgente fura) → enviar. */
 export function decidir(c: Candidato, p: Preferencias, regras: Regra[], agora: Date): Decisao {
   const { item, tipo } = regraDe(c, regras);
   if (calado(item, agora) || calado(tipo, agora)) {
     return { status: 'silenciado', scheduled_for: null, nota: 'você pediu para não avisar disso' };
   }
-  const fixa = item?.fixed_time ?? tipo?.fixed_time;
+  // Resumo já nasce na hora pedida (horaDoResumo): a hora fixa não se aplica de novo.
+  const fixa = RESUMOS.has(c.kind) ? null : item?.fixed_time ?? tipo?.fixed_time;
   if (fixa && minutoSP(agora) !== emMin(fixa)) {
     return { status: 'agendado', scheduled_for: proximaHora(fixa, agora).toISOString(), nota: `você pediu para avisar só às ${hhmm(fixa)}` };
   }
   if (c.priority !== 'urgente' && emSilencio(agora, p)) {
-    return { status: 'segurado_silencio', scheduled_for: proximaHora(p.quiet_end, agora).toISOString(), nota: 'chegou no horário de silêncio' };
+    return { status: 'segurado_silencio', scheduled_for: proximaHora(fimDoSilencio(p), agora).toISOString(), nota: 'chegou no horário de silêncio' };
   }
   return { status: 'enviar', scheduled_for: null };
 }
@@ -251,7 +367,7 @@ export function decidir(c: Candidato, p: Preferencias, regras: Regra[], agora: D
 // ---------- junção ----------
 export const JANELA_MIN = 15;
 /** Tipos que nunca esperam a janela nem se juntam: hora marcada é hora marcada. */
-const SEM_JUNCAO = new Set<string>(['lembrete_hora']);
+const SEM_JUNCAO = new Set<string>(['lembrete_hora', 'resumo_manha', 'resumo_noite']);
 
 export interface AvisoPronto { id: string; kind: string; title: string; body: string; priority: Prioridade }
 
@@ -320,10 +436,12 @@ export function tituloGrupo(kind: string, n: number): string {
  * nunca vai no texto. O aviso completo continua no banco e no app.
  */
 export function textoPush(a: { title: string; body: string }): { title: string; body: string } {
-  if (avaliarSensibilidade(`${a.title}\n${a.body}`).sensivel) {
+  const sens = (t: string) => avaliarSensibilidade(t).sensivel;
+  if (sens(`${a.title}\n${a.body}`) && (sens(a.title) || !a.body.includes('\n'))) {
     return { title: 'J.A.R.V.I.S.', body: 'Um aviso com conteúdo reservado. Abra o app para ver.' };
   }
-  return { title: a.title, body: a.body };
+  // corpo com várias linhas (resumo, grupo): só a linha sensível some
+  return { title: a.title, body: a.body.split('\n').map((l) => (sens(l) ? '• (conteúdo reservado)' : l)).join('\n') };
 }
 
 // ---------- canal ----------

@@ -7,8 +7,9 @@
 // Sem IA e sem segredo novo: usa só o service role que o Supabase já injeta.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
-  decidir, detectarAtrasadas, detectarDiario, detectarLembretes, detectarPrazos, detectarSequencias, diaSP, escolherCanais, juntar, somarDias, textoPush,
-  type AvisoPronto, type Candidato, type Preferencias, type Regra,
+  decidir, detectarAtrasadas, detectarDiario, detectarLembretes, detectarPrazos, detectarSequencias, diaSP, escolherCanais, habitosDoDia,
+  horaDoResumo, instanteSP, juntar, resumoManha, resumoNaHora, resumoNoite, somarDias, textoPush,
+  type AvisoPronto, type Candidato, type HabitoBD, type Preferencias, type Regra, type RegistroBD,
 } from './decisao.ts';
 
 const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
@@ -66,12 +67,31 @@ async function vigiar(cfg: Cfg, agora: Date) {
   ]);
   const listaRegras = ok(regras, 'regras') as Regra[];
   const listaAparelhos = ok(aparelhos, 'aparelhos') as { id: string; platform: string; seen_at: string; push_token: string | null }[];
+  const listaHabitos = ok(habitos, 'habitos') as HabitoBD[];
+  const listaRegistros = ok(registros, 'registros') as RegistroBD[];
+  const listaTarefas = ok(tarefas, 'tarefas') as { id: string; title: string; due_date: string; due_time: string | null; priority: string }[];
+  const liberados = ok(pendentes, 'pendentes') as Linha[];
+
+  // 0. resumos da manhã e da noite: os dados extras só são buscados na hora e se ainda não saiu hoje
+  const resumos: Candidato[] = [];
+  const devidos = (['resumo_manha', 'resumo_noite'] as const).filter((k) => resumoNaHora(horaDoResumo(k, cfg, listaRegras), agora));
+  if (devidos.length) {
+    const chaves = devidos.map((k) => `${k}:${hoje}`);
+    const ja = ok(await sb.from('notices').select('dedupe_key').eq('user_id', uid).in('dedupe_key', chaves), 'resumos') as { dedupe_key: string }[];
+    for (const k of devidos) {
+      if (ja.some((x) => x.dedupe_key === `${k}:${hoje}`)) continue;
+      resumos.push(k === 'resumo_manha'
+        ? await dadosManha(uid, hoje, listaTarefas, listaHabitos, listaRegistros, liberados, agora)
+        : await dadosNoite(uid, hoje, listaTarefas, listaHabitos, listaRegistros, agora));
+    }
+  }
 
   // 1. candidatos novos (os que já foram registrados, pela dedupe_key, ficam de fora)
   let candidatos: Candidato[] = [
+    ...resumos,
     ...detectarLembretes(ok(lembretes, 'lembretes') as never, agora),
-    ...detectarAtrasadas(ok(tarefas, 'tarefas') as never, agora),
-    ...detectarSequencias(ok(habitos, 'habitos') as never, ok(registros, 'registros') as never, cfg, agora),
+    ...detectarAtrasadas(listaTarefas as never, agora),
+    ...detectarSequencias(listaHabitos, listaRegistros, cfg, agora),
     ...detectarPrazos(ok(projetos, 'projetos') as never, agora),
     ...detectarDiario((ok(diario, 'diario') as unknown[]).length > 0, cfg, agora),
   ];
@@ -96,9 +116,13 @@ async function vigiar(cfg: Cfg, agora: Date) {
     });
     if (d.status === 'enviar') prontos.push({ id, kind: c.kind, title: c.title, body: c.body, priority: c.priority });
   }
+  // O resumo da manhã que sai agora leva junto o que o silêncio segurou (já está no texto dele).
+  const manha = novas.find((n) => n.kind === 'resumo_manha' && n.status === 'enviado');
+  const dobrados = new Set(manha ? liberados.filter((l) => l.status === 'segurado_silencio').map((l) => l.id) : []);
   // os que estavam esperando (silêncio, hora fixa, janela) e chegou a hora
-  const liberados = ok(pendentes, 'pendentes') as Linha[];
-  for (const l of liberados) prontos.push({ id: l.id, kind: l.kind, title: l.title, body: l.body, priority: l.priority });
+  for (const l of liberados) {
+    if (!dobrados.has(l.id)) prontos.push({ id: l.id, kind: l.kind, title: l.title, body: l.body, priority: l.priority });
+  }
 
   // 3. juntar e escolher o canal
   const ultimoEnvio: Record<string, string> = {};
@@ -119,6 +143,7 @@ async function vigiar(cfg: Cfg, agora: Date) {
   const pushes: { id: string; title: string; body: string; priority: string }[] = [];
 
   for (const a of adiar) mudar(a.id, { status: 'agendado', scheduled_for: a.ate });
+  for (const id of dobrados) mudar(id, { status: 'juntado', group_id: manha!.id, sent_at: iso });
   for (const e of entregas) {
     const canais = escolherCanais(e.principal, listaAparelhos, agora);
     const enviado = { status: 'enviado', channels: canais, sent_at: iso };
@@ -149,6 +174,8 @@ async function vigiar(cfg: Cfg, agora: Date) {
     gravadas = new Set(r.map((x) => x.id));
   }
   for (const [id, campos] of mudancas) {
+    // resumo que outra rodada já gravou: os segurados ficam para a próxima (saem sozinhos)
+    if (dobrados.has(id) && !gravadas.has(manha!.id)) continue;
     // só muda se ainda estiver esperando (outra rodada pode ter liberado antes)
     ok(await sb.from('notices').update(campos).eq('id', id).in('status', ['agendado', 'segurado_silencio']).select('id'), 'liberar');
   }
@@ -162,6 +189,54 @@ async function vigiar(cfg: Cfg, agora: Date) {
   const valeu = (id: string) => gravadas.has(id) || mudancas.has(id) || grupos.some((g) => g.id === id);
   const enviados = await enviarPush(pushes.filter((p) => valeu(p.id)), listaAparelhos);
   return { novos: gravadas.size, liberados: mudancas.size, grupos: grupos.length, notificados: entregar.length, push: enviados };
+}
+
+type TarefaBD = { id: string; title: string; due_date: string; due_time: string | null; priority: string };
+
+/** Dados do resumo da manhã (texto pronto em decisao.ts). */
+async function dadosManha(
+  uid: string, hoje: string, tarefas: TarefaBD[], habitos: HabitoBD[], registros: RegistroBD[], liberados: Linha[], agora: Date,
+): Promise<Candidato> {
+  const amanha = somarDias(hoje, 1);
+  const [lembretes, atrasadas, prazos] = await Promise.all([
+    sb.from('reminders').select('title, remind_at').eq('user_id', uid).is('deleted_at', null).is('done_at', null)
+      .gte('remind_at', agora.toISOString()).lt('remind_at', instanteSP(amanha, '00:00').toISOString()).order('remind_at'),
+    sb.from('tasks').select('id', { count: 'exact', head: true }).eq('user_id', uid).is('deleted_at', null)
+      .is('done_at', null).eq('archived', false).lt('due_date', hoje),
+    sb.from('projects').select('name, due_date').eq('user_id', uid).is('deleted_at', null).eq('archived', false)
+      .neq('status', 'concluido').gte('due_date', hoje).lte('due_date', somarDias(hoje, 3)).order('due_date'),
+  ]);
+  if (atrasadas.error) throw new Error(`atrasadas: ${atrasadas.error.message}`);
+  return resumoManha({
+    tarefasHoje: tarefas.filter((t) => t.due_date === hoje)
+      .sort((a, b) => (a.due_time ?? '99').localeCompare(b.due_time ?? '99')),
+    atrasadas: atrasadas.count ?? 0,
+    lembretesHoje: ok(lembretes, 'lembretes do dia') as { title: string; remind_at: string }[],
+    habitosHoje: habitosDoDia(habitos, registros, hoje).nomes,
+    prazos: ok(prazos, 'prazos do dia') as { name: string; due_date: string }[],
+    segurados: liberados.filter((l) => l.status === 'segurado_silencio').map((l) => l.title),
+  }, agora);
+}
+
+/** Dados do resumo da noite. */
+async function dadosNoite(
+  uid: string, hoje: string, tarefas: TarefaBD[], habitos: HabitoBD[], registros: RegistroBD[], agora: Date,
+): Promise<Candidato> {
+  const amanha = somarDias(hoje, 1);
+  const [feitas, deAmanha] = await Promise.all([
+    sb.from('tasks').select('title').eq('user_id', uid).is('deleted_at', null)
+      .gte('done_at', instanteSP(hoje, '00:00').toISOString()).order('done_at'),
+    sb.from('tasks').select('id', { count: 'exact', head: true }).eq('user_id', uid).is('deleted_at', null)
+      .is('done_at', null).eq('archived', false).eq('due_date', amanha),
+  ]);
+  if (deAmanha.error) throw new Error(`amanhã: ${deAmanha.error.message}`);
+  const h = habitosDoDia(habitos, registros, hoje);
+  return resumoNoite({
+    feitas: (ok(feitas, 'feitas') as { title: string }[]).map((t) => t.title),
+    pendentesHoje: tarefas.filter((t) => t.due_date === hoje).map((t) => t.title),
+    habitos: { feitos: h.feitos, previstos: h.previstos },
+    amanha: deAmanha.count ?? 0,
+  }, agora);
 }
 
 /**
@@ -206,7 +281,7 @@ Deno.serve(async (req) => {
   try {
     if (!(await conferirChave(req))) return new Response('não autorizado', { status: 401 });
     const agora = new Date();
-    const donos = ok(await sb.from('notice_settings').select('user_id, quiet_start, quiet_end')
+    const donos = ok(await sb.from('notice_settings').select('user_id, quiet_start, quiet_end, morning_at, evening_at')
       .eq('enabled', true).is('deleted_at', null), 'preferencias') as Cfg[];
     const resultado: Record<string, unknown> = {};
     for (const cfg of donos) {

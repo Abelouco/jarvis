@@ -59,4 +59,8 @@ Assistente de IA pessoal do dono deste repositório, no PC (Windows) e no celula
     - prazo de projeto: em 3 dias e em 1 dia (marcos não, porque saíram da tela);
     - dia sem diário: às 21:30;
     - o vigia usa cópias de `habitos_regras.ts` e `recorrencia.ts`, conferidas por teste.
+  - Etapa 4 (resumos) feita em 2026-11-26:
+    - manhã em `morning_at` (plano do dia, atrasadas, prazos e o que o silêncio segurou, que sai junto no resumo em vez de avulso);
+    - noite em `evening_at` (feito, hábitos, o que ficou, amanhã);
+    - texto pronto, sem IA; "só às X" do dono muda a hora do resumo; no push, só a linha sensível some.
 - Fase 4: ações no mundo (computador, calendário, e-mail), finanças e saúde opcionais.

@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  decidir, detectarAtrasadas, detectarDiario, detectarLembretes, detectarPrazos, detectarSequencias, emSilencio, escolherCanais, juntar, proximaHora, textoPush, vencimento,
+  decidir, detectarAtrasadas, detectarDiario, detectarLembretes, detectarPrazos, detectarSequencias, emSilencio, escolherCanais, fimDoSilencio,
+  habitosDoDia, horaDoResumo, juntar, proximaHora, resumoManha, resumoNaHora, resumoNoite, textoPush, vencimento,
   type Candidato, type Regra,
 } from './decisao.ts';
 
@@ -135,6 +136,57 @@ test('push: sensível sai como conteúdo reservado', () => {
     title: 'J.A.R.V.I.S.', body: 'Um aviso com conteúdo reservado. Abra o app para ver.',
   });
   assert.deepEqual(textoPush({ title: 'Pagar luz', body: 'Tarefa atrasada' }), { title: 'Pagar luz', body: 'Tarefa atrasada' });
+  // resumo com várias linhas: só a linha sensível some
+  assert.deepEqual(textoPush({ title: 'Bom dia, Senhor. O plano de hoje', body: '2 tarefas para hoje:\n• Pagar luz\n• Consulta no psiquiatra' }), {
+    title: 'Bom dia, Senhor. O plano de hoje', body: '2 tarefas para hoje:\n• Pagar luz\n• (conteúdo reservado)',
+  });
+});
+
+test('resumos: hora das preferências ou a fixa; janela de 2 h; silêncio solta na hora do resumo da manhã', () => {
+  const p = { ...P, morning_at: '08:00:00', evening_at: '21:00:00' };
+  assert.equal(horaDoResumo('resumo_manha', p, []), '08:00:00');
+  const fixa = { kind: 'resumo_noite', entity_id: null, active: true, fixed_time: '22:30', muted_until: null };
+  assert.equal(horaDoResumo('resumo_noite', p, [fixa]), '22:30');
+  assert.equal(resumoNaHora('08:00', em('2026-11-26T10:59:00Z')), false); // 07:59
+  assert.equal(resumoNaHora('08:00', em('2026-11-26T11:00:00Z')), true); // 08:00
+  assert.equal(resumoNaHora('08:00', em('2026-11-26T12:59:00Z')), true); // 09:59
+  assert.equal(resumoNaHora('08:00', em('2026-11-26T13:00:00Z')), false); // 10:00
+  assert.equal(fimDoSilencio(p), '08:00:00');
+  assert.equal(fimDoSilencio({ ...p, morning_at: '11:00' }), P.quiet_end); // longe demais: solta às 07:00
+  assert.equal(decidir(cand(), p, [], em('2026-11-26T02:00:00Z')).scheduled_for, '2026-11-26T11:00:00.000Z');
+  // resumo não sofre a hora fixa de novo, nem se junta
+  const r = resumoNoite({ feitas: [], pendentesHoje: [], habitos: { feitos: 0, previstos: 0 }, amanha: 0 }, em('2026-11-27T00:00:00Z'));
+  assert.equal(decidir(r, p, [{ ...fixa, fixed_time: '21:30' }], em('2026-11-27T00:00:00Z')).status, 'enviar');
+  const j = juntar([{ id: 'a', kind: 'resumo_noite', title: 'x', body: '', priority: 'normal' }], { resumo_noite: '2026-11-27T00:00:00Z' }, em('2026-11-27T00:05:00Z'), () => 'g');
+  assert.equal(j.entregas.length, 1);
+});
+
+test('resumo da manhã: plano do dia e o que chegou de noite', () => {
+  const agora = em('2026-11-26T11:00:00Z'); // 08:00 SP
+  const r = resumoManha({
+    tarefasHoje: [{ title: 'Pagar luz', due_time: '10:00:00' }, { title: 'Ler', due_time: null }],
+    atrasadas: 1,
+    lembretesHoje: [{ title: 'Ligar pro João', remind_at: '2026-11-26T18:00:00Z' }],
+    habitosHoje: ['Água'],
+    prazos: [{ name: 'App', due_date: '2026-11-27' }],
+    segurados: ['Tarefa X atrasada'],
+  }, agora);
+  assert.equal(r.dedupe_key, 'resumo_manha:2026-11-26');
+  assert.equal(r.body, [
+    '2 tarefas para hoje:', '• 10:00 Pagar luz', '• Ler', '1 lembrete:', '• 15:00 Ligar pro João',
+    'Hábitos de hoje: Água', '1 tarefa atrasada esperando.', 'Prazo: App amanhã', 'Durante a noite (1):', '• Tarefa X atrasada',
+  ].join('\n'));
+  const livre = resumoManha({ tarefasHoje: [], atrasadas: 0, lembretesHoje: [], habitosHoje: [], prazos: [], segurados: [] }, agora);
+  assert.equal(livre.title, 'Bom dia, Senhor. Dia livre');
+});
+
+test('resumo da noite: feito, hábitos, o que ficou e amanhã', () => {
+  const r = resumoNoite({ feitas: ['A', 'B', 'C', 'D'], pendentesHoje: ['E'], habitos: { feitos: 1, previstos: 2 }, amanha: 3 }, em('2026-11-27T00:00:00Z'));
+  assert.equal(r.dedupe_key, 'resumo_noite:2026-11-26');
+  assert.equal(r.body, ['Feito hoje (4):', '• A', '• B', '• C', '• e mais 1', 'Hábitos: 1 de 2', 'Ficou para depois (1):', '• E', 'Amanhã: 3 tarefas.'].join('\n'));
+  const h = { id: 'h1', name: 'Ler', paused: false, kind: 'boolean' as const, daily_target: null, weekdays: null, times_per_week: null };
+  assert.deepEqual(habitosDoDia([h, { ...h, id: 'h2', name: 'Água' }], [{ habit_id: 'h1', day: '2026-11-26', value: 1 }], '2026-11-26'),
+    { nomes: ['Ler', 'Água'], feitos: 1, previstos: 2 });
 });
 
 test('canal: PC aberto, senão celular; urgente nos dois; lembrete no PC é o aviso local', () => {
