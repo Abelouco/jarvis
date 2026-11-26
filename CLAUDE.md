@@ -49,4 +49,9 @@ Assistente de IA pessoal do dono deste repositório, no PC (Windows) e no celula
   - migração 0014 (`notice_settings`, `notice_rules`, `notices`, `devices`, pg_cron + pg_net, chave do vigia no Vault);
   - Edge Function `avisos_vigia` (regras em `decisao.ts`, gatilhos tarefa atrasada e lembrete na hora);
   - PC: `apps/desktop/src/avisos.ts` (sinal de PC aberto e notificação do Windows pelo evento `notify`).
+  - Etapa 2 (push Android) feita em 2026-11-26:
+    - `apps/mobile/src/push.ts` registra o token Expo em `devices`;
+    - o vigia envia pelo Expo Push; sensível sai como "conteúdo reservado";
+    - Firebase `jarvis-3b544`, com a chave FCM V1 no EAS;
+    - `google-services.json` fora do git (repo público): EAS file env `GOOGLE_SERVICES_JSON` via `app.config.js`; a chave fica em `C:\Users\abeld\.tauri\jarvis-fcm.json`.
 - Fase 4: ações no mundo (computador, calendário, e-mail), finanças e saúde opcionais.
