@@ -19,6 +19,7 @@ import { htmlHabitos, ligarHabitos } from './habitos';
 import { htmlConhecimento, ligarConhecimento } from './conhecimento';
 import { htmlHoje, ligarHoje } from './hoje';
 import { ligarAvisos } from './avisos';
+import { htmlAvisos, ligarAbaAvisos } from './abaAvisos';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const esc = (s: string) =>
@@ -138,11 +139,11 @@ let tarefasVistas: Set<string> | null = null;
 // Ids já desenhados: só os novos entram com animação.
 let atividadesVistas = new Set<number>();
 
-type Aba = 'hoje' | 'conversa' | 'tarefas' | 'projetos' | 'habitos' | 'conhecimento' | 'lembretes' | 'memoria';
+type Aba = 'hoje' | 'conversa' | 'tarefas' | 'projetos' | 'habitos' | 'conhecimento' | 'lembretes' | 'avisos' | 'memoria';
 const lerAba = (): Aba => {
   try {
     const salva = localStorage.getItem('jarvis.aba');
-    return salva === 'hoje' || salva === 'tarefas' || salva === 'projetos' || salva === 'habitos' || salva === 'conhecimento' || salva === 'lembretes' || salva === 'memoria'
+    return salva === 'hoje' || salva === 'tarefas' || salva === 'projetos' || salva === 'habitos' || salva === 'conhecimento' || salva === 'lembretes' || salva === 'avisos' || salva === 'memoria'
       ? salva : 'conversa';
   } catch {
     return 'conversa';
@@ -197,6 +198,7 @@ async function montarPainel() {
               <button type="button" data-aba="habitos">Hábitos</button>
               <button type="button" data-aba="conhecimento">Conhecimento</button>
               <button type="button" data-aba="lembretes">Lembretes</button>
+              <button type="button" data-aba="avisos">Avisos</button>
               <button type="button" data-aba="memoria">Memória</button>
             </nav>
             <div class="vista" id="vista-hoje">${htmlHoje()}</div>
@@ -218,6 +220,7 @@ async function montarPainel() {
               <div id="memorias"></div>
             </div>
             <div class="vista" id="vista-lembretes">${htmlLembretes()}</div>
+            <div class="vista" id="vista-avisos">${htmlAvisos()}</div>
             <div class="vista" id="vista-projetos">${htmlProjetos()}</div>
             <div class="vista" id="vista-habitos">${htmlHabitos()}</div>
             <div class="vista" id="vista-conhecimento">${htmlConhecimento()}</div>
@@ -246,6 +249,12 @@ async function montarPainel() {
   ligarHoje($<HTMLDivElement>('#vista-hoje'), {
     pulsar: () => nucleo?.pulsar(0.8, 'criado'),
     irPara: (destino) => $<HTMLElement>('#abas').querySelector<HTMLButtonElement>(`button[data-aba="${destino}"]`)?.click(),
+  });
+  const abaAvisos = ligarAbaAvisos($<HTMLDivElement>('#vista-avisos'), {
+    selo: (n) => {
+      const b = $<HTMLElement>('#abas').querySelector<HTMLButtonElement>('button[data-aba="avisos"]');
+      if (b) b.dataset.selo = n > 0 ? String(n) : '';
+    },
   });
 
   // Um único ouvinte de clique para a lista inteira.
@@ -355,10 +364,12 @@ async function montarPainel() {
     $<HTMLDivElement>('#vista-conversa').hidden = aba !== 'conversa';
     $<HTMLDivElement>('#vista-tarefas').hidden = aba !== 'tarefas';
     $<HTMLDivElement>('#vista-lembretes').hidden = aba !== 'lembretes';
+    $<HTMLDivElement>('#vista-avisos').hidden = aba !== 'avisos';
     $<HTMLDivElement>('#vista-projetos').hidden = aba !== 'projetos';
     $<HTMLDivElement>('#vista-habitos').hidden = aba !== 'habitos';
     $<HTMLDivElement>('#vista-conhecimento').hidden = aba !== 'conhecimento';
     $<HTMLDivElement>('#vista-memoria').hidden = aba !== 'memoria';
+    if (aba === 'avisos') abaAvisos.recarregar();
     if (aba === 'conversa') campoFala.focus();
   };
   $<HTMLElement>('#abas').onclick = (e) => {

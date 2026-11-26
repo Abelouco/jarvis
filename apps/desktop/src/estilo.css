@@ -874,3 +874,83 @@ tr.md-destaque > td { background: rgba(60, 196, 255, 0.08); }
 @media (max-width: 900px) {
   .hj-grade { grid-template-columns: 1fr; }
 }
+
+/* ---- avisos ---- */
+.av { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.av-topo { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.av-topo h2 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+.av-sub { margin: 4px 0 0; color: var(--texto-2); font-size: 13.5px; max-width: 52ch; }
+.av-sub em { color: var(--texto); font-style: normal; }
+.av-lidos {
+  border: 1px solid var(--borda); background: rgba(127, 216, 255, 0.1); color: var(--ciano);
+  padding: 8px 14px; border-radius: 10px; font-size: 13px; white-space: nowrap;
+}
+.av-lidos:hover { border-color: var(--borda-forte); background: rgba(127, 216, 255, 0.16); }
+.av-erro { color: var(--erro); margin: 0; font-size: 13.5px; }
+.av-grade { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; min-height: 0; }
+.av-historico h3, .av-cartao h3 {
+  margin: 0 0 10px; font-size: 14px; font-weight: 600;
+}
+.av-lista, .av-regras { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.av-lado { display: flex; flex-direction: column; gap: 14px; }
+.av-cartao {
+  padding: 14px 16px; border-radius: var(--raio); background: var(--vidro);
+  border: 1px solid var(--borda);
+}
+.av-item {
+  padding: 12px 14px; border-radius: var(--raio); background: var(--vidro);
+  border: 1px solid var(--borda); cursor: default; animation: entrar 0.25s ease-out;
+}
+.av-item.av-nao-lido {
+  border-left: 3px solid var(--ciano); cursor: pointer;
+}
+.av-item.av-urgente { border-left: 3px solid var(--alta); }
+.av-item.av-apagado { opacity: .55; }
+.av-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin-bottom: 4px; }
+.av-tipo, .av-quando, .av-status, .av-canal {
+  font-family: var(--mono); font-size: 11px; color: var(--texto-2);
+}
+.av-tipo { color: var(--ciano); }
+.av-item strong { display: block; font-size: 14.5px; font-weight: 600; }
+.av-corpo { white-space: pre-line; color: var(--texto); margin: 6px 0; font-size: 13.5px; line-height: 1.45; }
+.av-motivo { font-size: 12.5px; color: var(--texto-2); margin: 0; }
+.av-filhos { margin-top: 8px; }
+.av-filhos summary { cursor: pointer; color: var(--texto-2); font-size: 12px; }
+.av-filhos ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.av-filhos li { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--borda); background: rgba(0,0,0,.18); }
+.av-vazio { margin: 0; color: var(--apagado); font-size: 13px; }
+.av-prefs { display: flex; flex-direction: column; gap: 12px; }
+.av-ligado { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--texto); }
+.av-prefs fieldset {
+  margin: 0; padding: 10px 12px; border: 1px solid var(--borda); border-radius: 10px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.av-prefs legend { padding: 0 4px; color: var(--texto-2); font-size: 12px; }
+.av-prefs label { font-size: 13px; color: var(--texto); display: flex; align-items: center; gap: 8px; }
+.av-prefs small { color: var(--apagado); font-size: 11.5px; }
+.av-prefs input[type="time"] {
+  border: 1px solid var(--borda); background: rgba(0, 0, 0, 0.25); color: var(--texto);
+  border-radius: 10px; padding: 7px 10px; font: inherit; color-scheme: dark;
+}
+.av-prefs input[type="time"]:focus { outline: none; border-color: var(--borda-forte); }
+.av-salvar {
+  border: 0; background: var(--ciano-forte); color: #031018; font-weight: 600;
+  padding: 8px 16px; border-radius: 10px; font-size: 13px; align-self: flex-start;
+}
+.av-salvo { font-size: 12.5px; color: var(--baixa); margin-left: 6px; }
+.av-regras li {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 13px; color: var(--texto); padding: 8px 0; border-bottom: 1px solid var(--borda);
+}
+.av-regras li:last-child { border-bottom: 0; }
+.av-normal {
+  margin-left: auto; border: 0; background: none; color: var(--texto-2); font-size: 12px; padding: 2px 4px;
+}
+.av-normal:hover { color: var(--ciano); }
+.abas-painel button[data-selo]:not([data-selo=""])::after {
+  content: attr(data-selo); margin-left: 6px; padding: 0 6px; border-radius: 999px;
+  background: var(--ciano); color: #04060b; font-size: 11px; font-weight: 600;
+}
+@media (max-width: 900px) {
+  .av-grade { grid-template-columns: 1fr; }
+}
