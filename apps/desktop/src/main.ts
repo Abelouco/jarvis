@@ -17,6 +17,7 @@ import { htmlLembretes, ligarLembretes } from './lembretes';
 import { htmlProjetos, ligarProjetos } from './projetos';
 import { htmlHabitos, ligarHabitos } from './habitos';
 import { htmlConhecimento, ligarConhecimento } from './conhecimento';
+import { htmlHoje, ligarHoje } from './hoje';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const esc = (s: string) =>
@@ -136,11 +137,11 @@ let tarefasVistas: Set<string> | null = null;
 // Ids já desenhados: só os novos entram com animação.
 let atividadesVistas = new Set<number>();
 
-type Aba = 'conversa' | 'tarefas' | 'projetos' | 'habitos' | 'conhecimento' | 'lembretes' | 'memoria';
+type Aba = 'hoje' | 'conversa' | 'tarefas' | 'projetos' | 'habitos' | 'conhecimento' | 'lembretes' | 'memoria';
 const lerAba = (): Aba => {
   try {
     const salva = localStorage.getItem('jarvis.aba');
-    return salva === 'tarefas' || salva === 'projetos' || salva === 'habitos' || salva === 'conhecimento' || salva === 'lembretes' || salva === 'memoria'
+    return salva === 'hoje' || salva === 'tarefas' || salva === 'projetos' || salva === 'habitos' || salva === 'conhecimento' || salva === 'lembretes' || salva === 'memoria'
       ? salva : 'conversa';
   } catch {
     return 'conversa';
@@ -188,6 +189,7 @@ async function montarPainel() {
               </div>
             </div>
             <nav class="abas-painel" id="abas">
+              <button type="button" data-aba="hoje">Hoje</button>
               <button type="button" data-aba="conversa">Conversa</button>
               <button type="button" data-aba="tarefas">Tarefas</button>
               <button type="button" data-aba="projetos">Projetos</button>
@@ -196,6 +198,7 @@ async function montarPainel() {
               <button type="button" data-aba="lembretes">Lembretes</button>
               <button type="button" data-aba="memoria">Memória</button>
             </nav>
+            <div class="vista" id="vista-hoje">${htmlHoje()}</div>
             <div class="vista" id="vista-conversa">
               <div class="chat" id="chat"></div>
               <div class="chat-rodape">
@@ -239,6 +242,10 @@ async function montarPainel() {
   ligarProjetos($<HTMLDivElement>('#vista-projetos'), { pulsar: () => nucleo?.pulsar(0.8, 'criado') });
   ligarHabitos($<HTMLDivElement>('#vista-habitos'), { pulsar: () => nucleo?.pulsar(0.8, 'criado') });
   ligarConhecimento($<HTMLDivElement>('#vista-conhecimento'), { pulsar: () => nucleo?.pulsar(0.8, 'criado') });
+  ligarHoje($<HTMLDivElement>('#vista-hoje'), {
+    pulsar: () => nucleo?.pulsar(0.8, 'criado'),
+    irPara: (destino) => $<HTMLElement>('#abas').querySelector<HTMLButtonElement>(`button[data-aba="${destino}"]`)?.click(),
+  });
 
   // Um único ouvinte de clique para a lista inteira.
   $<HTMLDivElement>('#listas').onclick = (e) => {
@@ -343,6 +350,7 @@ async function montarPainel() {
     $<HTMLElement>('#abas').querySelectorAll<HTMLButtonElement>('button').forEach((b) =>
       b.classList.toggle('ativa', b.dataset.aba === aba),
     );
+    $<HTMLDivElement>('#vista-hoje').hidden = aba !== 'hoje';
     $<HTMLDivElement>('#vista-conversa').hidden = aba !== 'conversa';
     $<HTMLDivElement>('#vista-tarefas').hidden = aba !== 'tarefas';
     $<HTMLDivElement>('#vista-lembretes').hidden = aba !== 'lembretes';

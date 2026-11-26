@@ -318,7 +318,7 @@ input { font: inherit; }
 .faixa-voz { bottom: 72px; }
 
 /* ---------- abas do painel ---------- */
-.abas-painel { align-self: flex-start; display: inline-grid; grid-template-columns: repeat(7, auto); padding: 4px; margin-bottom: 18px; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--borda); border-radius: 12px; }
+.abas-painel { align-self: flex-start; display: inline-grid; grid-template-columns: repeat(8, auto); padding: 4px; margin-bottom: 18px; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--borda); border-radius: 12px; }
 .abas-painel button { border: 0; background: none; color: var(--texto-2); padding: 8px 20px; border-radius: 9px; font-size: 13.5px; transition: 0.2s; }
 .abas-painel button.ativa { background: rgba(127, 216, 255, 0.12); color: var(--ciano); box-shadow: inset 0 0 0 1px var(--borda-forte); }
 .vista[hidden] { display: none; }
@@ -826,4 +826,66 @@ tr.md-destaque > td { background: rgba(60, 196, 255, 0.08); }
   .cn-lado { border-right: 0; border-bottom: 1px solid var(--borda); max-height: none; flex-direction: row; flex-wrap: wrap; padding-bottom: 10px; }
   .cn-grupo { flex-direction: row; flex-wrap: wrap; }
   .cn-editor-linha { grid-template-columns: 1fr; }
+}
+
+/* ---- hoje ---- */
+.hj { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.hj-topo { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.hj-saudacao { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+.hj-data { margin: 4px 0 0; color: var(--texto-2); font-size: 13.5px; }
+.hj-selo {
+  font-size: 12px; color: var(--ciano); border: 1px solid var(--ciano); border-radius: 999px;
+  padding: 4px 12px; white-space: nowrap;
+}
+.hj-resumo { margin: 0; color: var(--texto-2); font-size: 13.5px; }
+.hj-grade { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.hj-largo { grid-column: 1 / -1; }
+.hj-cartao {
+  padding: 14px 16px; border-radius: 12px; background: rgba(14, 22, 36, 0.45);
+  border: 1px solid var(--borda); animation: entrar 0.25s ease-out;
+}
+.hj-cartao:hover { border-color: var(--borda-forte); }
+.hj-cartao h3 {
+  margin: 0 0 10px; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px;
+}
+.hj-ver {
+  margin-left: auto; border: 0; background: none; color: var(--texto-2); font-size: 12px; padding: 2px 4px;
+}
+.hj-ver:hover { color: var(--ciano); }
+.hj-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.hj-lista li { display: flex; align-items: center; gap: 10px; font-size: 13.5px; min-width: 0; }
+.hj-titulo { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.hj-check {
+  width: 16px; height: 16px; flex-shrink: 0; border-radius: 4px; border: 1.5px solid var(--borda-forte);
+  background: none; padding: 0;
+}
+.hj-check:hover { border-color: var(--ciano); }
+.hj-habito {
+  display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  border: 1px solid var(--borda); background: rgba(14, 22, 36, 0.35); color: var(--texto);
+  border-radius: 999px; padding: 6px 12px; font-size: 13px; text-align: left; max-width: 100%;
+}
+.hj-habito:hover { border-color: var(--borda-forte); }
+.hj-habito.feito {
+  background: rgba(127, 216, 255, 0.14); border-color: var(--borda-forte); color: var(--ciano);
+}
+.hj-habito.feito::before { content: '✓'; margin-right: 2px; }
+.hj-meta, .hj-seq, .hj-hora, .hj-proj-meta { font-family: var(--mono); font-size: 11.5px; color: var(--texto-2); }
+.hj-atrasada { color: #ff7a7a; }
+.hj-passou { opacity: .5; }
+.hj-vazio { margin: 0; color: var(--apagado); font-size: 13px; }
+.hj-barra {
+  height: 6px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; flex: 1; min-width: 80px;
+}
+.hj-barra span { display: block; height: 100%; background: var(--ciano); border-radius: inherit; }
+.hj-proj-topo { display: flex; align-items: baseline; gap: 10px; width: 100%; }
+.hj-prazo { font-family: var(--mono); font-size: 11px; color: var(--texto-2); white-space: nowrap; }
+.hj-convite, .hj-diario {
+  border: 0; background: none; color: var(--texto-2); font-size: 13.5px; padding: 0; text-align: left;
+  line-height: 1.45; cursor: pointer;
+}
+.hj-convite:hover, .hj-diario:hover { color: var(--ciano); }
+.hj-mais { justify-content: flex-start; }
+@media (max-width: 900px) {
+  .hj-grade { grid-template-columns: 1fr; }
 }
