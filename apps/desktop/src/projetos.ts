@@ -1,7 +1,7 @@
-// Aba Projetos (Fase 2 · Etapa 3): lista com progresso e, ao abrir um projeto, marcos + quadro
+// Aba Projetos (Fase 2 · Etapa 3): lista com progresso e, ao abrir um projeto, o quadro
 // (A fazer / Fazendo / Feito). Tudo no banco local; o sync leva para o Supabase e a IA vê igual.
 // Sem arrastar-e-soltar: no Windows o Tauri intercepta o "drag" da janela; as setas movem entre colunas.
-import { hojeSP, somarDias, type Milestone, type ProjetoResumo, type StatusProjeto, type Task } from '@jarvis/core';
+import { hojeSP, somarDias, type ProjetoResumo, type StatusProjeto, type Task } from '@jarvis/core';
 import { jarvis } from './jarvis';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -48,7 +48,7 @@ export function htmlProjetos() {
           </div>
         </div>
       </form>
-      <p class="dica-tarefas">Ou peça na conversa: <em>"cria o projeto Lançar o app com os marcos protótipo e testes"</em>,
+      <p class="dica-tarefas">Ou peça na conversa: <em>"cria o projeto Lançar o app"</em>,
         <em>"põe a tarefa comprar tinta no projeto reforma"</em>, <em>"como está o projeto reforma?"</em></p>
       <div id="projetos"></div>
     </div>
@@ -61,7 +61,6 @@ export function ligarProjetos(raiz: HTMLElement, op: { pulsar?: () => void } = {
   const form = raiz.querySelector<HTMLFormElement>('#novo-projeto')!;
   const caixa = raiz.querySelector<HTMLDivElement>('#projetos')!;
   let aberto: string | null = null;
-  let filtroMarco: string | null = null;
   let editandoInfo = false;
 
   // ---------- novo projeto ----------
@@ -97,7 +96,6 @@ export function ligarProjetos(raiz: HTMLElement, op: { pulsar?: () => void } = {
     const progresso = pct(p.feitas, p.total);
     const info = [
       p.total ? `${p.feitas}/${p.total} tarefas` : 'sem tarefas',
-      p.marcos ? `${p.marcosFeitos}/${p.marcos} marcos` : '',
       p.due_date ? `<span class="${atrasado ? 'atrasada' : ''}">prazo ${rotuloData(p.due_date)}</span>` : '',
     ].filter(Boolean).join(' · ');
     return `<li class="projeto" data-id="${p.id}" data-s="${p.status}" data-p="${p.priority}">
@@ -128,22 +126,19 @@ export function ligarProjetos(raiz: HTMLElement, op: { pulsar?: () => void } = {
   // ---------- detalhe ----------
   function abrir(id: string | null) {
     aberto = id;
-    filtroMarco = null;
     editandoInfo = false;
     lista.hidden = !!id;
     detalhe.hidden = !id;
     void desenhar();
   }
 
-  function cardTarefa(t: Task, marcos: Map<string, Milestone>) {
+  function cardTarefa(t: Task) {
     const col = colunaDe(t);
     const i = COLUNAS.findIndex(([c]) => c === col);
     const atrasada = !t.done_at && t.due_date && t.due_date < hojeSP();
-    const marco = t.milestone_id ? marcos.get(t.milestone_id) : undefined;
     return `<li class="card ${t.done_at ? 'feita' : ''}" data-id="${t.id}" data-p="${t.priority}">
       <div class="card-titulo">${esc(t.title)}</div>
       <div class="card-pe">
-        ${marco ? `<span class="card-marco" title="Marco">◆ ${esc(marco.title)}</span>` : ''}
         ${t.due_date ? `<span class="quando ${atrasada ? 'atrasada' : ''}">${rotuloData(t.due_date)}${t.due_time ? ` · ${t.due_time.slice(0, 5)}` : ''}</span>` : ''}
         <span class="card-acoes">
           ${i > 0 ? `<button data-mover="${COLUNAS[i - 1]![0]}" title="Voltar para ${COLUNAS[i - 1]![1]}">←</button>` : ''}
@@ -159,10 +154,8 @@ export function ligarProjetos(raiz: HTMLElement, op: { pulsar?: () => void } = {
     const ps = await jarvis.projetos.listar();
     const p = ps.find((x) => x.id === aberto);
     if (!p) return abrir(null); // apagado (aqui ou em outro aparelho)
-    const [marcos, todas] = await Promise.all([jarvis.projetos.marcos(p.id), jarvis.tarefas.listar()]);
-    const mapa = new Map(marcos.map((m) => [m.id, m]));
-    let tarefas = todas.filter((t) => t.project_id === p.id);
-    if (filtroMarco) tarefas = tarefas.filter((t) => (filtroMarco === 'sem' ? !t.milestone_id || !mapa.has(t.milestone_id) : t.milestone_id === filtroMarco));
+    const todas = await jarvis.tarefas.listar();
+    const tarefas = todas.filter((t) => t.project_id === p.id);
     const hoje = hojeSP();
     const todasDoProjeto = todas.filter((t) => t.project_id === p.id);
     const progresso = pct(todasDoProjeto.filter((t) => t.done_at).length, todasDoProjeto.length);
@@ -196,33 +189,10 @@ export function ligarProjetos(raiz: HTMLElement, op: { pulsar?: () => void } = {
         <button class="link perigo" data-a="apagar">Apagar</button>
       </div>
       ${info}
-      <section class="secao marcos">
-        <h3>Marcos <b>${marcos.filter((m) => m.done_at).length}/${marcos.length}</b></h3>
-        <ul class="lista-marcos">
-          ${marcos.map((m) => `<li class="marco ${m.done_at ? 'feito' : ''}" data-id="${m.id}">
-            <button class="check" title="${m.done_at ? 'Reabrir' : 'Concluir'}">✓</button>
-            <span class="titulo">${esc(m.title)}</span>
-            ${m.due_date ? `<span class="quando ${!m.done_at && m.due_date < hoje ? 'atrasada' : ''}">${rotuloData(m.due_date)}</span>` : ''}
-            <button class="apagar" title="Apagar marco">×</button>
-          </li>`).join('')}
-        </ul>
-        <form class="novo-marco" id="novo-marco" autocomplete="off">
-          <input name="t" placeholder="+ Novo marco (ex.: Protótipo pronto)" maxlength="200" />
-          <input type="date" name="d" title="Data-alvo (opcional)" />
-          <button class="salvar">Adicionar</button>
-        </form>
-      </section>
       <section class="secao">
         <h3>Quadro</h3>
-        ${marcos.length ? `<div class="chips filtro-marco">
-          <button type="button" data-filtro="" class="${!filtroMarco ? 'ativa' : ''}">Todas</button>
-          ${marcos.map((m) => `<button type="button" data-filtro="${m.id}" class="${filtroMarco === m.id ? 'ativa' : ''}">◆ ${esc(m.title)}</button>`).join('')}
-          <button type="button" data-filtro="sem" class="${filtroMarco === 'sem' ? 'ativa' : ''}">Sem marco</button>
-        </div>` : ''}
         <form class="nova-tarefa-proj" id="nova-tarefa-proj" autocomplete="off">
           <input name="t" placeholder="+ Nova tarefa neste projeto" maxlength="200" />
-          ${marcos.length ? `<select name="m" title="Marco"><option value="">sem marco</option>${marcos.filter((m) => !m.done_at)
-            .map((m) => `<option value="${m.id}" ${filtroMarco === m.id ? 'selected' : ''}>◆ ${esc(m.title)}</option>`).join('')}</select>` : ''}
           <input type="date" name="d" title="Prazo (opcional)" />
           <button class="salvar">Adicionar</button>
         </form>
@@ -231,28 +201,19 @@ export function ligarProjetos(raiz: HTMLElement, op: { pulsar?: () => void } = {
             const xs = tarefas.filter((t) => colunaDe(t) === c);
             return `<div class="coluna" data-col="${c}">
               <h4>${nome} <b>${xs.length}</b></h4>
-              <ul>${xs.map((t) => cardTarefa(t, mapa)).join('') || '<li class="coluna-vazia">—</li>'}</ul>
+              <ul>${xs.map((t) => cardTarefa(t)).join('') || '<li class="coluna-vazia">—</li>'}</ul>
             </div>`;
           }).join('')}
         </div>
       </section>`;
 
     // Formulários do detalhe (recriados a cada desenho).
-    const fm = detalhe.querySelector<HTMLFormElement>('#novo-marco')!;
-    fm.onsubmit = async (e) => {
-      e.preventDefault();
-      const t = (fm.t as HTMLInputElement).value.trim();
-      if (!t) return;
-      await jarvis.projetos.criarMarco(p.id, t, (fm.d as HTMLInputElement).value || null);
-      op.pulsar?.();
-    };
     const ft = detalhe.querySelector<HTMLFormElement>('#nova-tarefa-proj')!;
     ft.onsubmit = async (e) => {
       e.preventDefault();
       const t = (ft.t as HTMLInputElement).value.trim();
       if (!t) return;
-      const marco = (ft.querySelector('select') as HTMLSelectElement | null)?.value || null;
-      await jarvis.tarefas.criar(t, 'media', (ft.d as HTMLInputElement).value || null, null, { projeto: p.id, marco });
+      await jarvis.tarefas.criar(t, 'media', (ft.d as HTMLInputElement).value || null, null, { projeto: p.id });
       op.pulsar?.();
       setTimeout(() => detalhe.querySelector<HTMLInputElement>('#nova-tarefa-proj input[name="t"]')?.focus(), 50);
     };
@@ -300,15 +261,6 @@ export function ligarProjetos(raiz: HTMLElement, op: { pulsar?: () => void } = {
       return abrir(null);
     }
     if (b.dataset.status) return jarvis.projetos.editar(id, { status: b.dataset.status as StatusProjeto });
-    if (b.dataset.filtro !== undefined) {
-      filtroMarco = b.dataset.filtro || null;
-      return void desenhar();
-    }
-    const marco = b.closest<HTMLElement>('.marco')?.dataset.id;
-    if (marco) {
-      if (b.classList.contains('check')) return jarvis.projetos.alternarMarco(marco);
-      if (b.classList.contains('apagar')) return jarvis.projetos.apagarMarco(marco);
-    }
     const card = b.closest<HTMLElement>('.card')?.dataset.id;
     if (card) {
       if (b.dataset.mover) return jarvis.tarefas.mover(card, { coluna: b.dataset.mover as Coluna });

@@ -609,35 +609,21 @@ tr.md-destaque > td { background: rgba(60, 196, 255, 0.08); }
 .proj-cabeca p { margin: 6px 0 0; color: var(--texto-2); line-height: 1.5; }
 .proj-meta { display: flex; gap: 16px; margin-top: 10px; font-family: var(--mono); font-size: 11.5px; color: var(--texto-2); }
 .proj-editar { display: flex; flex-direction: column; gap: 8px; }
-.proj-editar input, .proj-editar textarea, .novo-marco input, .nova-tarefa-proj input, .nova-tarefa-proj select {
+.proj-editar input, .proj-editar textarea, .nova-tarefa-proj input, .nova-tarefa-proj select {
   background: rgba(14, 22, 36, 0.6); border: 1px solid var(--borda); border-radius: 10px; color: var(--texto);
   padding: 8px 10px; font: inherit; font-size: 13.5px; outline: none; color-scheme: dark;
 }
 .proj-editar input[name='nome'] { font-size: 18px; font-weight: 600; }
 .proj-editar label { color: var(--texto-2); font-size: 13px; display: flex; align-items: center; gap: 8px; }
-.proj-editar input:focus, .proj-editar textarea:focus, .novo-marco input:focus, .nova-tarefa-proj input:focus,
+.proj-editar input:focus, .proj-editar textarea:focus, .nova-tarefa-proj input:focus,
 .nova-tarefa-proj select:focus { border-color: var(--borda-forte); }
-.proj-editar .salvar, .novo-marco .salvar, .nova-tarefa-proj .salvar {
+.proj-editar .salvar, .nova-tarefa-proj .salvar {
   border: 0; border-radius: 10px; padding: 8px 14px; font-size: 13px; font-weight: 600; background: var(--ciano-forte); color: #031018;
 }
 .proj-editar .cancelar { border: 0; background: none; color: var(--apagado); padding: 7px 10px; font-size: 13px; }
 
-.lista-marcos { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.marco { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 10px; }
-.marco:hover { background: rgba(20, 32, 52, 0.5); }
-.marco .titulo { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.marco .quando { font-family: var(--mono); font-size: 11px; color: var(--texto-2); }
-.marco .quando.atrasada { color: var(--erro); }
-.marco .check { width: 18px; height: 18px; border-radius: 5px; transform: rotate(45deg); }
-.marco .check { color: transparent; }
-.marco.feito .check { background: var(--ciano-forte); border-color: var(--ciano-forte); color: #031018; }
-.marco.feito .titulo { color: var(--apagado); text-decoration: line-through; }
-.marco .apagar { border: 0; background: none; color: var(--apagado); font-size: 17px; opacity: 0; }
-.marco:hover .apagar { opacity: 1; }
-.marco .apagar:hover { color: var(--erro); }
-.novo-marco, .nova-tarefa-proj { display: flex; gap: 8px; margin-top: 4px; }
-.novo-marco input[name='t'], .nova-tarefa-proj input[name='t'] { flex: 1; min-width: 0; }
-.filtro-marco { margin-bottom: 10px; }
+.nova-tarefa-proj { display: flex; gap: 8px; margin-top: 4px; }
+.nova-tarefa-proj input[name='t'] { flex: 1; min-width: 0; }
 
 .quadro { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
 .coluna { background: rgba(0, 0, 0, 0.22); border: 1px solid var(--borda); border-radius: var(--raio); padding: 12px 10px; min-height: 140px; }
@@ -655,7 +641,6 @@ tr.md-destaque > td { background: rgba(60, 196, 255, 0.08); }
 .card-titulo { font-size: 13.5px; overflow-wrap: anywhere; }
 .card.feita .card-titulo { color: var(--apagado); text-decoration: line-through; }
 .card-pe { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; min-height: 20px; }
-.card-marco { font-size: 11px; color: var(--texto-2); }
 .card .quando { font-family: var(--mono); font-size: 10.5px; color: var(--texto-2); opacity: 0.8; }
 .card .quando.atrasada { color: var(--erro); opacity: 1; }
 .card-acoes { margin-left: auto; display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; }
