@@ -34,6 +34,7 @@ Assistente de IA pessoal do dono deste repositório, no PC (Windows) e no celula
 - PC (release): `pnpm.cmd release:pc X.Y.Z` numa aba do Terminal, com tudo commitado. Sobe a versão, cria a tag e envia; o GitHub Actions (`release-pc.yml`) gera o .exe assinado e o `latest.json` no GitHub Releases, e o app instalado se atualiza sozinho. Chave do updater em `C:\Users\abeld\.tauri\jarvis-updater.key` (secrets `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` no GitHub); só a pública fica no `tauri.conf.json`.
 - Celular: app Android instalado (.apk do EAS, perfil `preview`). Comandos do EAS rodam **dentro de `apps\mobile`** (na raiz ele cria um `app.json` vazio e falha). Mudança só de JS/tela → `npx.cmd eas-cli@latest update --channel preview --environment preview --message "..." --non-interactive` (chega sem reinstalar). Mudança nativa (plugin, permissão, módulo novo) → novo `eas build -p android --profile preview`.
 - Release do Android usa R8: módulo nativo do Expo que quebrar no .apk pode precisar de regra em `extraProguardRules` (app.json, plugin expo-build-properties).
+- Edge Functions: o dono fez login no Supabase CLI. Publicar numa aba do Terminal: `npx.cmd -y supabase@latest functions deploy NOME --project-ref pmqxeikcnuywvcxkeoep --use-api --yes` (lê os arquivos do disco; evita copiar tudo pelo MCP).
 - Comandos globais/EAS rodam numa aba do Terminal com `npm.cmd`/`pnpm.cmd`/`npx.cmd` (o shell do Claude isola o AppData).
 
 ## Ambiente do dono
@@ -63,4 +64,5 @@ Assistente de IA pessoal do dono deste repositório, no PC (Windows) e no celula
     - manhã em `morning_at` (plano do dia, atrasadas, prazos e o que o silêncio segurou, que sai junto no resumo em vez de avulso);
     - noite em `evening_at` (feito, hábitos, o que ficou, amanhã);
     - texto pronto, sem IA; "só às X" do dono muda a hora do resumo; no push, só a linha sensível some.
+  - Etapa 5 (regras pela conversa) feita em 2026-11-26: `ia_conversar/avisos.ts` com `avisos_silenciar`, `avisos_ligar`, `avisos_desligar_todos`, `avisos_horario`, `avisos_configurar` e `avisos_listar` (motivo de cada aviso), com recibo para desfazer.
 - Fase 4: ações no mundo (computador, calendário, e-mail), finanças e saúde opcionais.
