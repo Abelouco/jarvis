@@ -18,6 +18,7 @@ import { htmlProjetos, ligarProjetos } from './projetos';
 import { htmlHabitos, ligarHabitos } from './habitos';
 import { htmlConhecimento, ligarConhecimento } from './conhecimento';
 import { htmlHoje, ligarHoje } from './hoje';
+import { ligarAvisos } from './avisos';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const esc = (s: string) =>
@@ -440,7 +441,9 @@ async function atualizarPainel() {
   // Cada projeto real é um nó dourado do cérebro; as tarefas dele, pontos em volta.
   nucleo?.definirProjetos(projetos.filter((p) => p.status !== 'concluido').map((p) => ({
     id: p.id, progresso: p.total ? p.feitas / p.total : 0,
-    tarefas: lista.filter((t) => t.project_id === p.id && !t.done_at).map((t) => t.id),
+    tarefas: lista.filter((t) => t.project_id === p.id && !t.done_at && t.board_column !== 'fazendo').map((t) => t.id),
+    fazendo: lista.filter((t) => t.project_id === p.id && !t.done_at && t.board_column === 'fazendo').map((t) => t.id),
+    feitas: lista.filter((t) => t.project_id === p.id && t.done_at).map((t) => t.id),
   })));
   const hoje = hojeSP();
   const abertas = lista.filter((t) => !t.done_at).sort(porPrazo);
@@ -821,4 +824,5 @@ jarvis.aoEvento((e) => {
 
 montarControlesJanela();
 void jarvis.iniciar().then(decidirTela);
+ligarAvisos({ pulsar: () => nucleo?.pulsar(0.8, 'criado') });
 ligarAtualizacao();

@@ -22,6 +22,7 @@ Responda e comente sempre em português do Brasil.
    └─ Edge Functions (Deno):
         ia_conversar   chat, roteador, pesquisa, memória, ferramentas (tarefas, lembretes, projetos, hábitos)
         ia_transcrever Whisper do Groq + revisão de nomes
+        avisos_vigia   vigia dos avisos (pg_cron a cada minuto): detecta, decide, grava em `notices`, entrega
                       │
                       ▼
    Groq (rápido, sensível, transcrição)  ·  Gemini Flash (raciocínio, nunca sensível)  ·  Tavily (busca)
@@ -56,6 +57,8 @@ Responda e comente sempre em português do Brasil.
 | `.../fala.ts` | Resumo falado e pronúncias ensinadas |
 | `.../tarefas.ts` | **Planejador** (Groq em JSON) + executores de tarefas + `registrar()` de extensões + confirmar/cancelar/desfazer |
 | `.../lembretes.ts`, `projetos.ts`, `habitos.ts` | Extensões registradas no planejador |
+| `supabase/functions/avisos_vigia/` | Vigia dos avisos (Fase 3). `decisao.ts` = regras puras (detectores, silêncio, hora fixa, junção, canal), testadas em `decisao.test.ts`; `index.ts` = banco e entrega. Deploy: os 2 `.ts`, `verify_jwt` desligado (a função confere a chave do Vault no cabeçalho `x-vigia-chave`) |
+| `apps/desktop/src/avisos.ts` | Sinal de "PC aberto" (`devices`, a cada minuto) e notificação do Windows quando chega o evento `notify` |
 | `.../regras.test.ts` | Testes (rota, datas, recorrência, detectores, hábitos, cópias iguais) |
 | `supabase/migrations/NNNN_*.sql` | Schema. Nunca editar uma já aplicada |
 | `scripts/release-pc.mjs` | Sobe versão, cria tag, envia → GitHub Actions gera o instalador |

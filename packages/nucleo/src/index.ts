@@ -35,8 +35,12 @@ export interface NoProjeto {
   id: string;
   /** 0 a 1 (tarefas concluídas / total) */
   progresso: number;
-  /** ids das tarefas do projeto (cada uma vira um ponto ligado ao nó) */
+  /** ids das tarefas abertas do projeto (cada uma vira um ponto dourado ligado ao nó) */
   tarefas: string[];
+  /** ids das tarefas em "Fazendo" (pontos azuis) */
+  fazendo?: string[];
+  /** ids das tarefas concluídas (pontos verdes) */
+  feitas?: string[];
 }
 
 export interface Nucleo {
@@ -61,6 +65,8 @@ export interface Nucleo {
 const TEAL = new THREE.Color('#38e1cf');
 const CIANO = new THREE.Color('#7fd8ff');
 const OURO = new THREE.Color('#ffc56b');
+const AZUL = new THREE.Color('#5aa9ff');
+const VERDE = new THREE.Color('#5cf29a');
 
 interface Perfil {
   cor: THREE.Color;
@@ -441,6 +447,16 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
   const matFiosProj = new THREE.LineBasicMaterial({
     color: OURO, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false,
   });
+  // Tarefas de projeto por estado: fazendo (azul) e concluída (verde); abertas ficam douradas.
+  const matTarefa = (cor: THREE.Color, claro: string) => new THREE.ShaderMaterial({
+    vertexShader: NOS_VERT,
+    fragmentShader: PONTO_FRAG,
+    uniforms: { ...uComuns, uCor: { value: cor }, uCor2: { value: new THREE.Color(claro) }, uOpacidade: { value: 1 } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const matFazendo = matTarefa(AZUL, '#e3f0ff');
+  const matFeita = matTarefa(VERDE, '#e6fff0');
+  let pontosEstado: THREE.Points[] = [];
   let pontosProj: THREE.Points | null = null;
   let fiosProj: THREE.LineSegments | null = null;
   let assinaturaProj = '';
@@ -595,10 +611,18 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
     },
     definirProjetos(projetos) {
       const lista = projetos.slice(0, 60);
-      const assinatura = lista.map((p) => `${p.id}:${Math.round(p.progresso * 20)}:${p.tarefas.slice(0, 24).join('.')}`).join(',');
+      // até 24 pontos por projeto: primeiro fazendo, depois abertas, depois feitas
+      const doProjeto = (p: NoProjeto) => [
+        ...(p.fazendo ?? []).map((id) => [id, 1] as const),
+        ...p.tarefas.map((id) => [id, 0] as const),
+        ...(p.feitas ?? []).map((id) => [id, 2] as const),
+      ].slice(0, 24);
+      const assinatura = lista.map((p) => `${p.id}:${Math.round(p.progresso * 20)}:${doProjeto(p).map(([id, e]) => id + e).join('.')}`).join(',');
       if (assinatura === assinaturaProj) return;
       assinaturaProj = assinatura;
       if (pontosProj) { nos.remove(pontosProj); pontosProj.geometry.dispose(); pontosProj = null; }
+      for (const pe of pontosEstado) { nos.remove(pe); pe.geometry.dispose(); }
+      pontosEstado = [];
       if (fiosProj) { nos.remove(fiosProj); fiosProj.geometry.dispose(); fiosProj = null; }
       if (!lista.length) return;
 
@@ -606,6 +630,8 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
       const sem: number[] = [];
       const tam: number[] = [];
       const fios: number[] = [];
+      // [posições, sementes] das tarefas em "Fazendo" (1) e concluídas (2)
+      const estados: Record<1 | 2, [number[], number[]]> = { 1: [[], []], 2: [[], []] };
       for (const p of lista) {
         const [a, b, c] = hashId(`projeto:${p.id}`);
         const dir = new THREE.Vector3(
@@ -621,15 +647,32 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
         const base = dir.clone().multiplyScalar(0.64);
         fios.push(base.x, base.y, base.z, centro.x, centro.y, centro.z);
         // tarefas: pontos pequenos em volta do nó, cada um preso a ele
-        for (const tid of p.tarefas.slice(0, 24)) {
+        for (const [tid, estado] of doProjeto(p)) {
           const [x, y, z] = hashId(tid);
           const off = new THREE.Vector3(x - 0.5, y - 0.5, z - 0.5).normalize().multiplyScalar(0.1 + z * 0.08);
           const q = centro.clone().add(off);
-          pos.push(q.x, q.y, q.z);
-          sem.push(x);
-          tam.push(0.02);
+          if (estado === 0) {
+            pos.push(q.x, q.y, q.z);
+            sem.push(x);
+            tam.push(0.02);
+          } else {
+            estados[estado][0].push(q.x, q.y, q.z);
+            estados[estado][1].push(x);
+          }
           fios.push(centro.x, centro.y, centro.z, q.x, q.y, q.z);
         }
+      }
+      for (const [estado, mat] of [[1, matFazendo], [2, matFeita]] as const) {
+        const [ps, ss] = estados[estado];
+        if (!ss.length) continue;
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ps), 3));
+        g.setAttribute('aSemente', new THREE.BufferAttribute(new Float32Array(ss), 1));
+        g.setAttribute('aTam', new THREE.BufferAttribute(new Float32Array(ss.length).fill(0.024), 1));
+        const pts = new THREE.Points(g, mat);
+        pts.frustumCulled = false;
+        pontosEstado.push(pts);
+        nos.add(pts);
       }
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
