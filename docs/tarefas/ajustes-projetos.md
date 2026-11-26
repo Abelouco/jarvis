@@ -119,10 +119,24 @@ Apague os dois blocos abaixo, inteiros:
 ### 2.11 Conferir
 Procure por `marco` e por `Marco` no arquivo. Não deve sobrar **nenhuma** ocorrência.
 
-## Passo 3: `apps/desktop/src/estilo.css`
-1. Procure os seletores `.marcos`, `.lista-marcos`, `.marco`, `.novo-marco`, `.filtro-marco` e `.card-marco`.
-2. Apague só as regras que usam **apenas** esses seletores.
-3. Se um seletor estiver junto de outros numa regra só (ex.: `.novo-marco, .nova-tarefa-proj { … }`), tire só o seletor do marco e mantenha a regra.
+## Passo 3: `apps/desktop/src/estilo.css` (linhas ~612–658)
+**3.1 Apague por inteiro** as linhas que começam com estes seletores. São só de marco, nada mais as usa:
+- `.lista-marcos {`
+- todas as que começam com `.marco ` ou `.marco:` ou `.marco.`: são 12 linhas seguidas, da ~626 à ~637;
+- `.filtro-marco {`
+- `.card-marco {`
+
+**3.2 Linhas que misturam marco com outra coisa:** tire **só** o pedaço do marco e deixe o resto.
+
+| Antes (começo da linha) | Depois |
+|---|---|
+| `.proj-editar input, .proj-editar textarea, .novo-marco input, .nova-tarefa-proj input, .nova-tarefa-proj select {` | `.proj-editar input, .proj-editar textarea, .nova-tarefa-proj input, .nova-tarefa-proj select {` |
+| `.proj-editar input:focus, .proj-editar textarea:focus, .novo-marco input:focus, .nova-tarefa-proj input:focus,` | `.proj-editar input:focus, .proj-editar textarea:focus, .nova-tarefa-proj input:focus,` |
+| `.proj-editar .salvar, .novo-marco .salvar, .nova-tarefa-proj .salvar {` | `.proj-editar .salvar, .nova-tarefa-proj .salvar {` |
+| `.novo-marco, .nova-tarefa-proj { display: flex; …` | `.nova-tarefa-proj { display: flex; …` |
+| `.novo-marco input[name='t'], .nova-tarefa-proj input[name='t'] { …` | `.nova-tarefa-proj input[name='t'] { …` |
+
+**3.3 Conferir:** procure `marco` no `estilo.css`. Não pode sobrar nenhuma ocorrência.
 
 ## Passo 4: verificar e gravar
 ```powershell
