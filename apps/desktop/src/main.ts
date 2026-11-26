@@ -16,6 +16,7 @@ import { htmlFormTarefa, ligarFormTarefa } from './formTarefa';
 import { htmlLembretes, ligarLembretes } from './lembretes';
 import { htmlProjetos, ligarProjetos } from './projetos';
 import { htmlHabitos, ligarHabitos } from './habitos';
+import { htmlConhecimento, ligarConhecimento } from './conhecimento';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const esc = (s: string) =>
@@ -135,11 +136,11 @@ let tarefasVistas: Set<string> | null = null;
 // Ids já desenhados: só os novos entram com animação.
 let atividadesVistas = new Set<number>();
 
-type Aba = 'conversa' | 'tarefas' | 'projetos' | 'habitos' | 'lembretes' | 'memoria';
+type Aba = 'conversa' | 'tarefas' | 'projetos' | 'habitos' | 'conhecimento' | 'lembretes' | 'memoria';
 const lerAba = (): Aba => {
   try {
     const salva = localStorage.getItem('jarvis.aba');
-    return salva === 'tarefas' || salva === 'projetos' || salva === 'habitos' || salva === 'lembretes' || salva === 'memoria'
+    return salva === 'tarefas' || salva === 'projetos' || salva === 'habitos' || salva === 'conhecimento' || salva === 'lembretes' || salva === 'memoria'
       ? salva : 'conversa';
   } catch {
     return 'conversa';
@@ -191,6 +192,7 @@ async function montarPainel() {
               <button type="button" data-aba="tarefas">Tarefas</button>
               <button type="button" data-aba="projetos">Projetos</button>
               <button type="button" data-aba="habitos">Hábitos</button>
+              <button type="button" data-aba="conhecimento">Conhecimento</button>
               <button type="button" data-aba="lembretes">Lembretes</button>
               <button type="button" data-aba="memoria">Memória</button>
             </nav>
@@ -214,6 +216,7 @@ async function montarPainel() {
             <div class="vista" id="vista-lembretes">${htmlLembretes()}</div>
             <div class="vista" id="vista-projetos">${htmlProjetos()}</div>
             <div class="vista" id="vista-habitos">${htmlHabitos()}</div>
+            <div class="vista" id="vista-conhecimento">${htmlConhecimento()}</div>
             <div class="vista" id="vista-tarefas">
             ${htmlFormTarefa()}
             <p class="dica-tarefas">Ou peça na conversa: <em>"toda segunda às 20h, pelada"</em>, <em>"o que tenho hoje?"</em>, <em>"conclui a do mercado"</em>. Clique numa tarefa para editar.</p>
@@ -235,6 +238,7 @@ async function montarPainel() {
   ligarLembretes($<HTMLDivElement>('#vista-lembretes'), { pulsar: () => nucleo?.pulsar(0.8, 'criado') });
   ligarProjetos($<HTMLDivElement>('#vista-projetos'), { pulsar: () => nucleo?.pulsar(0.8, 'criado') });
   ligarHabitos($<HTMLDivElement>('#vista-habitos'), { pulsar: () => nucleo?.pulsar(0.8, 'criado') });
+  ligarConhecimento($<HTMLDivElement>('#vista-conhecimento'), { pulsar: () => nucleo?.pulsar(0.8, 'criado') });
 
   // Um único ouvinte de clique para a lista inteira.
   $<HTMLDivElement>('#listas').onclick = (e) => {
@@ -344,6 +348,7 @@ async function montarPainel() {
     $<HTMLDivElement>('#vista-lembretes').hidden = aba !== 'lembretes';
     $<HTMLDivElement>('#vista-projetos').hidden = aba !== 'projetos';
     $<HTMLDivElement>('#vista-habitos').hidden = aba !== 'habitos';
+    $<HTMLDivElement>('#vista-conhecimento').hidden = aba !== 'conhecimento';
     $<HTMLDivElement>('#vista-memoria').hidden = aba !== 'memoria';
     if (aba === 'conversa') campoFala.focus();
   };
