@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  decidir, detectarAtrasadas, detectarLembretes, emSilencio, escolherCanais, juntar, proximaHora, textoPush, vencimento,
+  decidir, detectarAtrasadas, detectarDiario, detectarLembretes, detectarPrazos, detectarSequencias, emSilencio, escolherCanais, juntar, proximaHora, textoPush, vencimento,
   type Candidato, type Regra,
 } from './decisao.ts';
 
@@ -92,9 +92,42 @@ test('juntar: mesmo tipo vira um; lembrete e urgente saem sozinhos; janela de 15
   assert.equal(juntar([a('t5')], { tarefa_atrasada: '2026-11-26T14:40:00Z' }, agora, id).entregas.length, 1);
 });
 
-test('sensível: a cópia do vigia é igual à do ia_conversar', () => {
+test('cópias do vigia iguais às do ia_conversar (sensível, hábitos, repetição)', () => {
   const ler = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8').replace(/\r/g, '');
-  assert.equal(ler('./sensivel.ts'), ler('../ia_conversar/sensivel.ts'));
+  for (const f of ['sensivel.ts', 'habitos_regras.ts', 'recorrencia.ts']) assert.equal(ler(`./${f}`), ler(`../ia_conversar/${f}`), f);
+});
+
+test('hábito: sequência de 3+ dias não feita hoje avisa a partir de 2 h antes do silêncio', () => {
+  const h = { id: 'h1', name: 'Ler', paused: false, kind: 'boolean' as const, daily_target: null, weekdays: null, times_per_week: null };
+  const reg = (dia: string) => ({ habit_id: 'h1', day: dia, value: 1 });
+  const tres = [reg('2026-11-23'), reg('2026-11-24'), reg('2026-11-25')];
+  const noite = em('2026-11-26T23:00:00Z'); // 20:00 SP
+  const xs = detectarSequencias([h], tres, P, noite);
+  assert.equal(xs.length, 1);
+  assert.equal(xs[0]!.title, 'Ler: 3 dias seguidos');
+  assert.equal(xs[0]!.dedupe_key, 'habito_sequencia:h1:2026-11-26');
+  assert.equal(detectarSequencias([h], tres, P, em('2026-11-26T22:59:00Z')).length, 0); // 19:59
+  assert.equal(detectarSequencias([h], [...tres, reg('2026-11-26')], P, noite).length, 0); // já feito
+  assert.equal(detectarSequencias([h], tres.slice(1), P, noite).length, 0); // só 2 dias
+  assert.equal(detectarSequencias([{ ...h, paused: true }], tres, P, noite).length, 0);
+  assert.equal(detectarSequencias([{ ...h, times_per_week: 3 }], tres, P, noite).length, 0);
+  // silêncio às 21:00 -> avisa a partir das 19:00
+  assert.equal(detectarSequencias([h], tres, { quiet_start: '21:00', quiet_end: '07:00' }, em('2026-11-26T22:00:00Z')).length, 1);
+});
+
+test('prazo de projeto: em 3 dias e em 1 dia; concluído não avisa', () => {
+  const agora = em('2026-11-26T15:00:00Z');
+  const p = (id: string, due: string, status = 'em_andamento') => ({ id, name: id, due_date: due, status });
+  const xs = detectarPrazos([p('a', '2026-11-29'), p('b', '2026-11-27'), p('c', '2026-11-28'), p('d', '2026-11-27', 'concluido')], agora);
+  assert.deepEqual(xs.map((x) => x.dedupe_key), ['prazo_projeto:a:2026-11-29:3', 'prazo_projeto:b:2026-11-27:1']);
+  assert.equal(xs[1]!.title, 'b: prazo amanhã');
+});
+
+test('diário: só depois das 21:30 e se ainda não escreveu', () => {
+  assert.equal(detectarDiario(false, P, em('2026-11-27T00:29:00Z')).length, 0); // 21:29
+  assert.equal(detectarDiario(false, P, em('2026-11-27T00:30:00Z'))[0]!.dedupe_key, 'diario_vazio:2026-11-26');
+  assert.equal(detectarDiario(true, P, em('2026-11-27T00:30:00Z')).length, 0);
+  assert.equal(detectarDiario(false, { quiet_start: '21:00', quiet_end: '07:00' }, em('2026-11-26T23:30:00Z')).length, 1); // 20:30
 });
 
 test('push: sensível sai como conteúdo reservado', () => {

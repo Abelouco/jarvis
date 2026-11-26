@@ -7,7 +7,7 @@
 // Sem IA e sem segredo novo: usa só o service role que o Supabase já injeta.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
-  decidir, detectarAtrasadas, detectarLembretes, diaSP, escolherCanais, juntar, somarDias, textoPush,
+  decidir, detectarAtrasadas, detectarDiario, detectarLembretes, detectarPrazos, detectarSequencias, diaSP, escolherCanais, juntar, somarDias, textoPush,
   type AvisoPronto, type Candidato, type Preferencias, type Regra,
 } from './decisao.ts';
 
@@ -43,7 +43,7 @@ async function vigiar(cfg: Cfg, agora: Date) {
   const uid = cfg.user_id;
   const iso = agora.toISOString();
   const hoje = diaSP(agora);
-  const [lembretes, tarefas, regras, aparelhos, pendentes, recentes] = await Promise.all([
+  const [lembretes, tarefas, regras, aparelhos, pendentes, recentes, habitos, registros, projetos, diario] = await Promise.all([
     sb.from('reminders').select('id, title, remind_at, priority, alarm').eq('user_id', uid)
       .is('deleted_at', null).is('done_at', null)
       .lte('remind_at', iso).gt('remind_at', new Date(agora.getTime() - 30 * 60_000).toISOString()),
@@ -56,6 +56,13 @@ async function vigiar(cfg: Cfg, agora: Date) {
       .in('status', ['agendado', 'segurado_silencio']).lte('scheduled_for', iso),
     sb.from('notices').select('kind, sent_at').eq('user_id', uid).eq('status', 'enviado')
       .gte('sent_at', new Date(agora.getTime() - 15 * 60_000).toISOString()),
+    sb.from('habits').select('id, name, kind, daily_target, weekdays, times_per_week, paused').eq('user_id', uid)
+      .is('deleted_at', null).eq('paused', false),
+    sb.from('habit_logs').select('habit_id, day, value').eq('user_id', uid).is('deleted_at', null)
+      .gte('day', somarDias(hoje, -60)),
+    sb.from('projects').select('id, name, due_date, status').eq('user_id', uid).is('deleted_at', null)
+      .eq('archived', false).neq('status', 'concluido').gte('due_date', somarDias(hoje, 1)).lte('due_date', somarDias(hoje, 3)),
+    sb.from('notes').select('id').eq('user_id', uid).is('deleted_at', null).eq('kind', 'diario').eq('day', hoje).limit(1),
   ]);
   const listaRegras = ok(regras, 'regras') as Regra[];
   const listaAparelhos = ok(aparelhos, 'aparelhos') as { id: string; platform: string; seen_at: string; push_token: string | null }[];
@@ -64,6 +71,9 @@ async function vigiar(cfg: Cfg, agora: Date) {
   let candidatos: Candidato[] = [
     ...detectarLembretes(ok(lembretes, 'lembretes') as never, agora),
     ...detectarAtrasadas(ok(tarefas, 'tarefas') as never, agora),
+    ...detectarSequencias(ok(habitos, 'habitos') as never, ok(registros, 'registros') as never, cfg, agora),
+    ...detectarPrazos(ok(projetos, 'projetos') as never, agora),
+    ...detectarDiario((ok(diario, 'diario') as unknown[]).length > 0, cfg, agora),
   ];
   if (candidatos.length) {
     const vistos = ok(await sb.from('notices').select('dedupe_key').eq('user_id', uid)

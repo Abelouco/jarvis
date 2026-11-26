@@ -54,4 +54,9 @@ Assistente de IA pessoal do dono deste repositório, no PC (Windows) e no celula
     - o vigia envia pelo Expo Push; sensível sai como "conteúdo reservado";
     - Firebase `jarvis-3b544`, com a chave FCM V1 no EAS;
     - `google-services.json` fora do git (repo público): EAS file env `GOOGLE_SERVICES_JSON` via `app.config.js`; a chave fica em `C:\Users\abeld\.tauri\jarvis-fcm.json`.
+  - Etapa 3 (novos gatilhos) feita em 2026-11-26:
+    - hábito com sequência de 3+ dias ainda não feito: 2 h antes do silêncio;
+    - prazo de projeto: em 3 dias e em 1 dia (marcos não, porque saíram da tela);
+    - dia sem diário: às 21:30;
+    - o vigia usa cópias de `habitos_regras.ts` e `recorrencia.ts`, conferidas por teste.
 - Fase 4: ações no mundo (computador, calendário, e-mail), finanças e saúde opcionais.
