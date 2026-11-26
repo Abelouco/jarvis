@@ -1,5 +1,6 @@
 // Regras puras do vigia de avisos (sem banco, sem rede): detectores, decisão, junção e canal.
 // Testadas em decisao.test.ts. Fuso America/Sao_Paulo = UTC-3 fixo (o Brasil não tem mais horário de verão).
+import { avaliarSensibilidade } from './sensivel.ts'; // cópia de ia_conversar/sensivel.ts (teste confere)
 
 export type Prioridade = 'urgente' | 'normal' | 'baixa';
 export type Status = 'enviado' | 'segurado_silencio' | 'juntado' | 'silenciado' | 'agendado';
@@ -237,6 +238,18 @@ export function tituloGrupo(kind: string, n: number): string {
     case 'prazo_projeto': return `${n} prazos de projeto chegando`;
     default: return `${n} avisos`;
   }
+}
+
+// ---------- texto do push ----------
+/**
+ * O push passa pelos servidores da Expo e do Google: sensível (saúde, documento, finanças, senha...)
+ * nunca vai no texto. O aviso completo continua no banco e no app.
+ */
+export function textoPush(a: { title: string; body: string }): { title: string; body: string } {
+  if (avaliarSensibilidade(`${a.title}\n${a.body}`).sensivel) {
+    return { title: 'J.A.R.V.I.S.', body: 'Um aviso com conteúdo reservado. Abra o app para ver.' };
+  }
+  return { title: a.title, body: a.body };
 }
 
 // ---------- canal ----------

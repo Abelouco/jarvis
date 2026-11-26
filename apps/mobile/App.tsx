@@ -7,6 +7,7 @@ import {
 import { quandoCurto, type Atividade, type Prioridade, type Task } from '@jarvis/core';
 import { jarvis } from './src/jarvis';
 import { aplicarAtualizacao, ligarAtualizacao } from './src/atualizacao';
+import { registrarPush } from './src/push';
 import { Conversa } from './src/Conversa';
 import { Memoria } from './src/Memoria';
 import { Nucleo, type Pulso } from './src/Nucleo';
@@ -20,6 +21,8 @@ export default function App() {
 
   const [novaVersao, setNovaVersao] = useState(false);
   useEffect(() => ligarAtualizacao(() => setNovaVersao(true)), []);
+  // Logou: registra o aparelho para receber os avisos por push (Fase 3).
+  useEffect(() => { if (logado) void registrarPush(); }, [logado]);
 
   useEffect(() => {
     const ver = async () => setLogado(!!(await jarvis.auth.sessao()));

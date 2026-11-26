@@ -1131,12 +1131,16 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
      * Sinal de "aberto" (a cada minuto): com ele, o vigia entrega no aparelho em vez do celular.
      * Também garante as preferências padrão das contas novas. Falha calada: sem internet, tudo bem.
      */
-    async presenca(aparelho: string, plataforma: 'pc' | 'android', nome?: string) {
+    async presenca(aparelho: string, plataforma: 'pc' | 'android', nome?: string, tokenPush?: string | null) {
       const { data } = await sb.auth.getSession();
       const uid = data.session?.user.id;
       if (!uid) return;
       await sb.from('devices').upsert(
-        { id: aparelho, user_id: uid, platform: plataforma, name: nome ?? null, seen_at: new Date().toISOString() },
+        {
+          id: aparelho, user_id: uid, platform: plataforma, name: nome ?? null, seen_at: new Date().toISOString(),
+          // undefined = não mexe no token já gravado
+          ...(tokenPush !== undefined ? { push_token: tokenPush } : {}),
+        },
         { onConflict: 'id' },
       );
       await sb.from('notice_settings').upsert({ user_id: uid }, { onConflict: 'user_id', ignoreDuplicates: true });

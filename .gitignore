@@ -11,3 +11,6 @@ apps/desktop/src-tauri/gen/
 # app instalado por engano dentro do repositório
 /jarvis-desktop.exe
 /uninstall.exe
+
+# Firebase do Android (repo público): vai para o EAS como variável de arquivo GOOGLE_SERVICES_JSON
+apps/mobile/google-services.json

@@ -3,11 +3,11 @@
 // Para cada dono: roda os detectores, decide (silenciado / hora fixa / silêncio / enviar), junta os
 // parecidos, grava tudo em `notices` (com o motivo) e entrega:
 //   'pc'   -> evento `notify` na tabela `events`; o PC aberto mostra a notificação do Windows
-//   'push' -> celular (etapa 2)
+//   'push' -> celular, pelo Expo Push (grátis, sem chave; o FCM V1 do dono fica no EAS)
 // Sem IA e sem segredo novo: usa só o service role que o Supabase já injeta.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
-  decidir, detectarAtrasadas, detectarLembretes, diaSP, escolherCanais, juntar, somarDias,
+  decidir, detectarAtrasadas, detectarLembretes, diaSP, escolherCanais, juntar, somarDias, textoPush,
   type AvisoPronto, type Candidato, type Preferencias, type Regra,
 } from './decisao.ts';
 
@@ -51,14 +51,14 @@ async function vigiar(cfg: Cfg, agora: Date) {
       .is('deleted_at', null).is('done_at', null).eq('archived', false)
       .gte('due_date', somarDias(hoje, -2)).lte('due_date', hoje),
     sb.from('notice_rules').select('kind, entity_id, active, fixed_time, muted_until').eq('user_id', uid).is('deleted_at', null),
-    sb.from('devices').select('platform, seen_at, push_token').eq('user_id', uid).is('deleted_at', null),
+    sb.from('devices').select('id, platform, seen_at, push_token').eq('user_id', uid).is('deleted_at', null),
     sb.from('notices').select('*').eq('user_id', uid).is('deleted_at', null)
       .in('status', ['agendado', 'segurado_silencio']).lte('scheduled_for', iso),
     sb.from('notices').select('kind, sent_at').eq('user_id', uid).eq('status', 'enviado')
       .gte('sent_at', new Date(agora.getTime() - 15 * 60_000).toISOString()),
   ]);
   const listaRegras = ok(regras, 'regras') as Regra[];
-  const listaAparelhos = ok(aparelhos, 'aparelhos') as { platform: string; seen_at: string; push_token: string | null }[];
+  const listaAparelhos = ok(aparelhos, 'aparelhos') as { id: string; platform: string; seen_at: string; push_token: string | null }[];
 
   // 1. candidatos novos (os que já foram registrados, pela dedupe_key, ficam de fora)
   let candidatos: Candidato[] = [
@@ -106,6 +106,7 @@ async function vigiar(cfg: Cfg, agora: Date) {
     else mudancas.set(id, { ...(mudancas.get(id) ?? {}), ...campos });
   };
   const notificar: { id: string; titulo: string; corpo: string; prioridade: string }[] = [];
+  const pushes: { id: string; title: string; body: string; priority: string }[] = [];
 
   for (const a of adiar) mudar(a.id, { status: 'agendado', scheduled_for: a.ate });
   for (const e of entregas) {
@@ -127,7 +128,7 @@ async function vigiar(cfg: Cfg, agora: Date) {
     if (canais.includes('pc')) {
       notificar.push({ id: e.principal.id, titulo: e.principal.title, corpo: e.principal.body, prioridade: e.principal.priority });
     }
-    // canais 'push': etapa 2
+    if (canais.includes('push')) pushes.push({ id: e.principal.id, title: e.principal.title, body: e.principal.body, priority: e.principal.priority });
   }
 
   // 4. gravar: grupos primeiro (os filhos apontam para eles); a dedupe_key única protege de duas rodadas juntas
@@ -148,7 +149,46 @@ async function vigiar(cfg: Cfg, agora: Date) {
       payload: { titulo: n.titulo, corpo: n.corpo, prioridade: n.prioridade },
     }))), 'eventos');
   }
-  return { novos: gravadas.size, liberados: mudancas.size, grupos: grupos.length, notificados: entregar.length };
+  const valeu = (id: string) => gravadas.has(id) || mudancas.has(id) || grupos.some((g) => g.id === id);
+  const enviados = await enviarPush(pushes.filter((p) => valeu(p.id)), listaAparelhos);
+  return { novos: gravadas.size, liberados: mudancas.size, grupos: grupos.length, notificados: entregar.length, push: enviados };
+}
+
+/**
+ * Expo Push: https://exp.host/--/api/v2/push/send (grátis, até 100 por chamada).
+ * Aparelho que saiu (app desinstalado, permissão tirada) volta `DeviceNotRegistered`: o token é apagado.
+ */
+async function enviarPush(
+  avisos: { id: string; title: string; body: string; priority: string }[],
+  aparelhos: { id: string; platform: string; push_token: string | null }[],
+) {
+  const alvos = aparelhos.filter((d) => d.platform === 'android' && d.push_token);
+  if (!avisos.length || !alvos.length) return 0;
+  const msgs = avisos.flatMap((a) => alvos.map((d) => ({
+    aparelho: d.id,
+    msg: {
+      to: d.push_token!, ...textoPush(a), sound: 'default', channelId: 'avisos',
+      priority: a.priority === 'baixa' ? 'normal' : 'high', data: { notice_id: a.id },
+    },
+  })));
+  const r = await fetch('https://exp.host/--/api/v2/push/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(msgs.map((m) => m.msg)),
+  });
+  if (!r.ok) {
+    console.error('push:', r.status, (await r.text()).slice(0, 300));
+    return 0;
+  }
+  const { data } = await r.json() as { data?: { status: string; details?: { error?: string } }[] };
+  let ok = 0;
+  for (const [i, t] of (data ?? []).entries()) {
+    if (t.status === 'ok') ok++;
+    else if (t.details?.error === 'DeviceNotRegistered') {
+      await sb.from('devices').update({ push_token: null }).eq('id', msgs[i]!.aparelho);
+    } else console.error('push:', t.details?.error ?? t.status);
+  }
+  return ok;
 }
 
 Deno.serve(async (req) => {

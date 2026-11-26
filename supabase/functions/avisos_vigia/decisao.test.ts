@@ -1,8 +1,9 @@
 // Testes das regras do vigia de avisos. Rodar: node --test supabase/functions/avisos_vigia/decisao.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
-  decidir, detectarAtrasadas, detectarLembretes, emSilencio, escolherCanais, juntar, proximaHora, vencimento,
+  decidir, detectarAtrasadas, detectarLembretes, emSilencio, escolherCanais, juntar, proximaHora, textoPush, vencimento,
   type Candidato, type Regra,
 } from './decisao.ts';
 
@@ -89,6 +90,18 @@ test('juntar: mesmo tipo vira um; lembrete e urgente saem sozinhos; janela de 15
   assert.equal(adiado.entregas.length, 0);
   assert.deepEqual(adiado.adiar, [{ id: 't4', ate: '2026-11-26T15:05:00.000Z' }]);
   assert.equal(juntar([a('t5')], { tarefa_atrasada: '2026-11-26T14:40:00Z' }, agora, id).entregas.length, 1);
+});
+
+test('sensível: a cópia do vigia é igual à do ia_conversar', () => {
+  const ler = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8').replace(/\r/g, '');
+  assert.equal(ler('./sensivel.ts'), ler('../ia_conversar/sensivel.ts'));
+});
+
+test('push: sensível sai como conteúdo reservado', () => {
+  assert.deepEqual(textoPush({ title: 'Consulta com o psiquiatra', body: 'Lembrete · hoje às 15:00' }), {
+    title: 'J.A.R.V.I.S.', body: 'Um aviso com conteúdo reservado. Abra o app para ver.',
+  });
+  assert.deepEqual(textoPush({ title: 'Pagar luz', body: 'Tarefa atrasada' }), { title: 'Pagar luz', body: 'Tarefa atrasada' });
 });
 
 test('canal: PC aberto, senão celular; urgente nos dois; lembrete no PC é o aviso local', () => {

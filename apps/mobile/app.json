@@ -22,6 +22,13 @@
       "expo-sqlite",
       "expo-status-bar",
       [
+        "expo-notifications",
+        {
+          "defaultChannel": "avisos",
+          "color": "#38e1cf"
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {
