@@ -14,3 +14,6 @@ apps/desktop/src-tauri/gen/
 
 # Firebase do Android (repo público): vai para o EAS como variável de arquivo GOOGLE_SERVICES_JSON
 apps/mobile/google-services.json
+
+# cache do Supabase CLI
+supabase/.temp/
