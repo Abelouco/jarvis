@@ -127,3 +127,18 @@ export interface HabitLog extends Base {
   value: number | null;
   note: string | null;
 }
+
+export type TipoNota = 'nota' | 'captura' | 'diario';
+
+/** O que o dono escreve: nota (caderno + etiquetas), captura (caixa de entrada) ou diário (um por dia). */
+export interface Note extends Base {
+  kind: TipoNota;
+  title: string | null;
+  content: string;
+  /** Nome do caderno; nulo = sem caderno */
+  notebook: string | null;
+  tags: string[];
+  pinned: boolean;
+  /** Dia da entrada do diário (AAAA-MM-DD) */
+  day: string | null;
+}

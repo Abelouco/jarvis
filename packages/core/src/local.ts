@@ -37,6 +37,10 @@ export const COLUNAS_HABIT_LOGS = [
   'id', 'user_id', 'habit_id', 'day', 'value', 'note', 'created_at', 'updated_at', 'deleted_at',
 ] as const;
 
+export const COLUNAS_NOTES = [
+  'id', 'user_id', 'kind', 'title', 'content', 'notebook', 'tags', 'pinned', 'day', 'created_at', 'updated_at', 'deleted_at',
+] as const;
+
 export const COLUNAS_CONVERSATIONS = ['id', 'user_id', 'title', 'created_at', 'updated_at', 'deleted_at'] as const;
 
 export const COLUNAS_MESSAGES = [
@@ -66,6 +70,7 @@ export const TABELAS_SYNC: readonly TabelaSync[] = [
   { nome: 'reminders', colunas: COLUNAS_REMINDERS, booleanas: ['alarm'], json: ['recurrence'] },
   { nome: 'habits', colunas: COLUNAS_HABITS, booleanas: ['paused'], json: ['weekdays'] },
   { nome: 'habit_logs', colunas: COLUNAS_HABIT_LOGS, booleanas: [] },
+  { nome: 'notes', colunas: COLUNAS_NOTES, booleanas: ['pinned'], json: ['tags'] },
   { nome: 'conversations', colunas: COLUNAS_CONVERSATIONS, booleanas: [] },
   {
     nome: 'messages', colunas: COLUNAS_MESSAGES, booleanas: ['sensitive'],
@@ -178,6 +183,23 @@ export const SCHEMA_LOCAL = [
   )`,
   `create index if not exists habit_logs_dirty_idx on habit_logs (dirty)`,
   `create index if not exists habit_logs_habito_idx on habit_logs (habit_id, day)`,
+  `create table if not exists notes (
+    id text primary key,
+    user_id text,
+    kind text not null default 'nota',
+    title text,
+    content text not null default '',
+    notebook text,
+    tags text not null default '[]',
+    pinned integer not null default 0,
+    day text,
+    created_at text not null,
+    updated_at text not null,
+    deleted_at text,
+    dirty integer not null default 0
+  )`,
+  `create index if not exists notes_dirty_idx on notes (dirty)`,
+  `create index if not exists notes_tipo_idx on notes (kind, updated_at)`,
   `create table if not exists conversations (
     id text primary key,
     user_id text,

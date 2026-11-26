@@ -266,3 +266,22 @@ test('hábitos: a cópia do servidor é igual à do app', () => {
   const corpo = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8').replace(/\r/g, '').split('\n').slice(3).join('\n');
   assert.equal(corpo('./habitos_regras.ts'), corpo('../../../packages/core/src/habitos.ts'));
 });
+
+// ---------- conhecimento ----------
+import { lerEtiquetas, nomeNota } from './conhecimento.ts';
+
+test('conhecimento: o detector local chama o planejador', () => {
+  for (const t of ['cria uma nota sobre o projeto', 'o que eu anotei sobre o carro?', 'escreve no meu diário que hoje foi bom',
+    'guarda essa ideia: app de receitas', 'minhas capturas']) {
+    assert.equal(pareceTarefa(t, false), true, t);
+  }
+});
+
+test('conhecimento: nome da nota e etiquetas', () => {
+  const hoje = '2026-11-25';
+  assert.equal(nomeNota({ kind: 'nota', title: ' Receita ', content: 'x', day: null }, hoje), 'Receita');
+  assert.equal(nomeNota({ kind: 'diario', title: null, content: 'x', day: hoje }, hoje), 'Diário de hoje');
+  assert.equal(nomeNota({ kind: 'captura', title: null, content: 'a'.repeat(80), day: null }, hoje).length, 58);
+  assert.deepEqual(lerEtiquetas('#Ideias, trabalho; ideias'), ['ideias', 'trabalho']);
+  assert.deepEqual(lerEtiquetas(['  Casa ', '#casa']), ['casa']);
+});
