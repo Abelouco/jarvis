@@ -216,27 +216,30 @@ export function ligarAbaAvisos(raiz: HTMLElement, op: { selo?: (n: number) => vo
     }, 400);
   }
 
-  lista.onclick = async (e) => {
+  /** Ação no servidor: sem internet, mostra o erro em vez de falhar calada. */
+  async function agir(f: () => Promise<void>) {
+    try {
+      await f();
+      void desenhar();
+    } catch {
+      erroEl.textContent = 'Sem conexão com o servidor: não consegui salvar. Tente de novo em instantes.';
+      erroEl.hidden = false;
+    }
+  }
+
+  lista.onclick = (e) => {
     const alvo = e.target as HTMLElement;
     if (alvo.closest('summary, details ul')) return;
-    const item = alvo.closest<HTMLLIElement>('.av-item.av-nao-lido');
-    if (!item?.dataset.id) return;
-    await jarvis.avisos.marcarLidos([item.dataset.id]);
-    void desenhar();
+    const id = alvo.closest<HTMLLIElement>('.av-item.av-nao-lido')?.dataset.id;
+    if (id) void agir(() => jarvis.avisos.marcarLidos([id]));
   };
 
-  lidosBtn.onclick = async () => {
-    await jarvis.avisos.marcarLidos();
-    void desenhar();
-  };
+  lidosBtn.onclick = () => void agir(() => jarvis.avisos.marcarLidos());
 
-  regrasEl.onclick = async (e) => {
+  regrasEl.onclick = (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.av-normal');
-    if (!btn) return;
-    const id = btn.closest<HTMLLIElement>('li[data-id]')?.dataset.id;
-    if (!id) return;
-    await jarvis.avisos.removerRegra(id);
-    void desenhar();
+    const id = btn?.closest<HTMLLIElement>('li[data-id]')?.dataset.id;
+    if (id) void agir(() => jarvis.avisos.removerRegra(id));
   };
 
   form.onsubmit = async (e) => {
