@@ -318,6 +318,7 @@ export function avisoReferencias(r: { ambiguas: { ref: string; opcoes: string[] 
 
 export async function pedirConfirmacao(
   sb: SupabaseClient, ferramenta: string, alvo: { id: string; title: string }[], descricao: string,
+  desfazivel = true,
 ): Promise<ResultadoFerramenta> {
   // As confirmações de um mesmo pedido se juntam (um "sim" só); as de pedidos anteriores o `executar` já anulou.
   const bytes = crypto.getRandomValues(new Uint8Array(18));
@@ -333,7 +334,7 @@ export async function pedirConfirmacao(
   return {
     ferramenta, ok: true, resumo: `aguardando confirmação para ${descricao}`,
     fatos: { aguardando_confirmacao: true, codigo: code, tarefas: alvo.map((t) => t.title) },
-    texto: `Vou ${descricao}:\n${alvo.map((t) => `- ${t.title}`).join('\n')}\n\nConfirma? (dá para desfazer em até 24 h)`,
+    texto: `Vou ${descricao}:\n${alvo.map((t) => `- ${t.title}`).join('\n')}\n\nConfirma?${desfazivel ? ' (dá para desfazer em até 24 h)' : ' (isso não dá para desfazer)'}`,
     ids,
   };
 }
@@ -717,11 +718,19 @@ export function juntarConfirmacoes(rs: ResultadoFerramenta[]): ResultadoFerramen
   if (esperando.length < 2) return rs;
   const semPergunta = (t: string) => t.replace(/\n+Confirma[^\n]*$/, '').trimEnd();
   const enviaEmail = esperando.some((r) => r.ferramenta === 'email_enviar');
+  const noPc = esperando.some((r) => r.ferramenta.startsWith('computador_'));
+  const irreversivel = enviaEmail && noPc
+    ? ' O envio de e-mail e a ação no PC não dão para desfazer; o resto dá, em até 24 h.'
+    : enviaEmail
+      ? ' O envio de e-mail não dá para desfazer; o resto dá, em até 24 h.'
+      : noPc
+        ? ' A ação no PC não dá para desfazer; o resto dá, em até 24 h.'
+        : ' Dá para desfazer em até 24 h.';
   return [
     ...rs.map((r) => (r.fatos?.aguardando_confirmacao ? { ...r, texto: semPergunta(r.texto) } : r)),
     {
       ferramenta: 'jarvis_perguntar', ok: true, resumo: 'uma confirmação para tudo', fatos: {}, ids: [],
-      texto: `**Confirma tudo isso?** Um "sim" faz as ${esperando.length} coisas.${enviaEmail ? ' O envio de e-mail não dá para desfazer; o resto dá, em até 24 h.' : ' Dá para desfazer em até 24 h.'}`,
+      texto: `**Confirma tudo isso?** Um "sim" faz as ${esperando.length} coisas.${irreversivel}`,
     },
   ];
 }

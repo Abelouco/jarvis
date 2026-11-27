@@ -19,7 +19,7 @@ import './projetos.ts'; // idem, projetos
 import './avisos.ts'; // idem, ajustes dos avisos (Fase 3)
 import { pareceEmail } from './email.ts'; // e e-mail pelo Gmail (Fase 4); importar já registra
 import { pareceFinancas } from './financas.ts'; // e finanças (Fase 4 · etapa 6)
-import { pareceComputador } from './computador.ts'; // e o PC (Fase 4 · etapa 7); importar já registra
+import { pareceComputador, sessaoControleAtiva } from './computador.ts'; // e o PC (Fase 4 · etapa 7); importar já registra
 import { blocoLicoes, licoesAtivas, registrarFeedback, type Licao } from './licoes.ts'; // e lições (Fase 4)
 import {
   carregarAbertas, confirmacaoPendente, contextoExtensoes, executar, pareceTarefa, planejar, textoFinal,
@@ -270,7 +270,7 @@ Deno.serve(async (req) => {
   const conversa: MensagemIA[] = historico.map((m) => ({ role: m.role, content: m.content }));
   // Tarefas por conversa: se a mensagem pede uma ação nas tarefas, executa e responde na hora.
   const pendente = await confirmacaoPendente(sb).catch(() => null);
-  if (pareceTarefa(texto, !!pendente)) {
+  if (pareceTarefa(texto, !!pendente) || (await sessaoControleAtiva(sb)) !== null) {
     const hoje = hojeSP();
     const [abertas, contextoBase] = await Promise.all([carregarAbertas(sb), contextoExtensoes(sb)]);
     const ensinou = blocoLicoes(licoes, ['geral', 'tarefas', 'lembretes', 'projetos', 'avisos'], !conversaSensivel);

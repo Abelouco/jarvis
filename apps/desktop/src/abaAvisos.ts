@@ -101,9 +101,10 @@ export function ligarAbaAvisos(raiz: HTMLElement, op: { selo?: (n: number) => vo
   }
 
   function desenharHistorico(avisos: Notice[]) {
-    const principais = avisos.filter((a) => a.group_id === null);
+    const vivos = avisos.filter((a) => !(a as { deleted_at?: string | null }).deleted_at);
+    const principais = vivos.filter((a) => a.group_id === null);
     const filhos = new Map<string, Notice[]>();
-    for (const a of avisos) {
+    for (const a of vivos) {
       if (!a.group_id) continue;
       const arr = filhos.get(a.group_id) ?? [];
       arr.push(a);
@@ -132,7 +133,7 @@ export function ligarAbaAvisos(raiz: HTMLElement, op: { selo?: (n: number) => vo
 
       return `<li class="${classes.join(' ')}" data-id="${a.id}">
         <div class="av-meta">
-          <span class="av-tipo">${NOME_TIPO[a.kind]}</span>
+          <span class="av-tipo">${NOME_TIPO[a.kind] ?? 'Aviso'}</span>
           <span class="av-quando">${quando(a.sent_at ?? a.created_at)}</span>
           ${canal ? `<span class="av-canal">${esc(canal)}</span>` : ''}
           ${st ? `<span class="av-status">${esc(st)}</span>` : ''}
@@ -152,7 +153,7 @@ export function ligarAbaAvisos(raiz: HTMLElement, op: { selo?: (n: number) => vo
     }
     const agora = Date.now();
     regrasEl.innerHTML = regras.map((r) => {
-      const nome = NOME_TIPO[r.kind] + (r.nome ? ` · ${esc(r.nome)}` : '');
+      const nome = (NOME_TIPO[r.kind] ?? 'Aviso') + (r.nome ? ` · ${esc(r.nome)}` : '');
       let texto = '';
       if (!r.active) texto = 'desligado';
       else if (r.muted_until && Date.parse(r.muted_until) > agora) texto = `silenciado até ${quando(r.muted_until)}`;

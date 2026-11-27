@@ -359,10 +359,11 @@ fn capturar_jpeg() -> Result<String, String> {
         let nh = ((nossa.height() as u64 * MAX as u64) / nossa.width() as u64).max(1) as u32;
         nossa = image::imageops::resize(&nossa, MAX, nh, FilterType::Triangle);
     }
-    let (w, h) = nossa.dimensions();
+    let rgb: image::RgbImage = image::DynamicImage::ImageRgba8(nossa).to_rgb8();
+    let (w, h) = rgb.dimensions();
     let mut buf = Cursor::new(Vec::new());
     let mut enc = JpegEncoder::new_with_quality(&mut buf, 70);
-    enc.encode(nossa.as_raw(), w, h, ExtendedColorType::Rgba8).map_err(|e| format!("Não gerei o JPEG: {e}"))?;
+    enc.encode(rgb.as_raw(), w, h, ExtendedColorType::Rgb8).map_err(|e| format!("Não gerei o JPEG: {e}"))?;
     Ok(STANDARD.encode(buf.into_inner()))
 }
 

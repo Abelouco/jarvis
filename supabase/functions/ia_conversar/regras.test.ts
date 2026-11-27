@@ -492,7 +492,8 @@ test('finanças: o detector manda para o planejador (e o pedido fica sensível)'
   assert.ok(pareceTarefa('gastei 30 de uber', false));
 });
 
-import { classificarAlvo, pareceComputador } from './computador.ts';
+import { classificarAlvo, duracaoControle, pareceComputador } from './computador.ts';
+import { comandoSeguro } from './comando_seguro.ts';
 
 test('computador: o detector manda para o planejador (e o pedido fica sensível)', () => {
   assert.ok(pareceComputador('abre o bloco de notas'));
@@ -524,4 +525,35 @@ test('computador: alvo vira site, pasta ou programa', () => {
   assert.deepEqual(classificarAlvo('o Spotify'), { tipo: 'programa', valor: 'Spotify' });
   assert.deepEqual(classificarAlvo('contrato.pdf'), { tipo: 'programa', valor: 'contrato.pdf' });
   assert.deepEqual(classificarAlvo('   '), { tipo: 'programa', valor: '' });
+});
+
+test('computador: duração do modo controle em segundos', () => {
+  assert.equal(duracaoControle({ segundos: 30 }), 30);
+  assert.equal(duracaoControle({ minutos: 10 }), 600);
+  assert.equal(duracaoControle({}), 1800);
+  assert.equal(duracaoControle({ segundos: 2 }), 10);
+  assert.equal(duracaoControle({ minutos: 999 }), 14400);
+  assert.equal(duracaoControle({ segundos: 45, minutos: 5 }), 45);
+});
+
+test('computador: ação na tela entra no detector', () => {
+  assert.equal(pareceComputador('escreva a palavra Teste no bloco de notas'), true);
+  assert.equal(pareceComputador('clica em salvar'), true);
+  assert.equal(pareceComputador('digita meu nome'), true);
+  assert.equal(pareceComputador('você acha que chove?'), false);
+});
+
+test('comando de leitura no PC não pede confirmação', () => {
+  assert.equal(comandoSeguro('Get-Date'), true);
+  assert.equal(comandoSeguro('get-process | sort-object CPU | select-object -first 5'), true);
+  assert.equal(comandoSeguro('ipconfig'), true);
+  assert.equal(comandoSeguro('Test-Path C:\\Windows'), true);
+  assert.equal(comandoSeguro('Remove-Item C:\\x'), false);
+  assert.equal(comandoSeguro('Get-Date; Remove-Item x'), false);
+  assert.equal(comandoSeguro('Get-ChildItem | Remove-Item'), false);
+  assert.equal(comandoSeguro('Get-Content x > y'), false);
+  assert.equal(comandoSeguro('Invoke-WebRequest http://a'), false);
+  assert.equal(comandoSeguro('Get-Date $(calc)'), false);
+  assert.equal(comandoSeguro('Start-Process calc'), false);
+  assert.equal(comandoSeguro(''), false);
 });

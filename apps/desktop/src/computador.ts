@@ -233,7 +233,7 @@ async function pilotar(cmd: PcComando) {
         if (passo.acao === 'pronto') {
           const resumo = passo.resumo || 'Feito.';
           await jarvis.computador.concluir(cmd.id, 'feito', { resumo });
-          notificar(`Pronto: ${resumo}`);
+          notificar(`${resumo} Concluído, Senhor.`);
           return;
         }
         if (passo.acao === 'pedir_dono') {
