@@ -82,3 +82,15 @@ test('citação', () => {
   const b = lerMarkdown('> **Atenção:** confira o saldo\n> antes de pagar');
   assert.equal(b[0]!.t, 'citacao');
 });
+
+// ---------- chat: resposta que chegou depois do "Parar" ----------
+import { respostasDepoisDoParar } from './chatRegras.ts';
+
+test('chat: resposta que chegou depois do Parar some; a de ação fica', () => {
+  const u = (id: string) => ({ id, role: 'user' as const });
+  const a = (id: string, route: string | null = 'rapido') => ({ id, role: 'assistant' as const, route });
+  assert.deepEqual(respostasDepoisDoParar([u('1'), a('p', 'interrompido'), a('r', 'pesquisa'), u('2'), a('ok')]), ['r']);
+  assert.deepEqual(respostasDepoisDoParar([u('1'), a('r', 'pesquisa'), a('p', 'interrompido')]), ['r']);
+  assert.deepEqual(respostasDepoisDoParar([u('1'), a('p', 'interrompido'), a('x', 'acao')]), []);
+  assert.deepEqual(respostasDepoisDoParar([u('1'), a('r'), u('2'), a('s')]), []);
+});

@@ -324,6 +324,9 @@ Deno.serve(async (req) => {
   // O aviso "não consegui pesquisar" só sai quando a busca foi tentada de verdade e falhou.
   let pesquisaFalhou = false;
 
+  // Parou antes de começar a pesquisar: não gasta crédito do Tavily nem tokens.
+  if (await interrompida()) return descartada();
+
   // Pesquisa na web pelo Tavily (nunca com assunto sensível: a pergunta iria para a busca).
   if (rota === 'pesquisa' && !conversaSensivel && temBusca()) {
     // Avisa os aparelhos: o chat mostra "Pesquisando na internet…" e o núcleo fica violeta.

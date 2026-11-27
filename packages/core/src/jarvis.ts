@@ -2,6 +2,7 @@
 // o sync empurra o que mudou aqui e puxa o que mudou no Supabase.
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { criarCliente, ouvirEventos, type ArmazenamentoSessao } from './supabase';
+import { respostasDepoisDoParar } from './chatRegras';
 import { novoId, prepararBanco, TABELAS_SYNC, type BancoLocal, type TabelaSync, type Valor } from './local';
 import type {
   ColunaQuadro, Fonte, LembrarTarefa, Notice, NoticeRule, NoticeSettings, JarvisEvent, Memory, Message, Prioridade, Project, Reminder, StatusProjeto, Task,
@@ -708,7 +709,21 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
         `select * from messages where conversation_id = ? and deleted_at is null order by created_at, rowid`,
         [id],
       );
-      return linhas.map((m) => ({ ...m, sensitive: !!m.sensitive, sources: lerFontes(m.sources) }));
+      const lista: Message[] = linhas.map((m) => ({ ...m, sensitive: !!m.sensitive, sources: lerFontes(m.sources) }));
+      // Corrida do "Parar": a resposta já estava pronta no servidor quando o dono parou e chegou
+      // depois. Ela some (exclusão suave, vale para todos os aparelhos). Resposta de ação fica:
+      // a ação já aconteceu e o dono precisa ver (dá para "desfaz").
+      const sobras = respostasDepoisDoParar(lista);
+      if (sobras.length) {
+        const t = agora();
+        await db.executar(
+          `update messages set deleted_at = ?, updated_at = ?, dirty = 1 where id in (${sobras.map(() => '?').join(',')})`,
+          [t, t, ...sobras],
+        );
+        mudouLocal();
+        return lista.filter((m) => !sobras.includes(m.id));
+      }
+      return lista;
     },
     estado: () => ({ pensando, erro: erroChat }),
     /**
