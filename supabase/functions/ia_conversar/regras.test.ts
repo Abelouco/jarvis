@@ -360,3 +360,32 @@ test('e-mail: achar pelo remetente e assunto', () => {
   assert.equal(pontuarEmail('o e-mail do Nubank sobre a fatura', e('Nubank', 'Sua fatura fechou')), 2);
   assert.equal(pontuarEmail('do Nubank', e('Itaú', 'Sua fatura')), 0);
 });
+
+// ---------- uma confirmação por pedido e escolha por critério ----------
+import { juntarConfirmacoes } from './tarefas.ts';
+import { escolhidosDe, listaParaCriterio } from './email.ts';
+
+test('confirmação: várias ações do mesmo pedido viram uma pergunta só', () => {
+  const r = (f: string, texto: string, esperando = false) =>
+    ({ ferramenta: f, ok: true, resumo: '', fatos: esperando ? { aguardando_confirmacao: true } : {}, texto, ids: [] });
+  const saida = juntarConfirmacoes([
+    r('email_marcar_lido', 'Marcados como lidos: 3 e-mails.'),
+    r('email_lixeira', 'Vou mover 2 e-mails para a lixeira:\n- a\n- b\n\nConfirma? (dá para desfazer em até 24 h)', true),
+    r('email_enviar', 'Vou enviar este e-mail:\n\n**Para:** x\n\nConfirma o envio? Depois de enviado não dá para desfazer.', true),
+  ]);
+  assert.equal(saida.length, 4);
+  assert.ok(!saida[1]!.texto.includes('Confirma'));
+  assert.ok(saida[1]!.texto.endsWith('- b'));
+  assert.ok(!saida[2]!.texto.includes('Confirma'));
+  assert.match(saida[3]!.texto, /Confirma tudo isso\?.*2 coisas.*e-mail não dá para desfazer/);
+  const uma = [r('tarefas_apagar', 'Vou apagar:\n- x\n\nConfirma?', true)];
+  assert.equal(juntarConfirmacoes(uma), uma);
+});
+
+test('e-mail: escolha por critério só aceita números da lista', () => {
+  const e = (n: number) => ({ id: String(n), threadId: '', de: `R${n}`, deEmail: `r${n}@x.com`, para: '', assunto: `A${n}`, data: '', naoLido: true, naInbox: true, trecho: 't', messageId: '' });
+  const es = [e(1), e(2), e(3)];
+  assert.deepEqual(escolhidosDe('{"escolhidos":[3,1,3,9,"2",0]}', es).map((x) => x.id), ['3', '1', '2']);
+  assert.deepEqual(escolhidosDe('não é json', es), []);
+  assert.match(listaParaCriterio(es), /^1\. De: R1 <r1@x\.com> \| Assunto: A1/);
+});

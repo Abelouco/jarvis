@@ -85,21 +85,21 @@ export function criarAvaliacao(redesenhar: () => void, avisarErro: (texto: strin
       const pulso = animar.has(m.id) ? ' pulso' : '';
       const ocupado = enviando === m.id ? ' disabled' : '';
       const botoes = `
-        <button type="button" class="av av-like${r === 'like' ? ' ativa' + pulso : ''}" data-avaliar="like" data-msg="${m.id}"
+        <button type="button" class="fb fb-like${r === 'like' ? ' ativa' + pulso : ''}" data-avaliar="like" data-msg="${m.id}"
           title="${r === 'like' ? 'Tirar o like' : 'Boa resposta'}"${ocupado}>${ICONE_LIKE}</button>
-        <button type="button" class="av av-dislike${r === 'dislike' ? ' ativa' + pulso : ''}${motivoDe === m.id ? ' aberta' : ''}" data-avaliar="dislike" data-msg="${m.id}"
+        <button type="button" class="fb fb-dislike${r === 'dislike' ? ' ativa' + pulso : ''}${motivoDe === m.id ? ' aberta' : ''}" data-avaliar="dislike" data-msg="${m.id}"
           title="${r === 'dislike' ? 'Tirar o deslike (a lição deixa de valer)' : 'Não ficou boa'}"${ocupado}>${ICONE_DISLIKE}</button>`;
       const campo = motivoDe === m.id ? `
-        <form class="av-motivo" data-motivo="${m.id}">
+        <form class="fb-motivo" data-motivo="${m.id}">
           <textarea name="motivo" rows="2" maxlength="1000" placeholder="O que não ficou bom? O J.A.R.V.I.S. vai aprender a não repetir.">${esc(rascunho)}</textarea>
-          <div class="av-motivo-acoes">
-            ${erro ? `<span class="av-erro">${esc(erro)}</span>` : ''}
-            <button type="button" class="av-cancelar" data-av-cancelar>Cancelar</button>
-            <button type="submit" class="av-enviar"${ocupado}>${enviando === m.id ? 'Aprendendo…' : 'Enviar'}</button>
+          <div class="fb-motivo-acoes">
+            ${erro ? `<span class="fb-erro">${esc(erro)}</span>` : ''}
+            <button type="button" class="fb-cancelar" data-av-cancelar>Cancelar</button>
+            <button type="submit" class="fb-enviar"${ocupado}>${enviando === m.id ? 'Aprendendo…' : 'Enviar'}</button>
           </div>
         </form>` : '';
       const frase = frases.get(m.id);
-      const licao = frase && r === 'dislike' ? `<div class="av-licao">${esc(frase)}</div>` : '';
+      const licao = frase && r === 'dislike' ? `<div class="fb-licao">${esc(frase)}</div>` : '';
       return botoes + campo + licao;
     },
 
@@ -116,7 +116,7 @@ export function criarAvaliacao(redesenhar: () => void, avisarErro: (texto: strin
         return true;
       }
       const b = alvo.closest<HTMLButtonElement>('[data-avaliar]');
-      if (!b || b.disabled) return !!alvo.closest('.av-motivo');
+      if (!b || b.disabled) return !!alvo.closest('.fb-motivo');
       const id = b.dataset.msg!;
       const atual = avaliacoes.get(id);
       if (b.dataset.avaliar === 'like') {
@@ -148,10 +148,10 @@ export function criarAvaliacao(redesenhar: () => void, avisarErro: (texto: strin
     ligar(chat: HTMLElement) {
       chat.addEventListener('input', (e) => {
         const t = e.target as HTMLElement;
-        if (t instanceof HTMLTextAreaElement && t.closest('.av-motivo')) rascunho = t.value;
+        if (t instanceof HTMLTextAreaElement && t.closest('.fb-motivo')) rascunho = t.value;
       });
       chat.addEventListener('submit', (e) => {
-        const f = (e.target as HTMLElement).closest<HTMLFormElement>('.av-motivo');
+        const f = (e.target as HTMLElement).closest<HTMLFormElement>('.fb-motivo');
         if (!f) return;
         e.preventDefault();
         const motivo = rascunho.trim();
@@ -163,7 +163,7 @@ export function criarAvaliacao(redesenhar: () => void, avisarErro: (texto: strin
       });
       chat.addEventListener('keydown', (e) => {
         const t = e.target as HTMLElement;
-        if (!(t instanceof HTMLTextAreaElement) || !t.closest('.av-motivo')) return;
+        if (!(t instanceof HTMLTextAreaElement) || !t.closest('.fb-motivo')) return;
         // Enter envia; Shift+Enter quebra a linha; Esc fecha.
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();

@@ -319,9 +319,7 @@ export function avisoReferencias(r: { ambiguas: { ref: string; opcoes: string[] 
 export async function pedirConfirmacao(
   sb: SupabaseClient, ferramenta: string, alvo: { id: string; title: string }[], descricao: string,
 ): Promise<ResultadoFerramenta> {
-  // Uma confirmação nova substitui a anterior que ainda não foi respondida.
-  await sb.from('pending_confirmations').update({ used_at: new Date().toISOString() })
-    .is('used_at', null).gt('expires_at', new Date().toISOString());
+  // As confirmações de um mesmo pedido se juntam (um "sim" só); as de pedidos anteriores o `executar` já anulou.
   const bytes = crypto.getRandomValues(new Uint8Array(18));
   const code = `cf_${btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`;
   const ids = alvo.map((t) => t.id);
@@ -372,6 +370,24 @@ async function apagarVarias(ctx: Ctx, alvo: Tarefa[]) {
     if (nova) apagadas.push(nova);
   }
   return apagadas;
+}
+
+
+/** Executa uma confirmação pendente (o "sim" do dono). */
+async function confirmarUma(ctx: Ctx, p: { action: string; preview?: { ids?: string[] } }): Promise<ResultadoFerramenta> {
+  const ids: string[] = p.preview?.ids ?? [];
+  const outra = EXTENSOES.find((e) => e.confirmar?.[p.action]);
+  if (outra) return outra.confirmar![p.action]!(ctx, ids);
+  const { data: linhas } = await ctx.sb.from('tasks').select(CAMPOS).in('id', ids).is('deleted_at', null);
+  const alvo = (linhas ?? []) as Tarefa[];
+  if (!alvo.length) return falha('jarvis_confirmar', 'As tarefas não existem mais.');
+  const feitas = p.action === 'tarefas_apagar' ? await apagarVarias(ctx, alvo) : await concluirVarias(ctx, alvo);
+  const verbo = p.action === 'tarefas_apagar' ? 'Apagada' : 'Concluída';
+  return {
+    ferramenta: 'jarvis_confirmar', ok: true, resumo: `${p.action}: ${feitas.length}`, fatos: { acao: p.action, tarefas: feitas },
+    texto: `${verbo}${feitas.length > 1 ? 's' : ''}: ${feitas.map((t) => `**${t.title}**`).join(', ')}. Se mudar de ideia, é só dizer "desfaz".`,
+    ids: feitas.map((t) => t.id),
+  };
 }
 
 export type Executor = (ctx: Ctx, args: Record<string, unknown>) => Promise<ResultadoFerramenta>;
@@ -563,30 +579,30 @@ const EXECUTORES: Record<string, Executor> = {
   },
 
   async jarvis_confirmar(ctx) {
-    const { data: p } = await ctx.sb.from('pending_confirmations').select('*')
+    // Um "sim" confirma tudo o que o último pedido deixou esperando (ex.: enviar o e-mail E apagar as tarefas).
+    const { data: lista } = await ctx.sb.from('pending_confirmations').select('*')
       .is('used_at', null).gt('expires_at', new Date().toISOString())
-      .order('created_at', { ascending: false }).limit(1).maybeSingle();
-    if (!p) return falha('jarvis_confirmar', 'Não há nada esperando confirmação (ou o prazo de 10 minutos passou).');
-    // Marca como usada antes de executar: o mesmo código nunca roda duas vezes.
-    const { data: usada } = await ctx.sb.from('pending_confirmations').update({ used_at: new Date().toISOString() })
-      .eq('code', p.code).is('used_at', null).select('code').maybeSingle();
-    if (!usada) return falha('jarvis_confirmar', 'Essa confirmação já foi usada.');
-    const ids: string[] = p.preview?.ids ?? [];
-    const outra = EXTENSOES.find((e) => e.confirmar?.[p.action]);
-    if (outra) return outra.confirmar![p.action]!(ctx, ids);
-    const { data: linhas } = await ctx.sb.from('tasks').select(CAMPOS).in('id', ids).is('deleted_at', null);
-    const alvo = (linhas ?? []) as Tarefa[];
-    if (!alvo.length) return falha('jarvis_confirmar', 'As tarefas não existem mais.');
-    const feitas = p.action === 'tarefas_apagar' ? await apagarVarias(ctx, alvo) : await concluirVarias(ctx, alvo);
-    const verbo = p.action === 'tarefas_apagar' ? 'Apagada' : 'Concluída';
+      .order('created_at', { ascending: true }).limit(10);
+    if (!lista?.length) return falha('jarvis_confirmar', 'Não há nada esperando confirmação (ou o prazo de 10 minutos passou).');
+    const feitos: ResultadoFerramenta[] = [];
+    for (const p of lista) {
+      // Marca como usada antes de executar: o mesmo código nunca roda duas vezes.
+      const { data: usada } = await ctx.sb.from('pending_confirmations').update({ used_at: new Date().toISOString() })
+        .eq('code', p.code).is('used_at', null).select('code').maybeSingle();
+      if (!usada) continue;
+      feitos.push(await confirmarUma(ctx, p).catch((e) => falha('jarvis_confirmar', `Erro ao executar (${e instanceof Error ? e.message : e}).`)));
+    }
+    if (!feitos.length) return falha('jarvis_confirmar', 'Essa confirmação já foi usada.');
+    if (feitos.length === 1) return feitos[0]!;
     return {
-      ferramenta: 'jarvis_confirmar', ok: true, resumo: `${p.action}: ${feitas.length}`, fatos: { acao: p.action, tarefas: feitas },
-      texto: `${verbo}${feitas.length > 1 ? 's' : ''}: ${feitas.map((t) => `**${t.title}**`).join(', ')}. Se mudar de ideia, é só dizer "desfaz".`,
-      ids: feitas.map((t) => t.id),
+      ferramenta: 'jarvis_confirmar', ok: feitos.some((f) => f.ok), resumo: feitos.map((f) => f.resumo).join('; '),
+      fatos: Object.assign({}, ...feitos.map((f) => f.fatos)), texto: feitos.map((f) => f.texto).join('\n\n'),
+      ids: feitos.flatMap((f) => f.ids),
     };
   },
 
   async jarvis_cancelar(ctx) {
+
     const { data } = await ctx.sb.from('pending_confirmations').update({ used_at: new Date().toISOString() })
       .is('used_at', null).gt('expires_at', new Date().toISOString()).select('code');
     return {
@@ -676,6 +692,11 @@ export async function contextoExtensoes(sb: SupabaseClient): Promise<string> {
 export async function executar(sb: SupabaseClient, acoes: Acao[], hoje = hojeSP()): Promise<ResultadoFerramenta[]> {
   const ctx: Ctx = { sb, hoje };
   const saida: ResultadoFerramenta[] = [];
+  // Pedido novo (não é a resposta a uma confirmação): o que ficou esperando de antes perde a validade.
+  if (!acoes.some((a) => a.ferramenta === 'jarvis_confirmar' || a.ferramenta === 'jarvis_cancelar')) {
+    await sb.from('pending_confirmations').update({ used_at: new Date().toISOString() })
+      .is('used_at', null).gt('expires_at', new Date().toISOString());
+  }
   for (const a of acoes) {
     try {
       saida.push(await EXECUTORES[a.ferramenta]!(ctx, a.args));
@@ -683,17 +704,34 @@ export async function executar(sb: SupabaseClient, acoes: Acao[], hoje = hojeSP(
       saida.push(falha(a.ferramenta, `Erro ao executar (${e instanceof Error ? e.message : e}).`));
     }
   }
-  return saida;
+  return juntarConfirmacoes(saida);
+}
+
+/** Várias ações do mesmo pedido pedindo confirmação: uma pergunta só no fim ("sim" confirma tudo). */
+export function juntarConfirmacoes(rs: ResultadoFerramenta[]): ResultadoFerramenta[] {
+  const esperando = rs.filter((r) => r.fatos?.aguardando_confirmacao);
+  if (esperando.length < 2) return rs;
+  const semPergunta = (t: string) => t.replace(/\n+Confirma[^\n]*$/, '').trimEnd();
+  const enviaEmail = esperando.some((r) => r.ferramenta === 'email_enviar');
+  return [
+    ...rs.map((r) => (r.fatos?.aguardando_confirmacao ? { ...r, texto: semPergunta(r.texto) } : r)),
+    {
+      ferramenta: 'jarvis_perguntar', ok: true, resumo: 'uma confirmação para tudo', fatos: {}, ids: [],
+      texto: `**Confirma tudo isso?** Um "sim" faz as ${esperando.length} coisas.${enviaEmail ? ' O envio de e-mail não dá para desfazer; o resto dá, em até 24 h.' : ' Dá para desfazer em até 24 h.'}`,
+    },
+  ];
 }
 
 /** Há confirmação esperando resposta? Devolve a descrição (para o planejador). */
 export async function confirmacaoPendente(sb: SupabaseClient): Promise<string | null> {
   const { data } = await sb.from('pending_confirmations').select('preview')
     .is('used_at', null).gt('expires_at', new Date().toISOString())
-    .order('created_at', { ascending: false }).limit(1).maybeSingle();
-  if (!data) return null;
-  const p = data.preview as { descricao?: string; titulos?: string[] };
-  return `${p.descricao ?? 'ação'} (${(p.titulos ?? []).join(', ')})`;
+    .order('created_at', { ascending: true }).limit(10);
+  if (!data?.length) return null;
+  return data.map((d) => {
+    const p = d.preview as { descricao?: string; titulos?: string[] };
+    return `${p.descricao ?? 'ação'} (${(p.titulos ?? []).join(', ')})`;
+  }).join(' + ');
 }
 
 /** Junta os textos prontos das ferramentas numa resposta só. */
