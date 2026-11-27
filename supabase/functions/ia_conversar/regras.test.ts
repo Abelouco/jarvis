@@ -218,72 +218,10 @@ test('projetos: o detector local chama o planejador', () => {
     'Cria o projeto Reformar o quarto',
     'como está o projeto do app?',
     'coloca a tarefa comprar tinta no projeto reforma',
-    'adiciona o marco Pintura no projeto Reforma',
   ]) {
     assert.equal(pareceTarefa(t, false), true, t);
   }
   assert.equal(pareceTarefa('Qual a capital da França?', false), false);
-});
-
-// ---------- hábitos ----------
-import './habitos.ts';
-import { cumpriu, descreverFrequencia, idRegistro, semana, sequencia } from './habitos_regras.ts';
-
-test('hábitos: o detector local chama o planejador', () => {
-  for (const t of ['Quero criar o hábito de meditar', 'meditei hoje', 'li 20 minutos', 'bebi 2 copos de água', 'fiz o treino']) {
-    assert.equal(pareceTarefa(t, false), true, t);
-  }
-});
-
-test('hábitos: sequência, semana e meta do dia', () => {
-  const hoje = '2026-11-25'; // quarta
-  const todoDia = { kind: 'boolean' as const, daily_target: null, weekdays: null, times_per_week: null };
-  const feitos = new Set(['2026-11-22', '2026-11-23', '2026-11-24']);
-  assert.deepEqual(sequencia(todoDia, feitos, hoje), { n: 3, unidade: 'dias' }); // hoje em aberto não quebra
-  feitos.add(hoje);
-  assert.deepEqual(sequencia(todoDia, feitos, hoje), { n: 4, unidade: 'dias' });
-  // Dias úteis: o fim de semana não quebra a sequência.
-  const uteis = { ...todoDia, weekdays: [1, 2, 3, 4, 5] };
-  assert.equal(sequencia(uteis, new Set(['2026-11-20', '2026-11-23', '2026-11-24']), hoje).n, 3);
-  assert.equal(descreverFrequencia(uteis), 'dias úteis');
-  // 3x por semana: conta semanas que bateram a meta; a atual só quando bate.
-  const tres = { ...todoDia, times_per_week: 3 };
-  const s = new Set(['2026-11-16', '2026-11-18', '2026-11-20', '2026-11-23']);
-  assert.deepEqual(sequencia(tres, s, hoje), { n: 1, unidade: 'semanas' });
-  assert.deepEqual(semana(tres, s, hoje), { feitas: 1, meta: 3 });
-  // Minutos: só cumpre ao chegar na meta.
-  const leitura = { kind: 'duration' as const, daily_target: 30, weekdays: null, times_per_week: null };
-  assert.equal(cumpriu(leitura, 20), false);
-  assert.equal(cumpriu(leitura, 30), true);
-  // id do registro: fixo por hábito+dia, formato uuid.
-  const id = idRegistro('a1b2', '2026-11-25');
-  assert.equal(id, idRegistro('a1b2', '2026-11-25'));
-  assert.notEqual(id, idRegistro('a1b2', '2026-11-26'));
-  assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/);
-});
-
-test('hábitos: a cópia do servidor é igual à do app', () => {
-  const corpo = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8').replace(/\r/g, '').split('\n').slice(3).join('\n');
-  assert.equal(corpo('./habitos_regras.ts'), corpo('../../../packages/core/src/habitos.ts'));
-});
-
-// ---------- conhecimento ----------
-import { lerEtiquetas, nomeNota } from './conhecimento.ts';
-
-test('conhecimento: o detector local chama o planejador', () => {
-  for (const t of ['cria uma nota sobre o projeto', 'o que eu anotei sobre o carro?', 'escreve no meu diário que hoje foi bom',
-    'guarda essa ideia: app de receitas', 'minhas capturas']) {
-    assert.equal(pareceTarefa(t, false), true, t);
-  }
-});
-
-test('conhecimento: nome da nota e etiquetas', () => {
-  const hoje = '2026-11-25';
-  assert.equal(nomeNota({ kind: 'nota', title: ' Receita ', content: 'x', day: null }, hoje), 'Receita');
-  assert.equal(nomeNota({ kind: 'diario', title: null, content: 'x', day: hoje }, hoje), 'Diário de hoje');
-  assert.equal(nomeNota({ kind: 'captura', title: null, content: 'a'.repeat(80), day: null }, hoje).length, 58);
-  assert.deepEqual(lerEtiquetas('#Ideias, trabalho; ideias'), ['ideias', 'trabalho']);
-  assert.deepEqual(lerEtiquetas(['  Casa ', '#casa']), ['casa']);
 });
 
 import { resolverAte, rotuloAte, tipoAviso } from './avisos.ts';
@@ -292,8 +230,7 @@ test('avisos: tipo pelo nome que o dono usa', () => {
   assert.equal(tipoAviso('resumo da manhã'), 'resumo_manha');
   assert.equal(tipoAviso('resumo do dia'), 'resumo_noite');
   assert.equal(tipoAviso('tarefas atrasadas'), 'tarefa_atrasada');
-  assert.equal(tipoAviso('hábito'), 'habito_sequencia');
-  assert.equal(tipoAviso('diário'), 'diario_vazio');
+  assert.equal(tipoAviso('hábito'), null);
   assert.equal(tipoAviso('prazo_projeto'), 'prazo_projeto');
   assert.equal(tipoAviso('qualquer coisa'), null);
 });

@@ -15,9 +15,7 @@ import { aprender, blocoMemoria, lembrar } from './memoria.ts';
 import { blocoTrechos, buscar, fontesDe, temBusca, type PesquisaAnterior, type Trecho } from './busca.ts';
 import { pronunciasEnsinadas, resumoFalado } from './fala.ts';
 import './lembretes.ts'; // registra as ferramentas de lembretes no planejador
-import './projetos.ts'; // idem, projetos e marcos
-import './habitos.ts'; // idem, hábitos
-import './conhecimento.ts'; // idem, notas, capturas e diário
+import './projetos.ts'; // idem, projetos
 import './avisos.ts'; // idem, ajustes dos avisos (Fase 3)
 import {
   carregarAbertas, confirmacaoPendente, contextoExtensoes, executar, pareceTarefa, planejar, textoFinal,

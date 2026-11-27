@@ -8,9 +8,7 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const NOME_TIPO: Record<TipoAviso, string> = {
   tarefa_atrasada: 'Tarefa atrasada',
   lembrete_hora: 'Lembrete',
-  habito_sequencia: 'Sequência de hábito',
   prazo_projeto: 'Prazo de projeto',
-  diario_vazio: 'Diário em branco',
   resumo_manha: 'Resumo da manhã',
   resumo_noite: 'Resumo da noite',
 };
@@ -49,7 +47,7 @@ export function htmlAvisos(): string {
   <header class="av-topo">
     <div>
       <h2>Avisos</h2>
-      <p class="av-sub">O que eu avisei sozinho, e por quê. Peça ajustes na conversa também: <em>"silencia o diário até amanhã"</em>, <em>"resumo da manhã às 9h"</em>.</p>
+      <p class="av-sub">O que eu avisei sozinho, e por quê. Peça ajustes na conversa também: <em>"silencia as tarefas atrasadas até amanhã"</em>, <em>"resumo da manhã às 9h"</em>.</p>
     </div>
     <button type="button" class="av-lidos" hidden>Marcar todos como vistos</button>
   </header>

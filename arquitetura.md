@@ -38,13 +38,12 @@ Responda e comente sempre em português do Brasil.
 |---|---|
 | `packages/core/src/types.ts` | Tipos das entidades (Task, Reminder, Project, Milestone, Habit, HabitLog, Memory, Message...) |
 | `packages/core/src/local.ts` | Esquema do SQLite local, `TABELAS_SYNC` (ordem: pais antes dos filhos), colunas JSON/booleanas |
-| `packages/core/src/jarvis.ts` | API que as telas usam: `tarefas`, `lembretes`, `projetos`, `habitos`, `memorias`, conversa, sync, atividades |
+| `packages/core/src/jarvis.ts` | API que as telas usam: `tarefas`, `lembretes`, `projetos`, `avisos`, `memorias`, conversa, sync, atividades |
 | `packages/core/src/recorrencia.ts` | Repetição (diária, dias úteis, semanal, mensal). **Tem cópia** em `ia_conversar/recorrencia.ts` |
-| `packages/core/src/habitos.ts` | Regras puras de hábitos (sequência, semana, `idRegistro`). **Tem cópia** em `ia_conversar/habitos_regras.ts` |
 | `packages/core/src/markdown.ts` | Markdown → HTML seguro (blocos `opcoes`, `texto`, `powershell`) |
 | `packages/nucleo/src/` | Núcleo 3D: esfera, anéis, nós de memória e projeto, pulsos |
-| `apps/desktop/src/main.ts` | Casca do app: abas (Conversa, Tarefas, Projetos, Hábitos, Lembretes, Memória), login, sync |
-| `apps/desktop/src/{tarefas via formTarefa,lembretes,projetos,habitos}.ts` | Cada aba: `htmlX()` + `ligarX(raiz, {pulsar, aoMudar})` |
+| `apps/desktop/src/main.ts` | Casca do app: abas (Hoje, Conversa, Tarefas, Projetos, Lembretes, Avisos, Memória), login, sync |
+| `apps/desktop/src/{tarefas via formTarefa,lembretes,projetos,hoje,abaAvisos}.ts` | Cada aba: `htmlX()` + `ligarX(raiz, {pulsar, aoMudar})` |
 | `apps/desktop/src/estilo.css` | Todo o visual (variáveis `--ciano`, `--borda`, `--baixa`...) |
 | `apps/desktop/src/voz.ts` + `src-tauri/src/voz.rs` | Microfone → `ia_transcrever`; fala com Piper local |
 | `apps/desktop/src-tauri/` | Rust/Tauri: janela, notificação (`aviso.rs`), terminal, updater |
@@ -56,7 +55,7 @@ Responda e comente sempre em português do Brasil.
 | `.../memoria.ts` | Lembrar e aprender memórias do dono |
 | `.../fala.ts` | Resumo falado e pronúncias ensinadas |
 | `.../tarefas.ts` | **Planejador** (Groq em JSON) + executores de tarefas + `registrar()` de extensões + confirmar/cancelar/desfazer |
-| `.../lembretes.ts`, `projetos.ts`, `habitos.ts` | Extensões registradas no planejador |
+| `.../lembretes.ts`, `projetos.ts`, `avisos.ts` | Extensões registradas no planejador |
 | `supabase/functions/avisos_vigia/` | Vigia dos avisos (Fase 3). `decisao.ts` = regras puras (detectores, silêncio, hora fixa, junção, canal), testadas em `decisao.test.ts`; `index.ts` = banco e entrega. Deploy: os 2 `.ts`, `verify_jwt` desligado (a função confere a chave do Vault no cabeçalho `x-vigia-chave`) |
 | `apps/desktop/src/avisos.ts` | Sinal de "PC aberto" (`devices`, a cada minuto) e notificação do Windows quando chega o evento `notify` |
 | `.../regras.test.ts` | Testes (rota, datas, recorrência, detectores, hábitos, cópias iguais) |
@@ -81,7 +80,7 @@ A IA **nunca calcula datas**: ela devolve `quando`/`dia_semana`/`daqui_dias`/`di
 
 ---
 
-## 4. Receita: novo domínio (ex.: conhecimento, painel do dia)
+## 4. Receita: novo domínio (ex.: lembretes, projetos, finanças)
 
 Siga a mesma forma de lembretes, projetos e hábitos:
 
@@ -114,7 +113,7 @@ Siga a mesma forma de lembretes, projetos e hábitos:
 - Conteúdo sensível só vai para o Groq: nunca para o Gemini nem para a busca.
 - Mudança de schema é sempre uma migração nova.
 - Datas `AAAA-MM-DD`, horas `HH:MM`, fuso `America/Sao_Paulo` (UTC-3 fixo).
-- Arquivos com cópia (`recorrencia`, `habitos`): mudar os dois juntos.
+- Arquivos com cópia (`recorrencia` no core e no `ia_conversar`, `sensivel` no `ia_conversar` e no vigia): mudar os dois juntos.
 - Não mexer em `apps/mobile` por enquanto (foco no PC).
 - Chaves e senhas nunca no código: ficam nos secrets do Supabase, e o dono digita as dele.
 - Orçamento zero: nada de serviço pago nem modelo local grande (o C: está quase cheio, o projeto fica no D:).

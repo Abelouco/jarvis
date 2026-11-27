@@ -1,12 +1,12 @@
-// Aba Hoje (Fase 2 · Etapa 6): o dia num lugar só. Tarefas, lembretes, hábitos, diário e projetos.
+// Aba Hoje (Fase 2 · Etapa 6): o dia num lugar só. Tarefas, lembretes e projetos.
 // Só lê e mostra o que já está no banco local (jarvis.*); as ações reaproveitam as funções das outras abas.
-import { hojeSP, partesSP, type HabitoResumo, type Note, type ProjetoResumo, type Reminder, type Task } from '@jarvis/core';
+import { hojeSP, partesSP, type ProjetoResumo, type Reminder, type Task } from '@jarvis/core';
 import { jarvis } from './jarvis';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** Abas para onde os links "ver todas" levam. */
-export type AbaDestino = 'tarefas' | 'lembretes' | 'habitos' | 'conhecimento' | 'projetos';
+export type AbaDestino = 'tarefas' | 'lembretes' | 'projetos';
 
 const SEMANA = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -38,12 +38,10 @@ export function htmlHoje(): string {
   <p class="hj-resumo"></p>
   <div class="hj-grade">
     <section class="hj-cartao" data-cartao="tarefas"><h3>Tarefas <button type="button" class="hj-ver" data-ir="tarefas">ver todas</button></h3><div class="hj-corpo"></div></section>
-    <section class="hj-cartao" data-cartao="habitos"><h3>Hábitos <button type="button" class="hj-ver" data-ir="habitos">ver todos</button></h3><div class="hj-corpo"></div></section>
     <section class="hj-cartao" data-cartao="lembretes"><h3>Lembretes <button type="button" class="hj-ver" data-ir="lembretes">ver todos</button></h3><div class="hj-corpo"></div></section>
-    <section class="hj-cartao" data-cartao="diario"><h3>Diário <button type="button" class="hj-ver" data-ir="conhecimento">abrir</button></h3><div class="hj-corpo"></div></section>
     <section class="hj-cartao hj-largo" data-cartao="projetos"><h3>Projetos <button type="button" class="hj-ver" data-ir="projetos">ver todos</button></h3><div class="hj-corpo"></div></section>
   </div>
-  <p class="dica-tarefas">Ou peça na conversa: <em>"o que tenho hoje?"</em>, <em>"meditei"</em>, <em>"me lembra às 18h de ligar pro João"</em>.</p>
+  <p class="dica-tarefas">Ou peça na conversa: <em>"o que tenho hoje?"</em>, <em>"terminei a tarefa X"</em>, <em>"me lembra às 18h de ligar pro João"</em>.</p>
 </div>`;
 }
 
@@ -90,34 +88,8 @@ export function ligarHoje(raiz: HTMLElement, op: { pulsar?: () => void; irPara?:
         : '';
       corpo('tarefas').innerHTML = `<ul class="hj-lista">${lis}${mais}</ul>`;
     }
-    return { atrasadas: atrasadas.length, deHoje: deHoje.length };
-  }
-
-  function desenharHabitos(lista: HabitoResumo[]) {
-    const hoje = lista.filter((h) => h.previstoHoje && !h.paused);
-    const ordenados = [...hoje].sort((a, b) => Number(a.feitoHoje) - Number(b.feitoHoje));
-    if (!ordenados.length) {
-      corpo('habitos').innerHTML = '<p class="hj-vazio">Nenhum hábito para hoje.</p>';
-    } else {
-      const lis = ordenados.map((h) => {
-        let meta = '';
-        if (h.kind !== 'boolean' && h.daily_target) {
-          const unidade = h.unit ? ` ${esc(h.unit)}` : (h.kind === 'duration' ? ' min' : '');
-          meta = `<span class="hj-meta">${h.hojeValor ?? 0}/${h.daily_target}${unidade}</span>`;
-        }
-        const seq = h.sequencia.n > 1 ? `<span class="hj-seq">🔥 ${h.sequencia.n}</span>` : '';
-        return `<li>
-          <button type="button" class="hj-habito${h.feitoHoje ? ' feito' : ''}" data-habito="${h.id}" data-tipo="${h.kind}"
-            data-meta="${h.daily_target ?? ''}" data-feito="${h.feitoHoje ? '1' : ''}"
-            title="${h.kind === 'quantity' ? '+1 (clique)' : h.feitoHoje ? 'Desmarcar' : 'Marcar como feito'}">
-            <span>${esc(h.name)}</span>${meta}${seq}
-          </button>
-        </li>`;
-      }).join('');
-      corpo('habitos').innerHTML = `<ul class="hj-lista">${lis}</ul>`;
-    }
-    const faltando = hoje.filter((h) => !h.feitoHoje).length;
-    return { faltando, total: hoje.length };
+    const feitasHoje = lista.filter((t) => t.done_at && t.due_date === hoje).length;
+    return { atrasadas: atrasadas.length, deHoje: deHoje.length, feitasHoje };
   }
 
   function desenharLembretes(lista: Reminder[], hoje: string) {
@@ -138,18 +110,6 @@ export function ligarHoje(raiz: HTMLElement, op: { pulsar?: () => void; irPara?:
       </li>`;
     }).join('');
     corpo('lembretes').innerHTML = `<ul class="hj-lista">${lis}</ul>`;
-  }
-
-  function desenharDiario(n: Note | undefined) {
-    const texto = n?.content.trim();
-    if (!texto) {
-      corpo('diario').innerHTML =
-        '<button type="button" class="hj-convite" data-ir="conhecimento">Como foi o dia? Escreva no diário →</button>';
-      return;
-    }
-    const linhas = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, 3);
-    corpo('diario').innerHTML =
-      `<p class="hj-diario" data-ir="conhecimento">${linhas.map((l) => esc(l)).join('<br>')}</p>`;
   }
 
   function desenharProjetos(lista: ProjetoResumo[], hoje: string) {
@@ -186,16 +146,15 @@ export function ligarHoje(raiz: HTMLElement, op: { pulsar?: () => void; irPara?:
     corpo('projetos').innerHTML = `<ul class="hj-lista">${lis}</ul>`;
   }
 
-  function desenharTopo(hoje: string, t: { atrasadas: number; deHoje: number }, h: { faltando: number; total: number }) {
+  function desenharTopo(hoje: string, t: { atrasadas: number; deHoje: number; feitasHoje: number }) {
     raiz.querySelector<HTMLElement>('.hj-saudacao')!.textContent = saudacao();
     raiz.querySelector<HTMLElement>('.hj-data')!.textContent = dataExtenso(hoje);
     const partes: string[] = [];
     if (t.atrasadas > 0) partes.push(`${t.atrasadas} atrasada${t.atrasadas === 1 ? '' : 's'}`);
     partes.push(`${t.deHoje} para hoje`);
-    if (h.faltando > 0) partes.push(`${h.faltando} hábito${h.faltando === 1 ? '' : 's'} faltando`);
     raiz.querySelector<HTMLElement>('.hj-resumo')!.textContent = partes.join(' · ');
     const selo = raiz.querySelector<HTMLElement>('.hj-selo')!;
-    selo.hidden = !(t.atrasadas === 0 && t.deHoje === 0 && h.total > 0 && h.faltando === 0);
+    selo.hidden = !(t.atrasadas === 0 && t.deHoje === 0 && t.feitasHoje > 0);
   }
 
   // Mudança que chega no meio de um desenho não se perde: desenha de novo ao terminar.
@@ -209,16 +168,13 @@ export function ligarHoje(raiz: HTMLElement, op: { pulsar?: () => void; irPara?:
     deNovo = false;
     try {
       const hoje = hojeSP();
-      const [tarefas, lembretes, habitos, diario, projetos] = await Promise.all([
-        jarvis.tarefas.listar(), jarvis.lembretes.listar(), jarvis.habitos.listar(hoje),
-        jarvis.conhecimento.diario(hoje), jarvis.projetos.listar(),
+      const [tarefas, lembretes, projetos] = await Promise.all([
+        jarvis.tarefas.listar(), jarvis.lembretes.listar(), jarvis.projetos.listar(),
       ]);
       const t = desenharTarefas(tarefas, hoje);
-      const h = desenharHabitos(habitos);
       desenharLembretes(lembretes, hoje);
-      desenharDiario(diario);
       desenharProjetos(projetos, hoje);
-      desenharTopo(hoje, t, h);
+      desenharTopo(hoje, t);
     } finally {
       desenhando = false;
       if (deNovo) void desenhar();
@@ -232,18 +188,6 @@ export function ligarHoje(raiz: HTMLElement, op: { pulsar?: () => void; irPara?:
     const concluir = alvo.closest<HTMLElement>('[data-concluir]')?.dataset.concluir;
     if (concluir) {
       await jarvis.tarefas.alternarConcluida(concluir);
-      op.pulsar?.();
-      return void desenhar();
-    }
-    const hb = alvo.closest<HTMLElement>('[data-habito]');
-    if (hb) {
-      const id = hb.dataset.habito!;
-      const meta = Number(hb.dataset.meta) || 0;
-      // Quantidade soma 1 (copos, páginas...). Minutos: um clique cumpre a meta do dia, outro desmarca.
-      if (hb.dataset.tipo === 'quantity') await jarvis.habitos.somar(id, 1);
-      else if (hb.dataset.tipo === 'duration' && meta) {
-        await jarvis.habitos.registrar(id, hojeSP(), hb.dataset.feito ? null : meta);
-      } else await jarvis.habitos.alternar(id);
       op.pulsar?.();
       return void desenhar();
     }

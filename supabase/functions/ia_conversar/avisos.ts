@@ -8,20 +8,17 @@ import { acharPorNome, falha, normalizarHora, recibo, registrar, resolverQuando,
 import { instanteSP, partesSP } from './recorrencia.ts';
 
 export type TipoAviso =
-  | 'tarefa_atrasada' | 'lembrete_hora' | 'habito_sequencia' | 'prazo_projeto'
-  | 'diario_vazio' | 'resumo_manha' | 'resumo_noite';
+  | 'tarefa_atrasada' | 'lembrete_hora' | 'prazo_projeto' | 'resumo_manha' | 'resumo_noite';
 
 export const NOMES_TIPO: Record<TipoAviso, string> = {
   tarefa_atrasada: 'tarefas atrasadas',
   lembrete_hora: 'lembretes',
-  habito_sequencia: 'sequência de hábito',
   prazo_projeto: 'prazo de projeto',
-  diario_vazio: 'diário em branco',
   resumo_manha: 'resumo da manhã',
   resumo_noite: 'resumo da noite',
 };
 
-/** "atrasadas", "resumo da manhã", "hábito"... -> tipo. Aceita o próprio nome técnico. */
+/** "atrasadas", "resumo da manhã", "lembretes"... -> tipo. Aceita o próprio nome técnico. */
 export function tipoAviso(x: unknown): TipoAviso | null {
   if (typeof x !== 'string') return null;
   const t = normalizar(x).trim();
@@ -30,17 +27,14 @@ export function tipoAviso(x: unknown): TipoAviso | null {
   if (/resumo.*noite|resumo do dia/.test(t)) return 'resumo_noite';
   if (/atrasad|tarefa/.test(t)) return 'tarefa_atrasada';
   if (/lembrete/.test(t)) return 'lembrete_hora';
-  if (/habito|sequencia/.test(t)) return 'habito_sequencia';
   if (/prazo|projeto/.test(t)) return 'prazo_projeto';
-  if (/diario/.test(t)) return 'diario_vazio';
   return null;
 }
 
-/** Tabela e coluna de nome do item de cada tipo (para "silencia o hábito Ler"). */
+/** Tabela e coluna de nome do item de cada tipo (para "silencia a tarefa Ler"). */
 const ITEM: Partial<Record<TipoAviso, { tabela: string; nome: string; filtro: (q: any) => any }>> = {
   tarefa_atrasada: { tabela: 'tasks', nome: 'title', filtro: (q) => q.is('done_at', null).eq('archived', false) },
   lembrete_hora: { tabela: 'reminders', nome: 'title', filtro: (q) => q.is('done_at', null) },
-  habito_sequencia: { tabela: 'habits', nome: 'name', filtro: (q) => q },
   prazo_projeto: { tabela: 'projects', nome: 'name', filtro: (q) => q.eq('archived', false) },
 };
 
@@ -114,7 +108,7 @@ async function mudarPrefs(ctx: Ctx, m: Partial<Prefs>, acao: string) {
   return r.data as Prefs;
 }
 
-/** Item citado ("o hábito Ler") -> id e nome. Texto = erro para o dono. */
+/** Item citado ("a tarefa Ler") -> id e nome. Texto = erro para o dono. */
 async function acharItem(sb: SupabaseClient, kind: TipoAviso, ref: string): Promise<{ id: string; nome: string } | string> {
   const it = ITEM[kind];
   if (!it) return `O aviso de ${NOMES_TIPO[kind]} não é de um item só: dá para ligar, desligar ou mudar a hora dele todo.`;
@@ -124,7 +118,7 @@ async function acharItem(sb: SupabaseClient, kind: TipoAviso, ref: string): Prom
   const c = acharPorNome(ref, lista);
   if (c.length === 1) return { id: c[0]!.id, nome: c[0]!.title };
   if (c.length > 1) return `"${ref}" bate com mais de um: ${c.slice(0, 5).map((x) => `**${x.title}**`).join(', ')}. Qual?`;
-  return `Não achei "${ref}" entre ${it.tabela === 'habits' ? 'os hábitos' : it.tabela === 'projects' ? 'os projetos' : it.tabela === 'reminders' ? 'os lembretes' : 'as tarefas'}.`;
+  return `Não achei "${ref}" entre ${it.tabela === 'projects' ? 'os projetos' : it.tabela === 'reminders' ? 'os lembretes' : 'as tarefas'}.`;
 }
 
 const hh = (t: string | null) => (t ? t.slice(0, 5) : '');
@@ -132,7 +126,7 @@ const hh = (t: string | null) => (t ? t.slice(0, 5) : '');
 /** Tipo + item (opcional) a partir dos argumentos; erro em texto. */
 async function alvo(ctx: Ctx, a: Record<string, unknown>, ferramenta: string) {
   const kind = tipoAviso(a.tipo);
-  if (!kind) return falha(ferramenta, 'De qual aviso? (tarefas atrasadas, lembretes, hábito, prazo de projeto, diário, resumo da manhã ou da noite)');
+  if (!kind) return falha(ferramenta, 'De qual aviso? (tarefas atrasadas, lembretes, prazo de projeto, resumo da manhã ou da noite)');
   const ref = typeof a.ref === 'string' ? a.ref.trim() : '';
   if (!ref) return { kind, item: null as { id: string; nome: string } | null };
   const item = await acharItem(ctx.sb, kind, ref);
@@ -149,10 +143,10 @@ avisos_desligar_todos {}   (para de avisar de tudo, até religar)
 avisos_horario {tipo: TIPO_AVISO, hora: "HH:MM"|null}   (avisar só nessa hora; null = na hora em que acontece. Resumos: muda a hora do resumo)
 avisos_configurar {silencio_inicio?: "HH:MM", silencio_fim?: "HH:MM", resumo_manha?: "HH:MM", resumo_noite?: "HH:MM"}
 avisos_listar {quantos?: número}   (últimos avisos com o motivo de cada um, e as regras que o dono pediu)
-TIPO_AVISO = "tarefa_atrasada"|"lembrete_hora"|"habito_sequencia"|"prazo_projeto"|"diario_vazio"|"resumo_manha"|"resumo_noite"`;
+TIPO_AVISO = "tarefa_atrasada"|"lembrete_hora"|"prazo_projeto"|"resumo_manha"|"resumo_noite"`;
 
 const REGRAS = [
-  '- AVISOS (o que o J.A.R.V.I.S. manda sozinho: PC e celular) = avisos_*. "não me avisa mais do diário" -> avisos_silenciar {tipo:"diario_vazio"}; "silencia o hábito Ler até amanhã" -> {tipo:"habito_sequencia", ref:"Ler", quando:"amanha"}; "silencia os avisos de tarefa por 2 horas" -> {tipo:"tarefa_atrasada", por_horas:2}.',
+  '- AVISOS (o que o J.A.R.V.I.S. manda sozinho: PC e celular) = avisos_*. "não me avisa mais do resumo da noite" -> avisos_silenciar {tipo:"resumo_noite"}; "silencia a tarefa Ler até amanhã" -> {tipo:"tarefa_atrasada", ref:"Ler", quando:"amanha"}; "silencia os avisos de tarefa por 2 horas" -> {tipo:"tarefa_atrasada", por_horas:2}.',
   '- "me manda o resumo da manhã às 9h" -> avisos_configurar {resumo_manha:"09:00"}; "não me incomoda depois das 23h" / "silêncio das 23h às 7h" -> avisos_configurar {silencio_inicio:"23:00", silencio_fim:"07:00"}; "só me avisa de tarefa atrasada às 18h" -> avisos_horario {tipo:"tarefa_atrasada", hora:"18:00"}.',
   '- "por que você me avisou?", "quais avisos você mandou?" -> avisos_listar. "me lembra/me avisa de X às H" continua sendo lembretes_criar (não é avisos_*).',
 ];

@@ -1,13 +1,11 @@
 // Regras puras do vigia de avisos (sem banco, sem rede): detectores, decisão, junção e canal.
 // Testadas em decisao.test.ts. Fuso America/Sao_Paulo = UTC-3 fixo (o Brasil não tem mais horário de verão).
 import { avaliarSensibilidade } from './sensivel.ts'; // cópia de ia_conversar/sensivel.ts (teste confere)
-import { cumpriu, previstoNoDia, sequencia, type RegraHabito } from './habitos_regras.ts'; // idem (com recorrencia.ts)
 
 export type Prioridade = 'urgente' | 'normal' | 'baixa';
 export type Status = 'enviado' | 'segurado_silencio' | 'juntado' | 'silenciado' | 'agendado';
 export type Tipo =
-  | 'tarefa_atrasada' | 'lembrete_hora' | 'habito_sequencia' | 'prazo_projeto'
-  | 'diario_vazio' | 'resumo_manha' | 'resumo_noite';
+  | 'tarefa_atrasada' | 'lembrete_hora' | 'prazo_projeto' | 'resumo_manha' | 'resumo_noite';
 
 /** Um aviso que o vigia quer dar (ainda sem decisão). */
 export interface Candidato {
@@ -149,42 +147,6 @@ export function detectarAtrasadas(lista: TarefaBD[], agora: Date): Candidato[] {
     });
 }
 
-/** Minuto do dia (SP) a `antes` minutos do início do silêncio, sem passar de `teto` (HH:MM). */
-function antesDoSilencio(p: Preferencias, antes: number, teto: string): number {
-  return Math.max(0, Math.min(emMin(teto), (emMin(p.quiet_start) - antes + 1440) % 1440));
-}
-
-export interface HabitoBD extends RegraHabito { id: string; name: string; paused: boolean }
-export interface RegistroBD { habit_id: string; day: string; value: number | null }
-
-/**
- * Sequência para quebrar: hábito por dias, com 3 dias ou mais seguidos, previsto hoje e ainda não feito.
- * Sai 2 h antes do silêncio (padrão 20:00), uma vez por dia. "N vezes por semana" fica de fora:
- * a semana ainda pode ser salva amanhã.
- */
-export function detectarSequencias(habitos: HabitoBD[], registros: RegistroBD[], p: Preferencias, agora: Date): Candidato[] {
-  if (minutoSP(agora) < antesDoSilencio(p, 120, '21:00')) return [];
-  const hoje = diaSP(agora);
-  const out: Candidato[] = [];
-  for (const h of habitos) {
-    if (h.paused || h.times_per_week || !previstoNoDia(h, hoje)) continue;
-    const doHabito = registros.filter((r) => r.habit_id === h.id);
-    if (cumpriu(h, doHabito.find((r) => r.day === hoje)?.value)) continue;
-    const feitos = new Set(doHabito.filter((r) => cumpriu(h, r.value)).map((r) => r.day));
-    const { n } = sequencia(h, feitos, hoje);
-    if (n < 3) continue;
-    out.push({
-      kind: 'habito_sequencia', entity_type: 'habits', entity_id: h.id,
-      title: `${h.name}: ${n} dias seguidos`,
-      body: 'Ainda não foi feito hoje. Dá tempo de manter a sequência.',
-      reason: `O hábito está com ${n} dias seguidos e ainda não foi marcado hoje; aviso 2 h antes do silêncio.`,
-      priority: 'normal',
-      dedupe_key: `habito_sequencia:${h.id}:${hoje}`,
-    });
-  }
-  return out;
-}
-
 export interface ProjetoBD { id: string; name: string; due_date: string; status: string }
 
 /** Prazo de projeto chegando: faltando 3 dias e faltando 1 dia (um aviso em cada). */
@@ -206,20 +168,6 @@ export function detectarPrazos(projetos: ProjetoBD[], agora: Date): Candidato[] 
     });
   }
   return out;
-}
-
-/** Dia sem diário: às 21:30 (ou meia hora antes do silêncio, se ele começar antes), prioridade baixa. */
-export function detectarDiario(temDiarioHoje: boolean, p: Preferencias, agora: Date): Candidato[] {
-  if (temDiarioHoje || minutoSP(agora) < antesDoSilencio(p, 30, '21:30')) return [];
-  const hoje = diaSP(agora);
-  return [{
-    kind: 'diario_vazio', entity_type: 'notes', entity_id: null,
-    title: 'Diário de hoje em branco',
-    body: 'Quer contar como foi o dia? É só me dizer, que eu anoto.',
-    reason: 'Ainda não há entrada no diário de hoje.',
-    priority: 'baixa',
-    dedupe_key: `diario_vazio:${hoje}`,
-  }];
 }
 
 // ---------- decisão ----------
@@ -272,7 +220,6 @@ export interface DadosManha {
   tarefasHoje: { title: string; due_time: string | null }[];
   atrasadas: number;
   lembretesHoje: { title: string; remind_at: string }[];
-  habitosHoje: string[];
   prazos: { name: string; due_date: string }[];
   /** títulos do que o silêncio segurou durante a noite */
   segurados: string[];
@@ -289,9 +236,6 @@ export function resumoManha(d: DadosManha, agora: Date): Candidato {
   if (d.lembretesHoje.length) {
     linhas.push(`${plural(d.lembretesHoje.length, 'lembrete', 'lembretes')}:`);
     linhas.push(...lista(d.lembretesHoje.map((l) => `${rotuloHora(new Date(l.remind_at))} ${l.title}`)));
-  }
-  if (d.habitosHoje.length) {
-    linhas.push(`Hábitos de hoje: ${d.habitosHoje.slice(0, 5).join(', ')}${d.habitosHoje.length > 5 ? '…' : ''}`);
   }
   if (d.atrasadas) linhas.push(`${plural(d.atrasadas, 'tarefa atrasada', 'tarefas atrasadas')} esperando.`);
   for (const pr of d.prazos.slice(0, 3)) {
@@ -315,15 +259,7 @@ export function resumoManha(d: DadosManha, agora: Date): Candidato {
 export interface DadosNoite {
   feitas: string[];
   pendentesHoje: string[];
-  habitos: { feitos: number; previstos: number };
   amanha: number;
-}
-
-/** Hábitos previstos para o dia (nomes) e quantos deles já foram cumpridos. */
-export function habitosDoDia(habitos: HabitoBD[], registros: RegistroBD[], dia: string) {
-  const previstos = habitos.filter((h) => !h.paused && previstoNoDia(h, dia));
-  const feitos = previstos.filter((h) => cumpriu(h, registros.find((r) => r.habit_id === h.id && r.day === dia)?.value)).length;
-  return { nomes: previstos.map((h) => h.name), feitos, previstos: previstos.length };
 }
 
 /** Resumo da noite: o que foi feito e o que ficou. */
@@ -331,7 +267,6 @@ export function resumoNoite(d: DadosNoite, agora: Date): Candidato {
   const hoje = diaSP(agora);
   const linhas: string[] = [d.feitas.length ? `Feito hoje (${d.feitas.length}):` : 'Nenhuma tarefa concluída hoje.'];
   linhas.push(...lista(d.feitas, 3));
-  if (d.habitos.previstos) linhas.push(`Hábitos: ${d.habitos.feitos} de ${d.habitos.previstos}`);
   if (d.pendentesHoje.length) {
     linhas.push(`Ficou para depois (${d.pendentesHoje.length}):`);
     linhas.push(...lista(d.pendentesHoje, 3));
@@ -424,7 +359,6 @@ export function juntar(
 export function tituloGrupo(kind: string, n: number): string {
   switch (kind) {
     case 'tarefa_atrasada': return `${n} tarefas atrasaram`;
-    case 'habito_sequencia': return `${n} sequências de hábito em risco`;
     case 'prazo_projeto': return `${n} prazos de projeto chegando`;
     default: return `${n} avisos`;
   }

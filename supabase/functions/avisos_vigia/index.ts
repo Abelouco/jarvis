@@ -7,9 +7,9 @@
 // Sem IA e sem segredo novo: usa só o service role que o Supabase já injeta.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
-  decidir, detectarAtrasadas, detectarDiario, detectarLembretes, detectarPrazos, detectarSequencias, diaSP, escolherCanais, habitosDoDia,
+  decidir, detectarAtrasadas, detectarLembretes, detectarPrazos, diaSP, escolherCanais,
   horaDoResumo, instanteSP, juntar, resumoManha, resumoNaHora, resumoNoite, somarDias, textoPush,
-  type AvisoPronto, type Candidato, type HabitoBD, type Preferencias, type Regra, type RegistroBD,
+  type AvisoPronto, type Candidato, type Preferencias, type Regra,
 } from './decisao.ts';
 
 const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
@@ -44,7 +44,7 @@ async function vigiar(cfg: Cfg, agora: Date) {
   const uid = cfg.user_id;
   const iso = agora.toISOString();
   const hoje = diaSP(agora);
-  const [lembretes, tarefas, regras, aparelhos, pendentes, recentes, habitos, registros, projetos, diario] = await Promise.all([
+  const [lembretes, tarefas, regras, aparelhos, pendentes, recentes, projetos] = await Promise.all([
     sb.from('reminders').select('id, title, remind_at, priority, alarm').eq('user_id', uid)
       .is('deleted_at', null).is('done_at', null)
       .lte('remind_at', iso).gt('remind_at', new Date(agora.getTime() - 30 * 60_000).toISOString()),
@@ -57,18 +57,11 @@ async function vigiar(cfg: Cfg, agora: Date) {
       .in('status', ['agendado', 'segurado_silencio']).lte('scheduled_for', iso),
     sb.from('notices').select('kind, sent_at').eq('user_id', uid).eq('status', 'enviado')
       .gte('sent_at', new Date(agora.getTime() - 15 * 60_000).toISOString()),
-    sb.from('habits').select('id, name, kind, daily_target, weekdays, times_per_week, paused').eq('user_id', uid)
-      .is('deleted_at', null).eq('paused', false),
-    sb.from('habit_logs').select('habit_id, day, value').eq('user_id', uid).is('deleted_at', null)
-      .gte('day', somarDias(hoje, -60)),
     sb.from('projects').select('id, name, due_date, status').eq('user_id', uid).is('deleted_at', null)
       .eq('archived', false).neq('status', 'concluido').gte('due_date', somarDias(hoje, 1)).lte('due_date', somarDias(hoje, 3)),
-    sb.from('notes').select('id').eq('user_id', uid).is('deleted_at', null).eq('kind', 'diario').eq('day', hoje).limit(1),
   ]);
   const listaRegras = ok(regras, 'regras') as Regra[];
   const listaAparelhos = ok(aparelhos, 'aparelhos') as { id: string; platform: string; seen_at: string; push_token: string | null }[];
-  const listaHabitos = ok(habitos, 'habitos') as HabitoBD[];
-  const listaRegistros = ok(registros, 'registros') as RegistroBD[];
   const listaTarefas = ok(tarefas, 'tarefas') as { id: string; title: string; due_date: string; due_time: string | null; priority: string }[];
   const liberados = ok(pendentes, 'pendentes') as Linha[];
 
@@ -81,8 +74,8 @@ async function vigiar(cfg: Cfg, agora: Date) {
     for (const k of devidos) {
       if (ja.some((x) => x.dedupe_key === `${k}:${hoje}`)) continue;
       resumos.push(k === 'resumo_manha'
-        ? await dadosManha(uid, hoje, listaTarefas, listaHabitos, listaRegistros, liberados, agora)
-        : await dadosNoite(uid, hoje, listaTarefas, listaHabitos, listaRegistros, agora));
+        ? await dadosManha(uid, hoje, listaTarefas, liberados, agora)
+        : await dadosNoite(uid, hoje, listaTarefas, agora));
     }
   }
 
@@ -91,9 +84,7 @@ async function vigiar(cfg: Cfg, agora: Date) {
     ...resumos,
     ...detectarLembretes(ok(lembretes, 'lembretes') as never, agora),
     ...detectarAtrasadas(listaTarefas as never, agora),
-    ...detectarSequencias(listaHabitos, listaRegistros, cfg, agora),
     ...detectarPrazos(ok(projetos, 'projetos') as never, agora),
-    ...detectarDiario((ok(diario, 'diario') as unknown[]).length > 0, cfg, agora),
   ];
   if (candidatos.length) {
     const vistos = ok(await sb.from('notices').select('dedupe_key').eq('user_id', uid)
@@ -195,7 +186,7 @@ type TarefaBD = { id: string; title: string; due_date: string; due_time: string 
 
 /** Dados do resumo da manhã (texto pronto em decisao.ts). */
 async function dadosManha(
-  uid: string, hoje: string, tarefas: TarefaBD[], habitos: HabitoBD[], registros: RegistroBD[], liberados: Linha[], agora: Date,
+  uid: string, hoje: string, tarefas: TarefaBD[], liberados: Linha[], agora: Date,
 ): Promise<Candidato> {
   const amanha = somarDias(hoje, 1);
   const [lembretes, atrasadas, prazos] = await Promise.all([
@@ -212,7 +203,6 @@ async function dadosManha(
       .sort((a, b) => (a.due_time ?? '99').localeCompare(b.due_time ?? '99')),
     atrasadas: atrasadas.count ?? 0,
     lembretesHoje: ok(lembretes, 'lembretes do dia') as { title: string; remind_at: string }[],
-    habitosHoje: habitosDoDia(habitos, registros, hoje).nomes,
     prazos: ok(prazos, 'prazos do dia') as { name: string; due_date: string }[],
     segurados: liberados.filter((l) => l.status === 'segurado_silencio').map((l) => l.title),
   }, agora);
@@ -220,7 +210,7 @@ async function dadosManha(
 
 /** Dados do resumo da noite. */
 async function dadosNoite(
-  uid: string, hoje: string, tarefas: TarefaBD[], habitos: HabitoBD[], registros: RegistroBD[], agora: Date,
+  uid: string, hoje: string, tarefas: TarefaBD[], agora: Date,
 ): Promise<Candidato> {
   const amanha = somarDias(hoje, 1);
   const [feitas, deAmanha] = await Promise.all([
@@ -230,11 +220,9 @@ async function dadosNoite(
       .is('done_at', null).eq('archived', false).eq('due_date', amanha),
   ]);
   if (deAmanha.error) throw new Error(`amanhã: ${deAmanha.error.message}`);
-  const h = habitosDoDia(habitos, registros, hoje);
   return resumoNoite({
     feitas: (ok(feitas, 'feitas') as { title: string }[]).map((t) => t.title),
     pendentesHoje: tarefas.filter((t) => t.due_date === hoje).map((t) => t.title),
-    habitos: { feitos: h.feitos, previstos: h.previstos },
     amanha: deAmanha.count ?? 0,
   }, agora);
 }

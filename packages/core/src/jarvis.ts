@@ -4,9 +4,8 @@ import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { criarCliente, ouvirEventos, type ArmazenamentoSessao } from './supabase';
 import { novoId, prepararBanco, TABELAS_SYNC, type BancoLocal, type TabelaSync, type Valor } from './local';
 import type {
-  ColunaQuadro, Fonte, Habit, Note, Notice, NoticeRule, NoticeSettings, TipoNota, JarvisEvent, Memory, Message, Milestone, Prioridade, Project, Reminder, StatusProjeto, Task,
+  ColunaQuadro, Fonte, Notice, NoticeRule, NoticeSettings, JarvisEvent, Memory, Message, Prioridade, Project, Reminder, StatusProjeto, Task,
 } from './types';
-import { cumpriu, idRegistro, previstoNoDia, semana, sequencia, vezesNoMes, type TipoHabito } from './habitos';
 import {
   dataAposConcluir, hojeSP, instanteSP, normalizarRecorrencia, partesSP, primeiraData, proximaData, type Recorrencia,
 } from './recorrencia';
@@ -35,8 +34,7 @@ export interface Atividade {
 }
 
 const NOME_ENTIDADE: Record<string, string> = {
-  tasks: 'Tarefa', projects: 'Projeto', project_milestones: 'Marco', reminders: 'Lembrete', habits: 'Hábito', notes: 'Nota',
-  habit_logs: 'Registro de hábito', memories: 'Memória', memory_links: 'Ligação de memória',
+  tasks: 'Tarefa', projects: 'Projeto', reminders: 'Lembrete', memories: 'Memória', memory_links: 'Ligação de memória',
 };
 /** Entidades de nome feminino ("Tarefa criada"); as outras ficam no masculino ("Projeto criado"). */
 const FEMININAS = new Set(['tasks', 'memories', 'memory_links']);
@@ -149,17 +147,17 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
      * Com `repetir`, a data vira a primeira ocorrência da série (se não vier, é calculada).
      */
     async criar(titulo: string, prioridade: Prioridade = 'media', data: string | null = null, hora: string | null = null,
-      extra: { repetir?: Recorrencia | null; notas?: string | null; projeto?: string | null; marco?: string | null;
+      extra: { repetir?: Recorrencia | null; notas?: string | null; projeto?: string | null;
         coluna?: ColunaQuadro } = {}) {
       const t = agora();
       const user = (await auth.sessao())?.user.id ?? null;
       const rec = extra.repetir ? normalizarRecorrencia(extra.repetir) : null;
       const dia = rec ? (data && proximaData(rec, data, true)) || primeiraData(rec, hora) : data;
       await db.executar(
-        `insert into tasks (id, user_id, project_id, milestone_id, board_column, title, notes, priority, due_date, due_time,
+        `insert into tasks (id, user_id, project_id, board_column, title, notes, priority, due_date, due_time,
          recurrence, created_at, updated_at, dirty)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-        [novoId(), user, extra.projeto ?? null, extra.projeto ? extra.marco ?? null : null, extra.coluna ?? 'a_fazer',
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        [novoId(), user, extra.projeto ?? null, extra.coluna ?? 'a_fazer',
           titulo.trim(), extra.notas?.trim() || null, prioridade, dia, dia ? hora : null,
           rec ? JSON.stringify(rec) : null, t, t],
       );
@@ -209,15 +207,13 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
       mudouLocal();
     },
     /**
-     * Move no quadro: projeto, marco e coluna (os ausentes ficam como estão).
-     * Coluna 'feito' conclui; ir para outra coluna reabre. Trocar de projeto tira do marco.
+     * Move no quadro: projeto e coluna (os ausentes ficam como estão).
+     * Coluna 'feito' conclui; ir para outra coluna reabre.
      */
-    async mover(id: string, m: { projeto?: string | null; marco?: string | null; coluna?: ColunaQuadro | 'feito' }) {
+    async mover(id: string, m: { projeto?: string | null; coluna?: ColunaQuadro | 'feito' }) {
       const [atual] = (await db.consultar<Parameters<typeof lerTarefa>[0]>(`select * from tasks where id = ?`, [id])).map(lerTarefa);
       if (!atual) return;
       const projeto = m.projeto === undefined ? atual.project_id : m.projeto;
-      let marco = m.marco === undefined ? atual.milestone_id : m.marco;
-      if (!projeto || (projeto !== atual.project_id && m.marco === undefined)) marco = null;
       const t = agora();
       let done = atual.done_at;
       let coluna = atual.board_column ?? 'a_fazer';
@@ -227,33 +223,29 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
         done = null;
       }
       await db.executar(
-        `update tasks set project_id = ?, milestone_id = ?, board_column = ?, done_at = ?, updated_at = ?, dirty = 1 where id = ?`,
-        [projeto, marco, coluna, done, t, id],
+        `update tasks set project_id = ?, board_column = ?, done_at = ?, updated_at = ?, dirty = 1 where id = ?`,
+        [projeto, coluna, done, t, id],
       );
       mudouLocal();
     },
   };
 
-  // ---------- projetos e marcos (banco local) ----------
+  // ---------- projetos (banco local) ----------
   type LinhaProjeto = Omit<Project, 'archived'> & { archived: number };
   const lerProjeto = (p: LinhaProjeto): Project => ({ ...p, archived: !!p.archived });
   const ORDEM_STATUS = `case p.status when 'em_andamento' then 0 when 'planejamento' then 1 when 'pausado' then 2 else 3 end`;
   const projetos = {
-    /** Projetos com o progresso (tarefas concluídas / total, marcos feitos / total). */
+    /** Projetos com o progresso (tarefas concluídas / total). */
     async listar(): Promise<ProjetoResumo[]> {
-      const linhas = await db.consultar<LinhaProjeto & { total: number; feitas: number; marcos: number; marcos_feitos: number }>(
+      const linhas = await db.consultar<LinhaProjeto & { total: number; feitas: number }>(
         `select p.*,
            (select count(*) from tasks t where t.project_id = p.id and t.deleted_at is null) as total,
-           (select count(*) from tasks t where t.project_id = p.id and t.deleted_at is null and t.done_at is not null) as feitas,
-           (select count(*) from project_milestones m where m.project_id = p.id and m.deleted_at is null) as marcos,
-           (select count(*) from project_milestones m where m.project_id = p.id and m.deleted_at is null
-              and m.done_at is not null) as marcos_feitos
+           (select count(*) from tasks t where t.project_id = p.id and t.deleted_at is null and t.done_at is not null) as feitas
          from projects p where p.deleted_at is null and p.archived = 0
          order by ${ORDEM_STATUS}, p.due_date is null, p.due_date, p.updated_at desc`,
       );
       return linhas.map((l) => ({
         ...lerProjeto(l), total: Number(l.total), feitas: Number(l.feitas),
-        marcos: Number(l.marcos), marcosFeitos: Number(l.marcos_feitos),
       }));
     },
     async criar(nome: string, extra: { descricao?: string | null; prazo?: string | null; prioridade?: Prioridade;
@@ -285,303 +277,6 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     async apagar(id: string) {
       const t = agora();
       await db.executar(`update projects set deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, id]);
-      mudouLocal();
-    },
-    async marcos(projetoId: string): Promise<Milestone[]> {
-      return db.consultar<Milestone>(
-        `select * from project_milestones where project_id = ? and deleted_at is null
-         order by due_date is null, due_date, position, created_at`,
-        [projetoId],
-      );
-    },
-    async criarMarco(projetoId: string, titulo: string, prazo: string | null = null) {
-      const t = agora();
-      const user = (await auth.sessao())?.user.id ?? null;
-      await db.executar(
-        `insert into project_milestones (id, user_id, project_id, title, due_date, created_at, updated_at, dirty)
-         values (?, ?, ?, ?, ?, ?, ?, 1)`,
-        [novoId(), user, projetoId, titulo.trim(), prazo, t, t],
-      );
-      mudouLocal();
-    },
-    async editarMarco(id: string, m: { titulo?: string; prazo?: string | null }) {
-      const [atual] = await db.consultar<Milestone>(`select * from project_milestones where id = ?`, [id]);
-      if (!atual) return;
-      await db.executar(`update project_milestones set title = ?, due_date = ?, updated_at = ?, dirty = 1 where id = ?`,
-        [m.titulo?.trim() || atual.title, m.prazo === undefined ? atual.due_date : m.prazo, agora(), id]);
-      mudouLocal();
-    },
-    async alternarMarco(id: string) {
-      const t = agora();
-      await db.executar(
-        `update project_milestones set done_at = case when done_at is null then ? else null end, updated_at = ?, dirty = 1 where id = ?`,
-        [t, t, id],
-      );
-      mudouLocal();
-    },
-    /** Exclusão suave do marco; as tarefas dele continuam no projeto (o app trata marco apagado como "sem marco"). */
-    async apagarMarco(id: string) {
-      const t = agora();
-      await db.executar(`update project_milestones set deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, id]);
-      mudouLocal();
-    },
-  };
-
-  // ---------- hábitos (banco local; o registro do dia tem id fixo por hábito+dia) ----------
-  type LinhaHabito = Omit<Habit, 'weekdays' | 'paused'> & { weekdays: string | null; paused: number };
-  const lerHabito = (h: LinhaHabito): Habit => {
-    let weekdays: number[] | null = null;
-    try {
-      const w = h.weekdays ? JSON.parse(h.weekdays) : null;
-      weekdays = Array.isArray(w) && w.length ? w.map(Number).filter((n) => n >= 0 && n <= 6) : null;
-    } catch {
-      /* dias ilegíveis: todo dia */
-    }
-    return {
-      ...h, weekdays, paused: !!h.paused, time_of_day: h.time_of_day ? h.time_of_day.slice(0, 5) : null,
-      daily_target: h.daily_target == null ? null : Number(h.daily_target),
-    };
-  };
-  const umHabito = async (id: string) =>
-    (await db.consultar<LinhaHabito>(`select * from habits where id = ?`, [id])).map(lerHabito)[0];
-  const valorDoDia = async (habitId: string, dia: string) => {
-    const [l] = await db.consultar<{ value: number | null }>(
-      `select value from habit_logs where habit_id = ? and day = ? and deleted_at is null`, [habitId, dia]);
-    return l ? (l.value == null ? 1 : Number(l.value)) : null;
-  };
-  type OpcoesHabito = {
-    nome?: string; tipo?: TipoHabito; meta?: number | null; unidade?: string | null; dias?: number[] | null;
-    vezesSemana?: number | null; metaMes?: number | null; horario?: string | null; cor?: string; pausado?: boolean;
-  };
-  const habitos = {
-    /** Hábitos com o dia de hoje, a sequência, a semana, o mês e os últimos 14 dias. */
-    async listar(hoje = hojeSP()): Promise<HabitoResumo[]> {
-      const hs = (await db.consultar<LinhaHabito>(
-        `select * from habits where deleted_at is null order by paused, position, created_at`,
-      )).map(lerHabito);
-      const desde = somarDiasLocal(hoje, -400);
-      const logs = await db.consultar<{ habit_id: string; day: string; value: number | null }>(
-        `select habit_id, day, value from habit_logs where deleted_at is null and day >= ?`, [desde]);
-      const valores = new Map<string, Map<string, number>>();
-      for (const l of logs) {
-        if (!valores.has(l.habit_id)) valores.set(l.habit_id, new Map());
-        valores.get(l.habit_id)!.set(l.day, l.value == null ? 1 : Number(l.value));
-      }
-      return hs.map((h) => {
-        const v = valores.get(h.id) ?? new Map<string, number>();
-        const feitos = new Set([...v].filter(([, x]) => cumpriu(h, x)).map(([d]) => d));
-        return {
-          ...h,
-          hojeValor: v.get(hoje) ?? null,
-          feitoHoje: feitos.has(hoje),
-          previstoHoje: previstoNoDia(h, hoje),
-          sequencia: sequencia(h, feitos, hoje),
-          semana: semana(h, feitos, hoje),
-          mes: vezesNoMes(feitos, hoje),
-          ultimos: Array.from({ length: 14 }, (_, i) => {
-            const dia = somarDiasLocal(hoje, i - 13);
-            return { dia, valor: v.get(dia) ?? null, feito: feitos.has(dia), previsto: previstoNoDia(h, dia) };
-          }),
-        };
-      });
-    },
-    async criar(nome: string, op: OpcoesHabito = {}): Promise<string> {
-      const t = agora();
-      const id = novoId();
-      const user = (await auth.sessao())?.user.id ?? null;
-      const tipo = op.tipo ?? 'boolean';
-      await db.executar(
-        `insert into habits (id, user_id, name, kind, unit, daily_target, weekdays, times_per_week, monthly_target, time_of_day,
-           color, position, paused, created_at, updated_at, dirty)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)`,
-        [id, user, nome.trim(), tipo, tipo === 'boolean' ? null : op.unidade?.trim() || null,
-          tipo === 'boolean' ? null : op.meta ?? null, op.dias?.length ? JSON.stringify(op.dias) : null,
-          op.vezesSemana ?? null, op.metaMes ?? null, op.horario ?? null, op.cor ?? 'verde_agua', Date.now() / 1000, t, t],
-      );
-      mudouLocal();
-      return id;
-    },
-    async editar(id: string, m: OpcoesHabito) {
-      const h = await umHabito(id);
-      if (!h) return;
-      const tipo = m.tipo ?? h.kind;
-      const dias = m.dias === undefined ? h.weekdays : m.dias;
-      await db.executar(
-        `update habits set name = ?, kind = ?, unit = ?, daily_target = ?, weekdays = ?, times_per_week = ?, monthly_target = ?,
-           time_of_day = ?, color = ?, paused = ?, updated_at = ?, dirty = 1 where id = ?`,
-        [m.nome?.trim() || h.name, tipo, tipo === 'boolean' ? null : (m.unidade === undefined ? h.unit : m.unidade?.trim() || null),
-          tipo === 'boolean' ? null : (m.meta === undefined ? h.daily_target : m.meta),
-          dias?.length ? JSON.stringify(dias) : null,
-          m.vezesSemana === undefined ? h.times_per_week : m.vezesSemana,
-          m.metaMes === undefined ? h.monthly_target : m.metaMes,
-          m.horario === undefined ? h.time_of_day : m.horario, m.cor ?? h.color,
-          (m.pausado ?? h.paused) ? 1 : 0, agora(), id],
-      );
-      mudouLocal();
-    },
-    async apagar(id: string) {
-      const t = agora();
-      await db.executar(`update habits set deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, id]);
-      mudouLocal();
-    },
-    /** Valor do dia (absoluto). null = desmarcar (exclusão suave do registro). */
-    async registrar(habitId: string, dia: string, valor: number | null) {
-      const t = agora();
-      const [existe] = await db.consultar<{ id: string }>(
-        `select id from habit_logs where habit_id = ? and day = ? order by deleted_at is not null limit 1`, [habitId, dia]);
-      if (existe) {
-        await db.executar(
-          `update habit_logs set value = ?, deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`,
-          [valor, valor == null ? t : null, t, existe.id],
-        );
-      } else if (valor != null) {
-        const user = (await auth.sessao())?.user.id ?? null;
-        await db.executar(
-          `insert into habit_logs (id, user_id, habit_id, day, value, created_at, updated_at, dirty) values (?, ?, ?, ?, ?, ?, ?, 1)`,
-          [idRegistro(habitId, dia), user, habitId, dia, valor, t, t],
-        );
-      }
-      mudouLocal();
-    },
-    /** Marca/desmarca o dia: sim/não vira 1; minutos/quantidade vai direto para a meta (ou zera). */
-    async alternar(habitId: string, dia = hojeSP()) {
-      const h = await umHabito(habitId);
-      if (!h) return;
-      const atual = await valorDoDia(habitId, dia);
-      await habitos.registrar(habitId, dia, cumpriu(h, atual) ? null : (h.kind === 'boolean' ? 1 : h.daily_target ?? 1));
-    },
-    /** Soma ao valor do dia (minutos ou quantidade). */
-    async somar(habitId: string, delta: number, dia = hojeSP()) {
-      const atual = (await valorDoDia(habitId, dia)) ?? 0;
-      const novo = Math.round((atual + delta) * 100) / 100;
-      await habitos.registrar(habitId, dia, novo > 0 ? novo : null);
-    },
-  };
-
-  // ---------- conhecimento: notas, capturas e diário (banco local) ----------
-  type LinhaNota = Omit<Note, 'tags' | 'pinned'> & { tags: string | null; pinned: number };
-  const lerNota = (n: LinhaNota): Note => {
-    let tags: string[] = [];
-    try {
-      const t = n.tags ? JSON.parse(n.tags) : [];
-      tags = Array.isArray(t) ? t.map(String) : [];
-    } catch {
-      /* etiquetas ilegíveis: nenhuma */
-    }
-    return { ...n, tags, pinned: !!n.pinned };
-  };
-  const limparEtiquetas = (ts: string[] | undefined) =>
-    [...new Set((ts ?? []).map((t) => t.trim().replace(/^#/, '').toLowerCase()).filter(Boolean))].slice(0, 20);
-  type OpcoesNota = {
-    titulo?: string | null; conteudo?: string; caderno?: string | null; etiquetas?: string[]; fixada?: boolean; tipo?: TipoNota;
-  };
-  const conhecimento = {
-    /** Notas e capturas (não o diário), fixadas primeiro e depois as mais recentes. `termo` busca no título, texto e etiquetas. */
-    async listar(filtro: { tipo?: 'nota' | 'captura'; caderno?: string | null; etiqueta?: string; termo?: string } = {}): Promise<Note[]> {
-      const onde = [`deleted_at is null`, `kind <> 'diario'`];
-      const args: Valor[] = [];
-      if (filtro.tipo) {
-        onde.push(`kind = ?`);
-        args.push(filtro.tipo);
-      }
-      if (filtro.caderno !== undefined) {
-        onde.push(filtro.caderno === null ? `notebook is null` : `notebook = ?`);
-        if (filtro.caderno !== null) args.push(filtro.caderno);
-      }
-      if (filtro.etiqueta) {
-        onde.push(`tags like ?`);
-        args.push(`%"${filtro.etiqueta.toLowerCase()}"%`);
-      }
-      if (filtro.termo?.trim()) {
-        onde.push(`(title like ? or content like ? or tags like ?)`);
-        const t = `%${filtro.termo.trim()}%`;
-        args.push(t, t, t);
-      }
-      return (await db.consultar<LinhaNota>(
-        `select * from notes where ${onde.join(' and ')} order by pinned desc, updated_at desc limit 500`, args,
-      )).map(lerNota);
-    },
-    /** Cadernos com a contagem de notas. */
-    async cadernos(): Promise<{ nome: string; total: number }[]> {
-      return db.consultar<{ nome: string; total: number }>(
-        `select notebook as nome, count(*) as total from notes where deleted_at is null and kind = 'nota' and notebook is not null
-         group by notebook order by notebook collate nocase`,
-      );
-    },
-    /** Etiquetas usadas, com a contagem. */
-    async etiquetas(): Promise<{ nome: string; total: number }[]> {
-      const linhas = await db.consultar<{ tags: string | null }>(`select tags from notes where deleted_at is null and tags <> '[]'`);
-      const cont = new Map<string, number>();
-      for (const l of linhas) for (const t of lerNota({ tags: l.tags } as LinhaNota).tags) cont.set(t, (cont.get(t) ?? 0) + 1);
-      return [...cont].map(([nome, total]) => ({ nome, total })).sort((a, b) => a.nome.localeCompare(b.nome));
-    },
-    async ver(id: string): Promise<Note | undefined> {
-      return (await db.consultar<LinhaNota>(`select * from notes where id = ?`, [id])).map(lerNota)[0];
-    },
-    async criar(op: OpcoesNota & { conteudo: string }): Promise<string> {
-      const t = agora();
-      const id = novoId();
-      const user = (await auth.sessao())?.user.id ?? null;
-      const tipo = op.tipo === 'captura' ? 'captura' : 'nota';
-      await db.executar(
-        `insert into notes (id, user_id, kind, title, content, notebook, tags, pinned, created_at, updated_at, dirty)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-        [id, user, tipo, op.titulo?.trim() || null, op.conteudo, tipo === 'nota' ? op.caderno?.trim() || null : null,
-          JSON.stringify(limparEtiquetas(op.etiquetas)), op.fixada ? 1 : 0, t, t],
-      );
-      mudouLocal();
-      return id;
-    },
-    /** Muda só o que vier. Mudar `caderno` de uma captura a transforma em nota (organizar). */
-    async editar(id: string, m: OpcoesNota) {
-      const n = await conhecimento.ver(id);
-      if (!n) return;
-      const tipo = m.tipo ?? (n.kind === 'captura' && m.caderno ? 'nota' : n.kind);
-      await db.executar(
-        `update notes set kind = ?, title = ?, content = ?, notebook = ?, tags = ?, pinned = ?, updated_at = ?, dirty = 1 where id = ?`,
-        [tipo, m.titulo === undefined ? n.title : m.titulo?.trim() || null, m.conteudo ?? n.content,
-          m.caderno === undefined ? n.notebook : m.caderno?.trim() || null,
-          JSON.stringify(m.etiquetas === undefined ? n.tags : limparEtiquetas(m.etiquetas)),
-          (m.fixada ?? n.pinned) ? 1 : 0, agora(), id],
-      );
-      mudouLocal();
-    },
-    async apagar(id: string) {
-      const t = agora();
-      await db.executar(`update notes set deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, id]);
-      mudouLocal();
-    },
-    /** Entrada do diário do dia (ou undefined). */
-    async diario(dia = hojeSP()): Promise<Note | undefined> {
-      return (await db.consultar<LinhaNota>(
-        `select * from notes where kind = 'diario' and day = ? and deleted_at is null`, [dia],
-      )).map(lerNota)[0];
-    },
-    /** Dias que têm diário entre `de` e `ate` (para o calendário). */
-    async diasComDiario(de: string, ate: string): Promise<string[]> {
-      return (await db.consultar<{ day: string }>(
-        `select day from notes where kind = 'diario' and deleted_at is null and day between ? and ? order by day`, [de, ate],
-      )).map((l) => l.day);
-    },
-    /** Grava o texto do diário do dia (texto vazio = apaga a entrada). id fixo por dono+dia, igual no servidor. */
-    async escreverDiario(dia: string, texto: string) {
-      const t = agora();
-      const user = (await auth.sessao())?.user.id ?? null;
-      const id = idRegistro(`diario:${user ?? ''}`, dia);
-      const [existe] = await db.consultar<{ id: string }>(`select id from notes where id = ?`, [id]);
-      const vazio = !texto.trim();
-      if (existe) {
-        await db.executar(
-          `update notes set content = ?, deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`,
-          [texto, vazio ? t : null, t, id],
-        );
-      } else if (!vazio) {
-        await db.executar(
-          `insert into notes (id, user_id, kind, content, day, tags, pinned, created_at, updated_at, dirty)
-           values (?, ?, 'diario', ?, ?, '[]', 0, ?, ?, 1)`,
-          [id, user, texto, dia, t, t],
-        );
-      }
       mudouLocal();
     },
   };
@@ -1053,8 +748,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
       const titulos = new Map<string, string>();
       for (const [tabela, coluna] of [
         ['tasks', 'title'], ['memories', 'coalesce(title, content)'], ['reminders', 'title'],
-        ['projects', 'name'], ['project_milestones', 'title'], ['habits', 'name'], ['notes', "coalesce(title, case when kind = 'diario' then 'Diário ' || day else substr(content, 1, 60) end)"],
-        ['habit_logs', '(select h.name from habits h where h.id = habit_logs.habit_id)'],
+        ['projects', 'name'],
       ] as const) {
         const ids = eventosRecentes.filter((e) => e.entity_type === tabela && e.entity_id).map((e) => e.entity_id!);
         if (!ids.length) continue;
@@ -1194,11 +888,10 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
       const agora = Date.now();
       const valendo = ((data ?? []) as NoticeRule[])
         .filter((r) => !r.active || (r.muted_until && Date.parse(r.muted_until) > agora) || r.fixed_time);
-      // nome do item: procura no banco local (tarefas, lembretes, hábitos, projetos)
+      // nome do item: procura no banco local (tarefas, lembretes, projetos)
       const nomes = new Map<string, string>();
       for (const t of await tarefas.listar()) nomes.set(t.id, t.title);
       for (const l of await lembretes.listar()) nomes.set(l.id, l.title);
-      for (const h of await habitos.listar()) nomes.set(h.id, h.name);
       for (const p of await projetos.listar()) nomes.set(p.id, p.name);
       return valendo.map((r) => ({ ...r, nome: r.entity_id ? nomes.get(r.entity_id) ?? 'item apagado' : null }));
     },
@@ -1215,8 +908,6 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     avisos,
     tarefas,
     projetos,
-    habitos,
-    conhecimento,
     lembretes,
     atividades,
     chat,
@@ -1240,15 +931,5 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
 export type Jarvis = ReturnType<typeof criarJarvis>;
 
 /** Projeto com o progresso, como a lista mostra. */
-export type ProjetoResumo = Project & { total: number; feitas: number; marcos: number; marcosFeitos: number };
+export type ProjetoResumo = Project & { total: number; feitas: number };
 
-/** Hábito com o que a tela mostra: hoje, sequência, semana, mês e os últimos 14 dias. */
-export type HabitoResumo = Habit & {
-  hojeValor: number | null;
-  feitoHoje: boolean;
-  previstoHoje: boolean;
-  sequencia: { n: number; unidade: 'dias' | 'semanas' };
-  semana: { feitas: number; meta: number };
-  mes: number;
-  ultimos: { dia: string; valor: number | null; feito: boolean; previsto: boolean }[];
-};

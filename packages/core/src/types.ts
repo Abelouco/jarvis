@@ -23,21 +23,11 @@ export interface Project extends Base {
   archived: boolean;
 }
 
-/** Etapa de um projeto, com data-alvo. */
-export interface Milestone extends Base {
-  project_id: string;
-  title: string;
-  due_date: string | null;
-  done_at: string | null;
-  position: number;
-}
-
 /** Coluna do quadro do projeto (concluída = `done_at`). */
 export type ColunaQuadro = 'a_fazer' | 'fazendo';
 
 export interface Task extends Base {
   project_id: string | null;
-  milestone_id: string | null;
   board_column: ColunaQuadro;
   title: string;
   notes: string | null;
@@ -105,8 +95,7 @@ export interface JarvisEvent {
 
 // ---------- avisos (Fase 3): só no servidor, a tela lê direto do Supabase ----------
 export type TipoAviso =
-  | 'tarefa_atrasada' | 'lembrete_hora' | 'habito_sequencia' | 'prazo_projeto'
-  | 'diario_vazio' | 'resumo_manha' | 'resumo_noite';
+  | 'tarefa_atrasada' | 'lembrete_hora' | 'prazo_projeto' | 'resumo_manha' | 'resumo_noite';
 
 /** Aviso que o vigia deu (ou segurou), com o motivo. */
 export interface Notice {
@@ -147,44 +136,4 @@ export interface NoticeRule {
   fixed_time: string | null;
   muted_until: string | null;
   note: string | null;
-}
-
-/** Hábito: constância (feito ou não, minutos ou quantidade por dia). */
-export interface Habit extends Base {
-  name: string;
-  kind: 'boolean' | 'duration' | 'quantity';
-  unit: string | null;
-  daily_target: number | null;
-  /** 0 = domingo ... 6 = sábado; nulo = todo dia */
-  weekdays: number[] | null;
-  times_per_week: number | null;
-  monthly_target: number | null;
-  /** HH:MM (o servidor devolve HH:MM:SS) */
-  time_of_day: string | null;
-  color: string;
-  position: number;
-  paused: boolean;
-}
-
-/** Registro de um hábito num dia (um por dia; desmarcar = deleted_at). */
-export interface HabitLog extends Base {
-  habit_id: string;
-  day: string;
-  value: number | null;
-  note: string | null;
-}
-
-export type TipoNota = 'nota' | 'captura' | 'diario';
-
-/** O que o dono escreve: nota (caderno + etiquetas), captura (caixa de entrada) ou diário (um por dia). */
-export interface Note extends Base {
-  kind: TipoNota;
-  title: string | null;
-  content: string;
-  /** Nome do caderno; nulo = sem caderno */
-  notebook: string | null;
-  tags: string[];
-  pinned: boolean;
-  /** Dia da entrada do diário (AAAA-MM-DD) */
-  day: string | null;
 }

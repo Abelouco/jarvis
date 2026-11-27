@@ -14,31 +14,14 @@ export const COLUNAS_PROJECTS = [
   'created_at', 'updated_at', 'deleted_at',
 ] as const;
 
-export const COLUNAS_MILESTONES = [
-  'id', 'user_id', 'project_id', 'title', 'due_date', 'done_at', 'position', 'created_at', 'updated_at', 'deleted_at',
-] as const;
-
 export const COLUNAS_TASKS = [
-  'id', 'user_id', 'project_id', 'milestone_id', 'board_column', 'title', 'notes', 'priority', 'due_date', 'due_time',
+  'id', 'user_id', 'project_id', 'board_column', 'title', 'notes', 'priority', 'due_date', 'due_time',
   'done_at', 'archived', 'position', 'recurrence', 'created_at', 'updated_at', 'deleted_at',
 ] as const;
 
 export const COLUNAS_REMINDERS = [
   'id', 'user_id', 'title', 'notes', 'remind_at', 'channel', 'priority', 'alarm', 'recurrence',
   'done_at', 'created_at', 'updated_at', 'deleted_at',
-] as const;
-
-export const COLUNAS_HABITS = [
-  'id', 'user_id', 'name', 'kind', 'unit', 'daily_target', 'weekdays', 'times_per_week', 'monthly_target', 'time_of_day',
-  'color', 'position', 'paused', 'created_at', 'updated_at', 'deleted_at',
-] as const;
-
-export const COLUNAS_HABIT_LOGS = [
-  'id', 'user_id', 'habit_id', 'day', 'value', 'note', 'created_at', 'updated_at', 'deleted_at',
-] as const;
-
-export const COLUNAS_NOTES = [
-  'id', 'user_id', 'kind', 'title', 'content', 'notebook', 'tags', 'pinned', 'day', 'created_at', 'updated_at', 'deleted_at',
 ] as const;
 
 export const COLUNAS_CONVERSATIONS = ['id', 'user_id', 'title', 'created_at', 'updated_at', 'deleted_at'] as const;
@@ -65,12 +48,8 @@ export interface TabelaSync {
 }
 export const TABELAS_SYNC: readonly TabelaSync[] = [
   { nome: 'projects', colunas: COLUNAS_PROJECTS, booleanas: ['archived'] },
-  { nome: 'project_milestones', colunas: COLUNAS_MILESTONES, booleanas: [] },
   { nome: 'tasks', colunas: COLUNAS_TASKS, booleanas: ['archived'], json: ['recurrence'] },
   { nome: 'reminders', colunas: COLUNAS_REMINDERS, booleanas: ['alarm'], json: ['recurrence'] },
-  { nome: 'habits', colunas: COLUNAS_HABITS, booleanas: ['paused'], json: ['weekdays'] },
-  { nome: 'habit_logs', colunas: COLUNAS_HABIT_LOGS, booleanas: [] },
-  { nome: 'notes', colunas: COLUNAS_NOTES, booleanas: ['pinned'], json: ['tags'] },
   { nome: 'conversations', colunas: COLUNAS_CONVERSATIONS, booleanas: [] },
   {
     nome: 'messages', colunas: COLUNAS_MESSAGES, booleanas: ['sensitive'],
@@ -82,6 +61,11 @@ export const TABELAS_SYNC: readonly TabelaSync[] = [
 ];
 
 export const SCHEMA_LOCAL = [
+  // Hábitos, conhecimento e marcos saíram do app (Fase 4, etapa 0): some a cópia local.
+  `drop table if exists project_milestones`,
+  `drop table if exists habits`,
+  `drop table if exists habit_logs`,
+  `drop table if exists notes`,
   `create table if not exists projects (
     id text primary key,
     user_id text,
@@ -97,25 +81,10 @@ export const SCHEMA_LOCAL = [
     dirty integer not null default 0
   )`,
   `create index if not exists projects_dirty_idx on projects (dirty)`,
-  `create table if not exists project_milestones (
-    id text primary key,
-    user_id text,
-    project_id text not null,
-    title text not null,
-    due_date text,
-    done_at text,
-    position real not null default 0,
-    created_at text not null,
-    updated_at text not null,
-    deleted_at text,
-    dirty integer not null default 0
-  )`,
-  `create index if not exists project_milestones_dirty_idx on project_milestones (dirty)`,
   `create table if not exists tasks (
     id text primary key,
     user_id text,
     project_id text,
-    milestone_id text,
     board_column text not null default 'a_fazer',
     title text not null,
     notes text,
@@ -149,57 +118,6 @@ export const SCHEMA_LOCAL = [
     dirty integer not null default 0
   )`,
   `create index if not exists reminders_dirty_idx on reminders (dirty)`,
-  `create table if not exists habits (
-    id text primary key,
-    user_id text,
-    name text not null,
-    kind text not null default 'boolean',
-    unit text,
-    daily_target real,
-    weekdays text,
-    times_per_week integer,
-    monthly_target integer,
-    time_of_day text,
-    color text not null default 'verde_agua',
-    position real not null default 0,
-    paused integer not null default 0,
-    created_at text not null,
-    updated_at text not null,
-    deleted_at text,
-    dirty integer not null default 0
-  )`,
-  `create index if not exists habits_dirty_idx on habits (dirty)`,
-  `create table if not exists habit_logs (
-    id text primary key,
-    user_id text,
-    habit_id text not null,
-    day text not null,
-    value real,
-    note text,
-    created_at text not null,
-    updated_at text not null,
-    deleted_at text,
-    dirty integer not null default 0
-  )`,
-  `create index if not exists habit_logs_dirty_idx on habit_logs (dirty)`,
-  `create index if not exists habit_logs_habito_idx on habit_logs (habit_id, day)`,
-  `create table if not exists notes (
-    id text primary key,
-    user_id text,
-    kind text not null default 'nota',
-    title text,
-    content text not null default '',
-    notebook text,
-    tags text not null default '[]',
-    pinned integer not null default 0,
-    day text,
-    created_at text not null,
-    updated_at text not null,
-    deleted_at text,
-    dirty integer not null default 0
-  )`,
-  `create index if not exists notes_dirty_idx on notes (dirty)`,
-  `create index if not exists notes_tipo_idx on notes (kind, updated_at)`,
   `create table if not exists conversations (
     id text primary key,
     user_id text,
@@ -243,13 +161,13 @@ export const SCHEMA_LOCAL = [
   )`,
   `create index if not exists memories_dirty_idx on memories (dirty)`,
   `create table if not exists sync_state (tabela text primary key, cursor text)`,
+  `delete from sync_state where tabela in ('project_milestones', 'habits', 'habit_logs', 'notes')`,
 ];
 
 /** Colunas acrescentadas depois que o banco local já existia nos aparelhos. */
 const COLUNAS_NOVAS: [tabela: string, coluna: string, tipo: string][] = [
   ['messages', 'sources', 'text'],
   ['tasks', 'recurrence', 'text'],
-  ['tasks', 'milestone_id', 'text'],
   ['tasks', 'board_column', "text not null default 'a_fazer'"],
 ];
 

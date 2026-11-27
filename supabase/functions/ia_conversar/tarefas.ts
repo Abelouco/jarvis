@@ -31,7 +31,6 @@ export interface Tarefa {
   deleted_at: string | null;
   recurrence: Recorrencia | null;
   project_id?: string | null;
-  milestone_id?: string | null;
   board_column?: 'a_fazer' | 'fazendo';
 }
 
@@ -173,7 +172,7 @@ export function acharPorNome<T extends Pick<Tarefa, 'id' | 'title'>>(ref: string
 // ---------- o planejador (Groq em JSON; Gemini só se não for sensível) ----------
 
 const FERRAMENTAS = `
-tarefas_criar {titulo, QUANDO?, hora?: "HH:MM", repetir?: REPETIR, prioridade?: "alta"|"media"|"baixa", notas?, projeto?: "nome do projeto", marco?: "nome do marco"}
+tarefas_criar {titulo, QUANDO?, hora?: "HH:MM", repetir?: REPETIR, prioridade?: "alta"|"media"|"baixa", notas?, projeto?: "nome do projeto"}
 tarefas_listar {filtro: "hoje"|"atrasadas"|"proximas"|"abertas"|"concluidas"|"periodo", de?: "AAAA-MM-DD", ate?: "AAAA-MM-DD", termo?}
 tarefas_concluir {refs: ["nome ou id", ...]}
 tarefas_reabrir {refs: ["nome ou id", ...]}
@@ -194,7 +193,7 @@ REPETIR (tarefa fixa) = {freq: "diaria"|"dias_uteis"|"fim_de_semana"|"semanal"|"
 function promptPlanejador(hoje: string, abertas: Tarefa[], pendente: string | null, contexto: string) {
   const agora = new Date().toLocaleTimeString('pt-BR', { timeZone: FUSO, hour: '2-digit', minute: '2-digit' });
   return [
-    'Você decide se a última mensagem do dono pede uma ação nas TAREFAS (afazeres), nos LEMBRETES (avisos numa hora certa), nos PROJETOS, nos HÁBITOS, nas NOTAS (conhecimento) ou nos AVISOS (o que o J.A.R.V.I.S. manda sozinho) dele e quais ferramentas chamar.',
+    'Você decide se a última mensagem do dono pede uma ação nas TAREFAS (afazeres), nos LEMBRETES (avisos numa hora certa), nos PROJETOS ou nos AVISOS (o que o J.A.R.V.I.S. manda sozinho) dele e quais ferramentas chamar.',
     'Responda só JSON: {"acoes": [{"ferramenta": "...", "args": {...}}]}. Se a mensagem não for sobre tarefas (ex.: pergunta geral, conversa, pesquisa), responda {"acoes": []}.',
     'Ferramentas:', FERRAMENTAS, ...EXTENSOES.map((e) => e.ferramentas),
     '',
@@ -251,7 +250,7 @@ export interface Ctx {
   hoje: string;
 }
 
-export const CAMPOS_TAREFA = 'id, title, notes, priority, due_date, due_time, done_at, deleted_at, recurrence, project_id, milestone_id, board_column';
+export const CAMPOS_TAREFA = 'id, title, notes, priority, due_date, due_time, done_at, deleted_at, recurrence, project_id, board_column';
 const CAMPOS = CAMPOS_TAREFA;
 
 async function abertasDe(sb: SupabaseClient): Promise<Tarefa[]> {
@@ -373,7 +372,7 @@ async function apagarVarias(ctx: Ctx, alvo: Tarefa[]) {
 export type Executor = (ctx: Ctx, args: Record<string, unknown>) => Promise<ResultadoFerramenta>;
 
 /** Tabelas que o "desfaz" da conversa alcança (memórias têm o próprio caminho). */
-const TIPOS_DESFAZER = ['tasks', 'reminders', 'projects', 'project_milestones', 'habits', 'habit_logs', 'notes', 'notice_rules', 'notice_settings'];
+const TIPOS_DESFAZER = ['tasks', 'reminders', 'projects', 'notice_rules', 'notice_settings'];
 
 const EXECUTORES: Record<string, Executor> = {
   async tarefas_criar(ctx, a) {
@@ -384,7 +383,7 @@ const EXECUTORES: Record<string, Executor> = {
     const pedida = resolverQuando(a, ctx.hoje) ?? null;
     const data = rec ? (pedida && proximaData(rec, pedida, true)) || primeiraData(rec, hora) : pedida;
     const prioridade: Prioridade = PRIOS.includes(a.prioridade as Prioridade) ? a.prioridade as Prioridade : 'media';
-    // Projeto/marco (vem da extensão de projetos).
+    // Projeto (vem da extensão de projetos).
     let vinculo: Record<string, unknown> = {};
     for (const e of EXTENSOES) {
       if (!e.aoCriarTarefa) continue;
@@ -606,17 +605,13 @@ const EXECUTORES: Record<string, Executor> = {
       const { error } = await ctx.sb.from(r.entity_type).update(mudanca).eq('id', r.entity_id);
       if (error) continue;
       await ctx.sb.from('undo_receipts').update({ undone_at: new Date().toISOString() }).eq('id', r.id);
-      const item = (antes ?? r.after) as { title?: string; name?: string; content?: string; kind?: string } | null;
-      desfeitas.push(item?.title ?? item?.name ?? (r.entity_type.startsWith('notice_') ? 'ajuste dos avisos' : r.entity_type === 'habit_logs' ? 'registro do hábito'
-        : r.entity_type === 'notes' ? (item?.kind === 'diario' ? 'diário' : (item?.content ?? 'nota').slice(0, 60)) : 'item'));
+      const item = (antes ?? r.after) as { title?: string; name?: string } | null;
+      desfeitas.push(item?.title ?? item?.name ?? (r.entity_type.startsWith('notice_') ? 'ajuste dos avisos' : 'item'));
     }
     const nome: Record<string, string> = {
       tarefas_criar: 'criação', lembretes_criar: 'criação', lembretes_concluir: 'conclusão', lembretes_apagar: 'exclusão',
       lembretes_editar: 'edição', lembretes_adiar: 'mudança', projetos_criar: 'criação', projetos_editar: 'edição',
-      projetos_apagar: 'exclusão', projetos_criar_marco: 'criação', projetos_concluir_marco: 'conclusão',
-      projetos_mover_tarefas: 'mudança', habitos_criar: 'criação', habitos_marcar: 'marcação', habitos_desmarcar: 'mudança',
-      habitos_editar: 'edição', habitos_apagar: 'exclusão', conhecimento_criar: 'criação', conhecimento_diario: 'escrita no diário',
-      conhecimento_editar: 'edição', conhecimento_apagar: 'exclusão', avisos_silenciar: 'mudança', avisos_ligar: 'mudança',
+      projetos_apagar: 'exclusão', projetos_mover_tarefas: 'mudança', avisos_silenciar: 'mudança', avisos_ligar: 'mudança',
       avisos_desligar_todos: 'mudança', avisos_horario: 'mudança', avisos_configurar: 'mudança', tarefas_concluir: 'conclusão', tarefas_apagar: 'exclusão', tarefas_editar: 'edição', tarefas_reabrir: 'reabertura',
     };
     return {
