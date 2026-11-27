@@ -19,6 +19,7 @@ import { htmlHoje, ligarHoje } from './hoje';
 import { ligarAvisos } from './avisos';
 import { htmlAvisos, ligarAbaAvisos } from './abaAvisos';
 import { aplicarTema, ligarBotaoTema, temaSalvo } from './tema';
+import { criarAvaliacao } from './avaliacao';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 aplicarTema(temaSalvo());
@@ -44,8 +45,10 @@ async function decidirTela() {
   const nova = logado ? 'painel' : 'login';
   if (nova === tela) return;
   tela = nova;
-  if (logado) montarPainel();
-  else montarLogin();
+  if (logado) {
+    montarPainel();
+    void atualizarLicoes();
+  } else montarLogin();
 }
 
 // ======================= login =======================
@@ -153,6 +156,22 @@ let aba: Aba = lerAba();
 let qtdMensagensDesenhadas = -1;
 // Só redesenha quando algo mudou de verdade (redesenhar tudo a cada evento fazia a tela piscar).
 let assinaturaChat = '';
+/** Nós das lições (o que ele aprendeu) no núcleo, junto com as memórias. */
+let nosLicoes: { id: string; importancia: number }[] = [];
+async function atualizarLicoes() {
+  try {
+    const ls = await jarvis.feedback.licoes();
+    nosLicoes = ls.map((l) => ({ id: l.id, importancia: Math.min(10, 4 + l.hits) }));
+    void desenharMemorias();
+  } catch {
+    /* sem rede: tenta de novo no próximo evento */
+  }
+}
+/** Like/deslike nas respostas: mudou, o chat se redesenha. */
+const avaliacao = criarAvaliacao(
+  () => void desenharChat(),
+  (texto) => { $<HTMLParagraphElement>('#erro-chat').textContent = texto; },
+);
 let assinaturaListas = '';
 let assinaturaAtividades = '';
 let mensagensVistas = new Set<string>();
@@ -282,8 +301,10 @@ async function montarPainel() {
       if (!ok && !campoFala.value) campoFala.value = texto;
     });
   };
+  avaliacao.ligar($<HTMLDivElement>('#chat'));
   $<HTMLDivElement>('#chat').onclick = async (e) => {
     const alvo = e.target as HTMLElement;
+    if (avaliacao.clique(alvo)) return;
     const bCopiar = alvo.closest<HTMLButtonElement>('[data-copiar]');
     if (bCopiar) {
       const texto = textosCopiaveis[Number(bCopiar.dataset.copiar)];
@@ -523,7 +544,8 @@ async function desenharMemorias() {
   const lista = await jarvis.memorias.listar();
   if (tela !== 'painel') return;
   // Cada memória real é um nó do cérebro.
-  nucleo?.definirMemorias(lista.map((m) => ({ id: m.id, importancia: m.importance })));
+  // As lições do like/deslike também são nós (brilham mais conforme são usadas).
+  nucleo?.definirMemorias([...lista.map((m) => ({ id: m.id, importancia: m.importance })), ...nosLicoes]);
   const assinatura = `${memoriaConfirmando}|` + lista.map((m) => `${m.id}:${m.updated_at}`).join(',');
   if (assinatura === assinaturaMemoria) return;
   assinaturaMemoria = assinatura;
@@ -561,14 +583,15 @@ function itemMensagem(m: Message, nova: boolean, ultima: boolean) {
   }
   // O botão fica fora da mensagem, logo abaixo dela.
   return `<div class="${classe}" data-r="assistant"><div class="md">${respostaHtml(m.content, ultima, m.sources ?? [])}</div>${fontesHtml(m)}</div>`
-    + `<div class="msg-acoes${nova ? ' nova' : ''}">${botaoCopiarResposta(m.content)}</div>`;
+    + `<div class="msg-acoes${nova ? ' nova' : ''}${avaliacao.avaliada(m.id) ? ' avaliada' : ''}">${botaoCopiarResposta(m.content)}${avaliacao.html(m)}</div>`;
 }
 
 async function desenharChat() {
   const msgs = await jarvis.chat.mensagens();
   if (tela !== 'painel') return;
+  void avaliacao.carregar(msgs[0]?.conversation_id ?? null);
   const { pensando, erro } = jarvis.chat.estado();
-  const assinatura = `${pensando}|${jarvis.ia.estado()}|${erro}|` + msgs.map((m) => `${m.id}:${m.content.length}:${m.sources?.length ?? 0}`).join(',');
+  const assinatura = `${pensando}|${jarvis.ia.estado()}|${erro}|${avaliacao.assinatura()}|` + msgs.map((m) => `${m.id}:${m.content.length}:${m.sources?.length ?? 0}`).join(',');
   if (assinatura === assinaturaChat) return;
   assinaturaChat = assinatura;
 
@@ -583,6 +606,7 @@ async function desenharChat() {
     : `<div class="vazio"><strong>Às suas ordens.</strong>Pergunte qualquer coisa.</div>`;
   mensagensVistas = new Set(msgs.map((m) => m.id));
   $<HTMLParagraphElement>('#erro-chat').textContent = erro ?? '';
+  avaliacao.depoisDeDesenhar();
   // Desce até a última mensagem quando chega algo novo.
   const qtd = msgs.length + (pensando ? 1 : 0);
   if (qtd !== qtdMensagensDesenhadas && aba === 'conversa') {
@@ -816,6 +840,7 @@ function estadoDoNucleo() {
   return jarvis.chat.estado().erro ? 'erro' : 'repouso';
 }
 jarvis.aoEvento((e) => {
+  if (e.entity_type === 'assistant_lessons') void atualizarLicoes();
   // Pergunta feita por voz que vai precisar de pesquisa: avisa antes de sumir pesquisando.
   if (e.kind === 'searching' && aguardandoVoz && !falandoAgora) {
     falandoAgora = true;

@@ -17,6 +17,7 @@ import { pronunciasEnsinadas, resumoFalado } from './fala.ts';
 import './lembretes.ts'; // registra as ferramentas de lembretes no planejador
 import './projetos.ts'; // idem, projetos
 import './avisos.ts'; // idem, ajustes dos avisos (Fase 3)
+import { blocoLicoes, licoesAtivas, registrarFeedback, type Licao } from './licoes.ts'; // e lições (Fase 4)
 import {
   carregarAbertas, confirmacaoPendente, contextoExtensoes, executar, pareceTarefa, planejar, textoFinal,
 } from './tarefas.ts';
@@ -160,11 +161,19 @@ Deno.serve(async (req) => {
   if (erroUser || !u.user) return responder(401, { erro: 'Sessão inválida. Entre de novo.' });
   const userId = u.user.id;
 
-  let corpo: { conversation_id?: string; message_id?: string; text?: string; app?: string; voz?: boolean };
+  let corpo: {
+    conversation_id?: string; message_id?: string; text?: string; app?: string; voz?: boolean;
+    feedback?: { message_id?: string; rating?: string | null; reason?: string };
+  };
   try {
     corpo = await req.json();
   } catch {
     return responder(400, { erro: 'Corpo inválido.' });
+  }
+  // Like/deslike de uma resposta (vem da tela): guarda e, no deslike, devolve a lição aprendida.
+  if (corpo.feedback) {
+    const r = await registrarFeedback(sb, corpo.feedback).catch((e) => `Erro: ${e instanceof Error ? e.message : e}`);
+    return typeof r === 'string' ? responder(400, { erro: r }) : responder(200, r);
   }
   const texto = (corpo.text ?? '').trim();
   if (!corpo.conversation_id || !UUID.test(corpo.conversation_id)) return responder(400, { erro: 'conversation_id inválido.' });
@@ -233,12 +242,22 @@ Deno.serve(async (req) => {
 
   // Memória: o que ele já sabe e que tem a ver com a pergunta. Sensível nunca vai para o Gemini.
   const memorias = await lembrar(sb, texto).catch(() => []);
+  // Lições do like/deslike. Conversa não sensível pode ir para o Gemini: as lições sensíveis ficam de fora.
+  const licoes: Licao[] = await licoesAtivas(sb).catch(() => []);
+  const usadas = new Set<string>();
+  const contarUso = () => {
+    if (!usadas.size) return;
+    const p = Promise.resolve(sb.rpc('usar_licoes', { ids: [...usadas] })).catch(() => null);
+    if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(p);
+  };
   const conversa: MensagemIA[] = historico.map((m) => ({ role: m.role, content: m.content }));
   // Tarefas por conversa: se a mensagem pede uma ação nas tarefas, executa e responde na hora.
   const pendente = await confirmacaoPendente(sb).catch(() => null);
   if (pareceTarefa(texto, !!pendente)) {
     const hoje = hojeSP();
-    const [abertas, contexto] = await Promise.all([carregarAbertas(sb), contextoExtensoes(sb)]);
+    const [abertas, contextoBase] = await Promise.all([carregarAbertas(sb), contextoExtensoes(sb)]);
+    const ensinou = blocoLicoes(licoes, ['geral', 'tarefas', 'lembretes', 'projetos', 'avisos'], !conversaSensivel);
+    const contexto = [contextoBase, ensinou.texto].filter(Boolean).join('\n\n');
     const plano = await planejar(conversa, hoje, abertas, pendente, conversaSensivel, contexto);
     if (plano.provedor) await registrarUso(sb, userId, plano.provedor, plano.tokens);
     if (plano.acoes.length) {
@@ -255,6 +274,8 @@ Deno.serve(async (req) => {
       }).select().single();
       if (salva.error) return responder(500, { erro: salva.error.message });
       console.log('ia_conversar: ferramentas', resultados.map((r) => `${r.ferramenta}:${r.ok ? 'ok' : 'falhou'} ${r.resumo}`));
+      ensinou.ids.forEach((id) => usadas.add(id));
+      contarUso();
       return responder(200, { mensagem: salva.data, fala: await falaPronta, ferramentas: resultados });
     }
   }
@@ -263,7 +284,9 @@ Deno.serve(async (req) => {
     .select('id', { count: 'exact', head: true }).is('deleted_at', null);
   const sistemaPara = (provedor: NomeProvedor, pesquisando = false) => {
     const bloco = blocoMemoria(memorias, provedor === 'gemini' || pesquisando);
-    return promptSistema(rota, pesquisando, nosDeMemoria ?? 0, app) + (bloco ? `\n\n${bloco}` : '');
+    const ensinou = blocoLicoes(licoes, pesquisando || rota === 'pesquisa' ? ['geral', 'pesquisa'] : ['geral'], provedor === 'gemini');
+    ensinou.ids.forEach((id) => usadas.add(id));
+    return promptSistema(rota, pesquisando, nosDeMemoria ?? 0, app) + (bloco ? `\n\n${bloco}` : '') + (ensinou.texto ? `\n\n${ensinou.texto}` : '');
   };
   const mensagensPara = (provedor: NomeProvedor): MensagemIA[] => [
     { role: 'system', content: sistemaPara(provedor) },
@@ -412,6 +435,7 @@ Deno.serve(async (req) => {
     .select()
     .single();
   if (salva.error) return responder(500, { erro: salva.error.message });
+  contarUso();
 
   // Aprende com esta troca depois de responder (não atrasa o chat).
   if (texto.length >= 8) {

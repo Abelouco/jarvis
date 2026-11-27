@@ -194,7 +194,7 @@ REPETIR (tarefa fixa) = {freq: "diaria"|"dias_uteis"|"fim_de_semana"|"semanal"|"
 function promptPlanejador(hoje: string, abertas: Tarefa[], pendente: string | null, contexto: string) {
   const agora = new Date().toLocaleTimeString('pt-BR', { timeZone: FUSO, hour: '2-digit', minute: '2-digit' });
   return [
-    'Você decide se a última mensagem do dono pede uma ação nas TAREFAS (afazeres), nos LEMBRETES (avisos numa hora certa), nos PROJETOS ou nos AVISOS (o que o J.A.R.V.I.S. manda sozinho) dele e quais ferramentas chamar.',
+    'Você decide se a última mensagem do dono pede uma ação nas TAREFAS (afazeres), nos LEMBRETES (avisos numa hora certa), nos PROJETOS, nos AVISOS (o que o J.A.R.V.I.S. manda sozinho) ou nas LIÇÕES (o que o J.A.R.V.I.S. aprendeu) dele e quais ferramentas chamar.',
     'Responda só JSON: {"acoes": [{"ferramenta": "...", "args": {...}}]}. Se a mensagem não for sobre tarefas (ex.: pergunta geral, conversa, pesquisa), responda {"acoes": []}.',
     'Ferramentas:', FERRAMENTAS, ...EXTENSOES.map((e) => e.ferramentas),
     '',
@@ -375,7 +375,7 @@ async function apagarVarias(ctx: Ctx, alvo: Tarefa[]) {
 export type Executor = (ctx: Ctx, args: Record<string, unknown>) => Promise<ResultadoFerramenta>;
 
 /** Tabelas que o "desfaz" da conversa alcança (memórias têm o próprio caminho). */
-const TIPOS_DESFAZER = ['tasks', 'reminders', 'projects', 'notice_rules', 'notice_settings'];
+const TIPOS_DESFAZER = ['tasks', 'reminders', 'projects', 'notice_rules', 'notice_settings', 'assistant_lessons'];
 
 const EXECUTORES: Record<string, Executor> = {
   async tarefas_criar(ctx, a) {
@@ -611,14 +611,15 @@ const EXECUTORES: Record<string, Executor> = {
       const { error } = await ctx.sb.from(r.entity_type).update(mudanca).eq('id', r.entity_id);
       if (error) continue;
       await ctx.sb.from('undo_receipts').update({ undone_at: new Date().toISOString() }).eq('id', r.id);
-      const item = (antes ?? r.after) as { title?: string; name?: string } | null;
-      desfeitas.push(item?.title ?? item?.name ?? (r.entity_type.startsWith('notice_') ? 'ajuste dos avisos' : 'item'));
+      const item = (antes ?? r.after) as { title?: string; name?: string; lesson?: string } | null;
+      desfeitas.push(item?.title ?? item?.name ?? item?.lesson ?? (r.entity_type.startsWith('notice_') ? 'ajuste dos avisos' : 'item'));
     }
     const nome: Record<string, string> = {
       tarefas_criar: 'criação', lembretes_criar: 'criação', lembretes_concluir: 'conclusão', lembretes_apagar: 'exclusão',
       lembretes_editar: 'edição', lembretes_adiar: 'mudança', projetos_criar: 'criação', projetos_editar: 'edição',
       projetos_apagar: 'exclusão', projetos_mover_tarefas: 'mudança', avisos_silenciar: 'mudança', avisos_ligar: 'mudança',
       avisos_desligar_todos: 'mudança', avisos_horario: 'mudança', avisos_configurar: 'mudança', tarefas_concluir: 'conclusão', tarefas_apagar: 'exclusão', tarefas_editar: 'edição', tarefas_reabrir: 'reabertura',
+      licoes_esquecer: 'exclusão da lição', licoes_ensinar: 'lição nova',
     };
     return {
       ferramenta: 'jarvis_desfazer', ok: desfeitas.length > 0, resumo: `desfeita ${rec.action}`, fatos: { acao: rec.action, tarefas: desfeitas },

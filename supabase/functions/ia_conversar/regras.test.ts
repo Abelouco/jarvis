@@ -272,3 +272,31 @@ test('avisos: o detector manda para o planejador', () => {
   assert.equal(pareceTarefa('silencia os avisos de tarefa por 2 horas', false), true);
   assert.equal(pareceTarefa('por que você me avisou?', false), true);
 });
+
+import { blocoLicoes, normalizarLicao, type Licao } from './licoes.ts';
+
+test('lições: resposta do Groq vira lição válida', () => {
+  assert.deepEqual(normalizarLicao({ licao: '  Responda  curto. ', escopo: 'TAREFAS', frase: 'Entendido, Senhor: curto.' }),
+    { lesson: 'Responda curto.', scope: 'tarefas', frase: 'Entendido, Senhor: curto.' });
+  assert.equal(normalizarLicao({ licao: 'Use tabelas', escopo: 'inventado' })?.scope, 'geral');
+  assert.equal(normalizarLicao({ licao: null }), null);
+  assert.equal(normalizarLicao('x'), null);
+});
+
+test('lições: bloco do prompt por escopo e sem sensível para o Gemini', () => {
+  const l = (id: string, scope: Licao['scope'], sensitive = false, kind: Licao['kind'] = 'evitar'): Licao => ({
+    id, lesson: `lição ${id}`, kind, scope, active: true, hits: 0, sensitive, created_at: '2026-11-27', source_feedback_id: null,
+  });
+  const ls = [l('a', 'geral'), l('b', 'tarefas'), l('c', 'geral', true), l('d', 'pesquisa', false, 'manter')];
+  assert.deepEqual(blocoLicoes(ls, ['geral'], false).ids, ['a', 'c']);
+  assert.deepEqual(blocoLicoes(ls, ['geral'], true).ids, ['a']); // Gemini: sem a sensível
+  assert.deepEqual(blocoLicoes(ls, ['geral', 'pesquisa'], true).ids, ['a', 'd']);
+  assert.match(blocoLicoes(ls, ['geral', 'pesquisa'], true).texto, /MANTENHA \(pesquisa\): lição d/);
+  assert.equal(blocoLicoes(ls, ['avisos'], false).texto, '');
+});
+
+test('lições: o detector manda para o planejador', () => {
+  assert.equal(pareceTarefa('o que você aprendeu comigo?', false), true);
+  assert.equal(pareceTarefa('esquece a lição 2', false), true);
+  assert.equal(pareceTarefa('daqui pra frente responda em tópicos', false), true);
+});

@@ -149,7 +149,7 @@ Também:
 | 0 | Limpeza: tirar Hábitos, Conhecimento e marcos (conversa, core, vigia, núcleo, Hoje, resumos) + migração 0016 | servidor, core, vigia, migração e ficha `docs/tarefas/limpeza-abas.md` | tira as abas, telas e CSS de `apps/desktop/src`; testes |
 | 1 | Tema claro/escuro (Claro, Escuro, Seguir o Windows), incluindo as cores do núcleo 3D | tudo (feito em 2026-11-27: mapear as cores por papel pedia o CSS inteiro) | — |
 | 2 | Lembrete na tarefa: 0017, `tarefas_criar` com `lembrar`, concluir/apagar em cascata | tudo (feito em 2026-11-27: servidor, core, "Me lembrar" no `formTarefa.ts` e sino na lista) | — |
-| 3 | Like e deslike: 0018, `licoes.ts`, lições no prompt, junção acima do teto | servidor e prompts | botões, campo do motivo e animações pela ficha `docs/tarefas/like-deslike.md`; testes |
+| 3 | Like e deslike: 0018, `licoes.ts`, lições no prompt, junção acima do teto | tudo (feito em 2026-11-27: servidor, prompts, botões, campo do motivo, animações e nós no núcleo) | — |
 | 4 | Conexão Google: 0019, Edge Function `google_conectar` (início + retorno), Vault, botão Conectar/Desconectar | tudo | — |
 | 5 | E-mail: `email.ts` direto no Gmail (sem guardar corpo de e-mail no banco), bloco de "conteúdo externo" | tudo | — |
 | 6 | Finanças: 0020, `financas.ts`, regras puras de fatura no core (com cópia e teste), aviso `conta_vencer` | servidor, regras e core | aba Finanças pela ficha `docs/tarefas/aba-financas.md`; testes |

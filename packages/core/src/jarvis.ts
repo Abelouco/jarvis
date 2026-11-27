@@ -963,10 +963,42 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     },
   };
 
+  // ---------- like/deslike e lições (direto no Supabase; o servidor escreve a lição) ----------
+  type Avaliacao = 'like' | 'dislike';
+  const feedback = {
+    /** Avaliações das respostas de uma conversa: id da mensagem -> like/deslike. */
+    async daConversa(conversationId: string): Promise<Map<string, Avaliacao>> {
+      const { data, error } = await sb.from('message_feedback').select('message_id, rating')
+        .eq('conversation_id', conversationId).is('deleted_at', null);
+      if (error) throw new Error(error.message);
+      return new Map((data ?? []).map((f) => [f.message_id as string, f.rating as Avaliacao]));
+    },
+    /**
+     * Like, deslike (com o motivo) ou null para tirar. No deslike, devolve a lição que o J.A.R.V.I.S.
+     * aprendeu e a frase de confirmação ("Entendido, Senhor: ...").
+     */
+    async avaliar(messageId: string, rating: Avaliacao | null, motivo?: string):
+      Promise<{ rating: Avaliacao | null; licao?: string; frase?: string }> {
+      const { data, error } = await sb.functions.invoke('ia_conversar', {
+        body: { feedback: { message_id: messageId, rating, reason: motivo ?? null } },
+      });
+      if (error) throw new Error(await mensagemDeErro(error));
+      return data as { rating: Avaliacao | null; licao?: string; frase?: string };
+    },
+    /** Lições ativas (o que ele aprendeu). */
+    async licoes(): Promise<{ id: string; lesson: string; kind: 'evitar' | 'manter'; scope: string; hits: number }[]> {
+      const { data, error } = await sb.from('assistant_lessons').select('id, lesson, kind, scope, hits')
+        .eq('active', true).is('deleted_at', null).order('created_at');
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    },
+  };
+
   return {
     iniciar,
     auth,
     avisos,
+    feedback,
     tarefas,
     projetos,
     lembretes,
