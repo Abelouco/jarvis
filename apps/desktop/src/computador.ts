@@ -166,7 +166,7 @@ async function sincronizarSessao() {
   emitirFaixa();
 }
 
-async function plano(cmd: PcComando, historico: { passo: Passo; ok: boolean; erro?: string }[]): Promise<RespostaControle> {
+async function plano(cmd: PcComando, historico: { passo: Passo; ok: boolean; erro?: string }[], liberado = false): Promise<RespostaControle> {
   const sessao = await jarvis.auth.sessao();
   if (!sessao) throw new Error('Sem sessão para controlar o PC.');
   const arvore = await invoke<{
@@ -190,7 +190,7 @@ async function plano(cmd: PcComando, historico: { passo: Passo; ok: boolean; err
       arvore: arvore.elementos ?? [],
       print,
       historico: historico.slice(-12),
-      liberado: cmd.args?.liberado === true,
+      liberado,
       comando_id: cmd.id,
       tela: { largura: arvore.largura_tela, altura: arvore.altura_tela },
       processo: arvore.processo,
@@ -210,6 +210,7 @@ async function pilotar(cmd: PcComando) {
   await invoke('pc_controle_ativo', { ativo: true });
   const historico: { passo: Passo; ok: boolean; erro?: string }[] = [];
   const vivo = () => meu === geracao && !pedidoParar;
+  let liberado = cmd.args?.liberado === true;
   try {
     for (let rodada = 0; rodada < 25 && vivo(); rodada++) {
       const sessao = await jarvis.computador.sessaoAtiva().catch(() => null);
@@ -217,7 +218,9 @@ async function pilotar(cmd: PcComando) {
         await jarvis.computador.concluir(cmd.id, 'cancelado', { motivo: 'sessão encerrada' }, 'executando').catch(() => {});
         return;
       }
-      const corpo = await plano(cmd, historico);
+      const corpo = await plano(cmd, historico, liberado);
+      // O "sim" libera só o passo perigoso que pediu a confirmação; os seguintes voltam a pedir.
+      if (corpo.perigo) liberado = false;
       if (corpo.codigo) {
         const perigo = corpo.perigo || 'esse passo precisa de confirmação';
         await jarvis.computador.concluir(cmd.id, 'aguardando_cf', { motivo: perigo });

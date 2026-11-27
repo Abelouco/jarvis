@@ -305,7 +305,12 @@ mod win {
     }
 
     fn recusar_tecla(combinacao: &str) -> Result<(), String> {
-        let n = combinacao.to_ascii_lowercase().replace(' ', "");
+        // Mesma normalização do servidor: modificadores em ordem fixa (r+win = win+r).
+        let partes: Vec<String> = combinacao.to_ascii_lowercase().replace(' ', "").split('+').map(String::from).collect();
+        let ordem = ["ctrl", "alt", "shift", "win"];
+        let mut n: Vec<String> = ordem.iter().filter(|m| partes.iter().any(|p| p == *m)).map(|m| m.to_string()).collect();
+        n.extend(partes.iter().filter(|p| !ordem.contains(&p.as_str())).cloned());
+        let n = n.join("+");
         if n == "win+r" || n == "win+x" || n == "ctrl+shift+esc" {
             return Err(RECUSA.into());
         }
@@ -487,7 +492,7 @@ mod win {
             if !texto.is_empty() { texto.push('\n'); }
             texto.push_str(&err);
         }
-        texto.truncate(4_000);
+        if let Some((i, _)) = texto.char_indices().nth(4_000) { texto.truncate(i); }
         Ok(texto)
     }
 }
