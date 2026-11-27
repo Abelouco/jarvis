@@ -505,6 +505,10 @@ test('computador: o detector manda para o planejador (e o pedido fica sensível)
   assert.ok(!pareceComputador('qual a capital da França?'));
   assert.ok(!pareceComputador('amanhã tenho reunião'));
   assert.ok(!pareceComputador('você acha que vai chover?'));
+  assert.ok(!pareceComputador('você acha que chove?'));
+  assert.ok(pareceComputador('assume o computador por 1 hora'));
+  assert.ok(pareceComputador('solta o PC'));
+  assert.ok(pareceComputador('roda o comando ipconfig no powershell'));
   assert.ok(!pareceComputador('arquiva os e-mails não importantes'));
 });
 

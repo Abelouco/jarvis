@@ -10,7 +10,7 @@
     "desktop": "pnpm --filter @jarvis/desktop tauri dev",
     "typecheck": "pnpm -r typecheck",
     "release:pc": "node scripts/release-pc.mjs",
-    "test": "node --test packages/core/src/markdown.test.ts supabase/functions/ia_conversar/regras.test.ts supabase/functions/avisos_vigia/decisao.test.ts"
+    "test": "node --test packages/core/src/markdown.test.ts supabase/functions/ia_conversar/regras.test.ts supabase/functions/avisos_vigia/decisao.test.ts supabase/functions/ia_controlar/regras.test.ts"
   },
   "devDependencies": {
     "typescript": "~5.9.0"

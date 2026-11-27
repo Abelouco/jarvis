@@ -59,6 +59,8 @@ export interface Nucleo {
   /** Fim do arraste: o giro continua por inércia e desacelera. */
   soltar(): void;
   redimensionar(largura: number, altura: number, dpr?: number): void;
+  /** Enquanto o modo controle está ligado, o núcleo fica vermelho. Sem material novo. */
+  definirModoControle(ligado: boolean): void;
   destruir(): void;
 }
 
@@ -474,6 +476,9 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
     }),
   );
   cena.add(brilho); // fora do conjunto: sempre de frente para a câmera
+  const corBaseUniforme = (brilho.material as THREE.ShaderMaterial).uniforms.uCorBase!;
+  const VERMELHO_CONTROLE = new THREE.Color('rgb(230, 60, 60)');
+  let modoControle = false;
 
   // ---------- estado ----------
   let pulso = 0;
@@ -537,6 +542,16 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
       uComuns.uPulso!.value = energiaTotal;
       corArestas.copy(TEAL).lerp(tinta, uComuns.uMistura!.value as number);
       matFios.color.copy(CIANO).lerp(tinta, uComuns.uMistura!.value as number);
+      if (modoControle) {
+        tinta.copy(VERMELHO_CONTROLE);
+        uComuns.uMistura!.value = 1;
+        corArestas.copy(VERMELHO_CONTROLE);
+        matFios.color.copy(VERMELHO_CONTROLE);
+        if (corBaseUniforme.value === TEAL) corBaseUniforme.value = TEAL.clone();
+        (corBaseUniforme.value as THREE.Color).copy(VERMELHO_CONTROLE);
+      } else if (corBaseUniforme.value !== TEAL) {
+        (corBaseUniforme.value as THREE.Color).copy(TEAL);
+      }
       matFios.opacity = 0.28 + energiaTotal * 0.3;
       matFiosProj.opacity = 0.22 + energiaTotal * 0.3;
 
@@ -569,6 +584,9 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
     },
     definirEstado(estado) {
       alvo = PERFIS[estado] ?? PERFIS.repouso;
+    },
+    definirModoControle(ligado) {
+      modoControle = ligado;
     },
     definirMemorias(memorias) {
       const lista = memorias.slice(0, 400);

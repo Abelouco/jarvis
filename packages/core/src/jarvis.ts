@@ -1086,6 +1086,12 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
           const linha = m.new as PcComando;
           if (linha?.id && linha.status === 'pendente') f(linha);
         })
+        .on('postgres_changes', {
+          event: 'UPDATE', schema: 'public', table: 'pc_commands', filter: 'status=eq.pendente',
+        }, (m) => {
+          const linha = m.new as PcComando;
+          if (linha?.id && linha.status === 'pendente') f(linha);
+        })
         .subscribe();
       return () => { void sb.removeChannel(canal); };
     },
@@ -1103,12 +1109,18 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
      * cancelado só se ainda está pendente. Zero linhas = outro passo já pegou.
      */
     async concluir(
-      id: string, status: 'executando' | 'feito' | 'falhou' | 'cancelado', result: Record<string, unknown> | null,
+      id: string,
+      status: 'executando' | 'feito' | 'falhou' | 'cancelado' | 'aguardando_cf',
+      result: Record<string, unknown> | null,
+      esperadoForcado?: 'pendente' | 'executando',
     ) {
       const agora = new Date().toISOString();
       const patch: Record<string, unknown> = { status };
-      const esperado = status === 'feito' || status === 'falhou' ? 'executando' : 'pendente';
+      const esperado = esperadoForcado ?? (
+        status === 'feito' || status === 'falhou' || status === 'aguardando_cf' ? 'executando' : 'pendente'
+      );
       if (status === 'executando') patch.started_at = agora;
+      else if (status === 'aguardando_cf') patch.result = result;
       else {
         patch.finished_at = agora;
         patch.result = result;
@@ -1117,6 +1129,56 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
         .eq('id', id).eq('status', esperado).is('deleted_at', null).select('id');
       if (error) throw new Error(error.message);
       if (!data?.length) throw new Error('ja-pego');
+    },
+    /** Sessão de controle ainda dentro do prazo. */
+    async sessaoAtiva(): Promise<PcSessao | null> {
+      const { data, error } = await sb.from('pc_sessions')
+        .select('id, authorized_until, ended_at, ended_by, reason')
+        .is('ended_at', null).is('deleted_at', null)
+        .gt('authorized_until', new Date().toISOString())
+        .order('authorized_until', { ascending: false }).limit(1);
+      if (error) throw new Error(error.message);
+      return (data?.[0] as PcSessao | undefined) ?? null;
+    },
+    /** Liga ou estende o modo controle. Minutos entre 5 e 240; o padrão é 30. */
+    async assumir(minutos = 30, motivo?: string): Promise<PcSessao> {
+      const m = Math.min(240, Math.max(5, Math.round(minutos) || 30));
+      const ate = new Date(Date.now() + m * 60_000).toISOString();
+      const ativa = await this.sessaoAtiva();
+      if (ativa) {
+        const { data, error } = await sb.from('pc_sessions')
+          .update({ authorized_until: ate }).eq('id', ativa.id).select('id, authorized_until, ended_at, ended_by, reason').single();
+        if (error) throw new Error(error.message);
+        return data as PcSessao;
+      }
+      const { data, error } = await sb.from('pc_sessions')
+        .insert({ authorized_until: ate, reason: motivo?.trim() || null })
+        .select('id, authorized_until, ended_at, ended_by, reason').single();
+        if (error) throw new Error(error.message);
+        return data as PcSessao;
+    },
+    /** Encerra a sessão aberta e cancela os pedidos dela que ainda não terminaram. */
+    async soltar(por: 'dono' | 'tempo' | 'panico'): Promise<void> {
+      const agora = new Date().toISOString();
+      let q = sb.from('pc_sessions').select('id').is('ended_at', null).is('deleted_at', null);
+      if (por === 'tempo') q = q.lte('authorized_until', agora);
+      const { data, error } = await q.order('created_at', { ascending: false }).limit(1);
+      if (error) throw new Error(error.message);
+      const id = (data?.[0] as { id?: string } | undefined)?.id;
+      if (!id) return;
+      const fim = await sb.from('pc_sessions').update({ ended_at: agora, ended_by: por }).eq('id', id).is('ended_at', null);
+      if (fim.error) throw new Error(fim.error.message);
+      const cmds = await sb.from('pc_commands').update({
+        status: 'cancelado', finished_at: agora, result: { motivo: por },
+      }).eq('session_id', id).in('status', ['pendente', 'executando', 'aguardando_cf']).is('deleted_at', null);
+      if (cmds.error) throw new Error(cmds.error.message);
+    },
+    /** INSERT e UPDATE de pc_sessions (a faixa abre e fecha com isso). */
+    ouvirSessoes(f: () => void) {
+      const canal = sb.channel('pc-sessions')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'pc_sessions' }, () => f())
+        .subscribe();
+      return () => { void sb.removeChannel(canal); };
     },
   };
 
@@ -1158,10 +1220,18 @@ export type ProjetoResumo = Project & { total: number; feitas: number };
 /** Pedido para o PC executar (Fase 4 · etapa 7). */
 export interface PcComando {
   id: string;
-  kind: 'abrir' | 'midia' | 'achar_arquivo' | 'ver_tela';
+  kind: 'abrir' | 'midia' | 'achar_arquivo' | 'ver_tela' | 'controlar' | 'comando';
   args: Record<string, unknown>;
   status: string;
   result?: Record<string, unknown> | null;
   created_at: string;
+}
+/** Sessão em que o J.A.R.V.I.S. pode clicar e digitar. */
+export interface PcSessao {
+  id: string;
+  authorized_until: string;
+  ended_at: string | null;
+  ended_by: 'dono' | 'tempo' | 'panico' | null;
+  reason: string | null;
 }
 

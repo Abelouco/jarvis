@@ -1,5 +1,5 @@
 // Computador, parte 1 (Fase 4 · etapa 7): abrir, mídia, achar arquivo e ver a tela.
-// O modo controle (mouse e teclado livre) fica para a etapa 8. Nada de print fica em disco.
+// O modo controle (mouse, teclado, faixa e pânico) está em `pilotar.rs`. Nada de print fica em disco.
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
 

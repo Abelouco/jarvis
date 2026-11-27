@@ -7,6 +7,16 @@ export interface NucleoMontado {
   definirMemorias(memorias: NoMemoria[]): void;
   definirProjetos(projetos: NoProjeto[]): void;
   destruir(): void;
+  definirModoControle(ligado: boolean): void;
+}
+
+const montados = new Set<Nucleo>();
+let controleLigado = false;
+
+/** Tinge o núcleo de vermelho enquanto o modo controle está ligado e devolve a cor ao desligar. */
+export function definirModoControle(ligado: boolean) {
+  controleLigado = ligado;
+  for (const n of montados) n.definirModoControle(ligado);
 }
 
 /** Monta o núcleo 3D dentro de `caixa` (ocupa o tamanho dela) e anima até destruir. */
@@ -25,6 +35,8 @@ export function montarNucleo(caixa: HTMLElement, densidade = 1, distancia?: numb
     densidade,
     distancia,
   });
+  montados.add(nucleo);
+  nucleo.definirModoControle(controleLigado);
 
   const obs = new ResizeObserver(() => {
     if (caixa.clientWidth && caixa.clientHeight) nucleo.redimensionar(caixa.clientWidth, caixa.clientHeight, dpr);
@@ -64,7 +76,9 @@ export function montarNucleo(caixa: HTMLElement, densidade = 1, distancia?: numb
     definirEstado: (e) => nucleo.definirEstado(e),
     definirMemorias: (m) => nucleo.definirMemorias(m),
     definirProjetos: (p) => nucleo.definirProjetos(p),
+    definirModoControle: (ligado) => nucleo.definirModoControle(ligado),
     destruir() {
+      montados.delete(nucleo);
       cancelAnimationFrame(quadro);
       obs.disconnect();
       nucleo.destruir();

@@ -2,6 +2,7 @@ use tauri::Manager;
 
 mod aviso;
 mod controle;
+mod pilotar;
 mod terminal;
 mod voz;
 
@@ -24,6 +25,10 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
+        .setup(|app| {
+            pilotar::ligar(app.handle().clone())?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             aviso::notificar,
             terminal::abrir_terminal,
@@ -34,7 +39,13 @@ pub fn run() {
             controle::pc_abrir,
             controle::pc_midia,
             controle::pc_achar_arquivo,
-            controle::pc_print
+            controle::pc_print,
+            pilotar::pc_arvore,
+            pilotar::pc_passo,
+            pilotar::pc_comando,
+            pilotar::pc_parar,
+            pilotar::pc_retomar,
+            pilotar::pc_controle_ativo
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o J.A.R.V.I.S.");
