@@ -15,7 +15,7 @@ try {
   [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
 }
 if ($segredo.Length -lt 10) { throw 'Chave secreta vazia ou curta demais.' }
-npx.cmd -y supabase@latest secrets set "GOOGLE_CLIENT_ID=$id" "GOOGLE_CLIENT_SECRET=$segredo" --project-ref pmqxeikcnuywvcxkeoep
+npx.cmd -y supabase@latest secrets set "GOOGLE_CLIENT_ID=$id" "GOOGLE_CLIENT_SECRET=$segredo" --project-ref pmqxeikcnuywvcxkeoep --yes
 $segredo = $null
 Write-Host ''
 Write-Host 'Pronto: chaves guardadas no Supabase. Pode fechar esta aba.' -ForegroundColor Green
