@@ -1075,10 +1075,56 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     },
   };
 
+  // Computador (Fase 4 · etapa 7): o servidor grava o pedido; o PC executa e devolve o resultado.
+  const computador = {
+    /** INSERT de pedido pendente. Devolve a função que solta o canal. */
+    ouvir(f: (cmd: PcComando) => void) {
+      const canal = sb.channel('pc-commands')
+        .on('postgres_changes', {
+          event: 'INSERT', schema: 'public', table: 'pc_commands', filter: 'status=eq.pendente',
+        }, (m) => {
+          const linha = m.new as PcComando;
+          if (linha?.id && linha.status === 'pendente') f(linha);
+        })
+        .subscribe();
+      return () => { void sb.removeChannel(canal); };
+    },
+    /** Pendentes ainda no banco (os de quando o app estava fechado). */
+    async pendentes(): Promise<PcComando[]> {
+      const { data, error } = await sb.from('pc_commands')
+        .select('id, kind, args, status, result, created_at')
+        .eq('status', 'pendente').is('deleted_at', null)
+        .order('created_at', { ascending: true }).limit(30);
+      if (error) throw new Error(error.message);
+      return (data ?? []) as PcComando[];
+    },
+    /**
+     * Marca executando só se ainda está pendente; feito/falhou só se está executando;
+     * cancelado só se ainda está pendente. Zero linhas = outro passo já pegou.
+     */
+    async concluir(
+      id: string, status: 'executando' | 'feito' | 'falhou' | 'cancelado', result: Record<string, unknown> | null,
+    ) {
+      const agora = new Date().toISOString();
+      const patch: Record<string, unknown> = { status };
+      const esperado = status === 'feito' || status === 'falhou' ? 'executando' : 'pendente';
+      if (status === 'executando') patch.started_at = agora;
+      else {
+        patch.finished_at = agora;
+        patch.result = result;
+      }
+      const { data, error } = await sb.from('pc_commands').update(patch)
+        .eq('id', id).eq('status', esperado).is('deleted_at', null).select('id');
+      if (error) throw new Error(error.message);
+      if (!data?.length) throw new Error('ja-pego');
+    },
+  };
+
   return {
     iniciar,
     auth,
     avisos,
+    computador,
     financas,
     feedback,
     conexoes,
@@ -1108,4 +1154,14 @@ export type Jarvis = ReturnType<typeof criarJarvis>;
 
 /** Projeto com o progresso, como a lista mostra. */
 export type ProjetoResumo = Project & { total: number; feitas: number };
+
+/** Pedido para o PC executar (Fase 4 · etapa 7). */
+export interface PcComando {
+  id: string;
+  kind: 'abrir' | 'midia' | 'achar_arquivo' | 'ver_tela';
+  args: Record<string, unknown>;
+  status: string;
+  result?: Record<string, unknown> | null;
+  created_at: string;
+}
 

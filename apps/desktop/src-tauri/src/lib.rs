@@ -1,6 +1,7 @@
 use tauri::Manager;
 
 mod aviso;
+mod controle;
 mod terminal;
 mod voz;
 
@@ -29,7 +30,11 @@ pub fn run() {
             terminal::abrir_link,
             voz::voz_estado,
             voz::voz_instalar,
-            voz::voz_falar
+            voz::voz_falar,
+            controle::pc_abrir,
+            controle::pc_midia,
+            controle::pc_achar_arquivo,
+            controle::pc_print
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o J.A.R.V.I.S.");

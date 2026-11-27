@@ -17,6 +17,7 @@ import { htmlLembretes, ligarLembretes } from './lembretes';
 import { htmlProjetos, ligarProjetos } from './projetos';
 import { htmlHoje, ligarHoje } from './hoje';
 import { ligarAvisos } from './avisos';
+import { ligarComputador } from './computador';
 import { htmlAvisos, ligarAbaAvisos } from './abaAvisos';
 import { htmlFinancas, ligarAbaFinancas } from './abaFinancas';
 import { aplicarTema, ligarBotaoTema, temaSalvo } from './tema';
@@ -901,4 +902,5 @@ jarvis.aoEvento((e) => {
 montarControlesJanela();
 void jarvis.iniciar().then(decidirTela);
 ligarAvisos({ pulsar: () => nucleo?.pulsar(0.8, 'criado') });
+ligarComputador();
 ligarAtualizacao();

@@ -153,7 +153,7 @@ Também:
 | 4 | Conexão Google: 0019, Edge Function `google_conectar` (início + retorno), Vault, botão Conectar/Desconectar | tudo (feito em 2026-11-27) | — |
 | 5 | E-mail: `email.ts` direto no Gmail (sem guardar corpo de e-mail no banco), bloco de "conteúdo externo" | tudo | feita em 2026-11-27 (`gmail.ts` + `email.ts`) |
 | 6 | Finanças: 0021 + 0022, `financas.ts`, regras puras de fatura no core (com cópia e teste), aviso `conta_vencer` | tudo (feito em 2026-11-27: servidor, vigia, core `jarvis.financas` e aba Finanças) | — |
-| 7 | Computador, parte 1: 0023, `pc_commands` pelo Realtime, `controle.rs` (abrir, mídia, achar arquivo, ver tela), `ia_controlar` | tudo | — |
+| 7 | Computador, parte 1: 0023, `pc_commands` pelo Realtime, `controle.rs` (abrir, mídia, achar arquivo, ver tela), `ia_tela` | revisão e publicação (migração e funções ainda não no Supabase) | feito pelo Cursor em 2026-11-27 |
 | 8 | Computador, parte 2: modo controle (faixa, pânico, `uiautomation` + `enigo`, lote de passos, acompanhar), `computador_comando` com `cf_` | tudo | faixa e botão de parar pela ficha |
 | 9 | Criação: imagem (Cloudflare), código, vídeo (ffmpeg + Piper), aba Criações | servidor e Rust | aba Criações (galeria) pela ficha |
 | 10 | Release `pnpm.cmd release:pc` e teste ponta a ponta | revisão final | typecheck e testes |

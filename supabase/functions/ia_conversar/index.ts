@@ -19,6 +19,7 @@ import './projetos.ts'; // idem, projetos
 import './avisos.ts'; // idem, ajustes dos avisos (Fase 3)
 import { pareceEmail } from './email.ts'; // e e-mail pelo Gmail (Fase 4); importar já registra
 import { pareceFinancas } from './financas.ts'; // e finanças (Fase 4 · etapa 6)
+import { pareceComputador } from './computador.ts'; // e o PC (Fase 4 · etapa 7); importar já registra
 import { blocoLicoes, licoesAtivas, registrarFeedback, type Licao } from './licoes.ts'; // e lições (Fase 4)
 import {
   carregarAbertas, confirmacaoPendente, contextoExtensoes, executar, pareceTarefa, planejar, textoFinal,
@@ -274,9 +275,10 @@ Deno.serve(async (req) => {
     const [abertas, contextoBase] = await Promise.all([carregarAbertas(sb), contextoExtensoes(sb)]);
     const ensinou = blocoLicoes(licoes, ['geral', 'tarefas', 'lembretes', 'projetos', 'avisos'], !conversaSensivel);
     const contexto = [contextoBase, ensinou.texto].filter(Boolean).join('\n\n');
-    // E-mail e finanças são sempre sensíveis: o planejador fica só no Groq (nunca Gemini).
+    // E-mail, finanças e a tela do PC são sempre sensíveis: o planejador fica só no Groq (nunca Gemini).
     const sobreEmail = pareceEmail(texto) || /enviar este e-mail|e-mails? para a lixeira/.test(pendente ?? '')
-      || pareceFinancas(texto) || /itens das finan|lançamento/.test(pendente ?? '');
+      || pareceFinancas(texto) || /itens das finan|lançamento/.test(pendente ?? '')
+      || pareceComputador(texto);
     if (sobreEmail && !sens.sensivel) await sb.from('messages').update({ sensitive: true }).eq('id', corpo.message_id);
     const plano = await planejar(conversa, hoje, abertas, pendente, conversaSensivel || sobreEmail, contexto);
     if (plano.provedor) await registrarUso(sb, userId, plano.provedor, plano.tokens);
@@ -291,7 +293,7 @@ Deno.serve(async (req) => {
       const salva = await sb.from('messages').insert({
         conversation_id: corpo.conversation_id, role: 'assistant', content: conteudo,
         provider: plano.provedor, model: 'ferramentas', latency_ms: Date.now() - inicioAcao,
-        route: 'acao', sensitive: conversaSensivel || sobreEmail || resultados.some((r) => r.fatos?.email === true || r.fatos?.financas === true),
+        route: 'acao', sensitive: conversaSensivel || sobreEmail || resultados.some((r) => r.fatos?.email === true || r.fatos?.financas === true || r.fatos?.computador === true),
       }).select().single();
       if (salva.error) return responder(500, { erro: salva.error.message });
       console.log('ia_conversar: ferramentas', resultados.map((r) => `${r.ferramenta}:${r.ok ? 'ok' : 'falhou'} ${r.resumo}`));

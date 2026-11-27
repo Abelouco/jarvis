@@ -491,3 +491,31 @@ test('finanças: o detector manda para o planejador (e o pedido fica sensível)'
   assert.ok(!pareceFinancas('qual a capital da França?'));
   assert.ok(pareceTarefa('gastei 30 de uber', false));
 });
+
+import { classificarAlvo, pareceComputador } from './computador.ts';
+
+test('computador: o detector manda para o planejador (e o pedido fica sensível)', () => {
+  assert.ok(pareceComputador('abre o bloco de notas'));
+  assert.ok(pareceComputador('Abre o Chrome'));
+  assert.ok(pareceComputador('pausa a música'));
+  assert.ok(pareceComputador('aumenta o volume'));
+  assert.ok(pareceComputador('acha o PDF do contrato'));
+  assert.ok(pareceComputador('o que tem na minha tela?'));
+  assert.ok(pareceComputador('tira um print'));
+  assert.ok(!pareceComputador('qual a capital da França?'));
+  assert.ok(!pareceComputador('amanhã tenho reunião'));
+});
+
+test('computador: alvo vira site, pasta ou programa', () => {
+  assert.deepEqual(classificarAlvo('https://exemplo.com/a?b=1'), { tipo: 'url', valor: 'https://exemplo.com/a?b=1' });
+  assert.deepEqual(classificarAlvo('open.spotify.com'), { tipo: 'url', valor: 'https://open.spotify.com' });
+  assert.deepEqual(classificarAlvo('www.google.com'), { tipo: 'url', valor: 'https://www.google.com' });
+  assert.deepEqual(classificarAlvo('downloads'), { tipo: 'caminho', valor: '%USERPROFILE%\\Downloads' });
+  assert.deepEqual(classificarAlvo('a pasta documentos'), { tipo: 'caminho', valor: '%USERPROFILE%\\Documents' });
+  assert.deepEqual(classificarAlvo('Área de Trabalho'), { tipo: 'caminho', valor: '%USERPROFILE%\\Desktop' });
+  assert.deepEqual(classificarAlvo('D:\\JARVIS'), { tipo: 'caminho', valor: 'D:\\JARVIS' });
+  assert.deepEqual(classificarAlvo('bloco de notas'), { tipo: 'programa', valor: 'bloco de notas' });
+  assert.deepEqual(classificarAlvo('o Spotify'), { tipo: 'programa', valor: 'Spotify' });
+  assert.deepEqual(classificarAlvo('contrato.pdf'), { tipo: 'programa', valor: 'contrato.pdf' });
+  assert.deepEqual(classificarAlvo('   '), { tipo: 'programa', valor: '' });
+});
