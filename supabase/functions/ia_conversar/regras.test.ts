@@ -555,5 +555,7 @@ test('comando de leitura no PC não pede confirmação', () => {
   assert.equal(comandoSeguro('Invoke-WebRequest http://a'), false);
   assert.equal(comandoSeguro('Get-Date $(calc)'), false);
   assert.equal(comandoSeguro('Start-Process calc'), false);
+  assert.equal(comandoSeguro('Get-Content \\\\servidor\\pasta\\x.txt'), false);
+  assert.equal(comandoSeguro('Test-Path //servidor/pasta'), false);
   assert.equal(comandoSeguro(''), false);
 });

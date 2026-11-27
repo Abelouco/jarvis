@@ -3,6 +3,8 @@ export function comandoSeguro(comando: string): boolean {
   const texto = comando.trim();
   if (!texto || texto.length > 300) return false;
   if (/[;&`><]|\$\(|@\(|[{}\n]/.test(texto)) return false;
+  // Caminho de rede (\\servidor ou //servidor) faria o Windows mandar a credencial do dono para outra máquina.
+  if (texto.includes('\\\\') || texto.includes('//')) return false;
 
   const primeira = [
     'get-date', 'get-process', 'get-service', 'get-computerinfo', 'get-volume', 'get-psdrive',
