@@ -7,6 +7,7 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { conversar, temChave, type MensagemIA, type NomeProvedor } from './provedores.ts';
 import { normalizar } from './sensivel.ts';
+import { semConteudoExterno } from './gmail.ts';
 import {
   dataAposConcluir, descreverRecorrencia, hojeSP, normalizarRecorrencia, numeroDoDia, primeiraData, proximaData,
   somarDias, type Recorrencia,
@@ -223,12 +224,13 @@ function promptPlanejador(hoje: string, abertas: Tarefa[], pendente: string | nu
 export async function planejar(
   conversa: MensagemIA[], hoje: string, abertas: Tarefa[], pendente: string | null, sensivel: boolean, contexto = '',
 ): Promise<{ acoes: Acao[]; provedor: NomeProvedor | null; tokens: number }> {
-  const recente = conversa.slice(-6);
+  // O que um e-mail diz nunca vira ação: o texto dele sai do histórico que o planejador vê.
+  const recente = conversa.slice(-6).map((m) => (m.role === 'assistant' ? { ...m, content: semConteudoExterno(m.content) } : m));
   const provedores: NomeProvedor[] = sensivel ? ['groq'] : ['groq', 'gemini'];
   for (const p of provedores) {
     if (!temChave(p)) continue;
     const r = await conversar(p, [{ role: 'system', content: promptPlanejador(hoje, abertas, pendente, contexto) }, ...recente],
-      { json: true, temperatura: 0, maxTokens: 700 });
+      { json: true, temperatura: 0, maxTokens: 1200 });
     if (!r.ok) continue;
     try {
       const j = JSON.parse(r.texto.replace(/^```(json)?|```$/g, ''));
@@ -376,6 +378,8 @@ export type Executor = (ctx: Ctx, args: Record<string, unknown>) => Promise<Resu
 
 /** Tabelas que o "desfaz" da conversa alcança (memórias têm o próprio caminho). */
 const TIPOS_DESFAZER = ['tasks', 'reminders', 'projects', 'notice_rules', 'notice_settings', 'assistant_lessons'];
+/** Mais os tipos que as extensões desfazem do jeito delas (ex.: e-mail no Gmail). */
+const tiposDesfazer = () => [...TIPOS_DESFAZER, ...EXTENSOES.flatMap((e) => Object.keys(e.desfazer ?? {}))];
 
 const EXECUTORES: Record<string, Executor> = {
   async tarefas_criar(ctx, a) {
@@ -593,16 +597,24 @@ const EXECUTORES: Record<string, Executor> = {
 
   async jarvis_desfazer(ctx) {
     const { data: rec } = await ctx.sb.from('undo_receipts').select('*')
-      .in('entity_type', TIPOS_DESFAZER).is('undone_at', null).eq('irreversible', false).gt('expires_at', new Date().toISOString())
+      .in('entity_type', tiposDesfazer()).is('undone_at', null).eq('irreversible', false).gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (!rec) return falha('jarvis_desfazer', 'Não há ação recente para desfazer (o prazo é de 24 h).');
     // Ações feitas juntas (mesma confirmação) são desfeitas juntas.
     const { data: lote } = await ctx.sb.from('undo_receipts').select('*')
-      .in('entity_type', TIPOS_DESFAZER).eq('action', rec.action).is('undone_at', null)
+      .in('entity_type', tiposDesfazer()).eq('action', rec.action).is('undone_at', null).eq('irreversible', false)
       .gte('created_at', new Date(Date.parse(rec.created_at) - 5000).toISOString());
     const recibos = (lote ?? [rec]) as typeof rec[];
     const desfeitas: string[] = [];
     for (const r of recibos) {
+      const proprio = EXTENSOES.find((e) => e.desfazer?.[r.entity_type])?.desfazer?.[r.entity_type];
+      if (proprio) {
+        const nome = await proprio(ctx, r).catch((e) => (console.warn('desfazer', e), null));
+        if (!nome) continue;
+        await ctx.sb.from('undo_receipts').update({ undone_at: new Date().toISOString() }).eq('id', r.id);
+        desfeitas.push(nome);
+        continue;
+      }
       const antes = r.before as (Tarefa & { name?: string }) | null;
       // Volta todos os campos de antes (menos os de controle); desfazer uma criação = apagar (suave).
       const mudanca = antes
@@ -620,11 +632,13 @@ const EXECUTORES: Record<string, Executor> = {
       projetos_apagar: 'exclusão', projetos_mover_tarefas: 'mudança', avisos_silenciar: 'mudança', avisos_ligar: 'mudança',
       avisos_desligar_todos: 'mudança', avisos_horario: 'mudança', avisos_configurar: 'mudança', tarefas_concluir: 'conclusão', tarefas_apagar: 'exclusão', tarefas_editar: 'edição', tarefas_reabrir: 'reabertura',
       licoes_esquecer: 'exclusão da lição', licoes_ensinar: 'lição nova',
+      email_arquivar: 'ação no e-mail (voltou para a caixa de entrada)', email_lixeira: 'ação no e-mail (saiu da lixeira)',
+      email_marcar_lido: 'ação no e-mail (voltou a não lido)', email_rascunhar: 'criação do rascunho',
     };
     return {
       ferramenta: 'jarvis_desfazer', ok: desfeitas.length > 0, resumo: `desfeita ${rec.action}`, fatos: { acao: rec.action, tarefas: desfeitas },
       texto: desfeitas.length ? `Desfiz a ${nome[rec.action] ?? 'ação'}: ${desfeitas.map((t) => `**${t}**`).join(', ')}.` : 'Não consegui desfazer.',
-      ids: recibos.map((r) => r.entity_id),
+      ids: recibos.map((r) => r.entity_id).filter(Boolean),
     };
   },
 };
@@ -644,6 +658,8 @@ export interface Extensao {
   aoAtualizarTarefa?: (ctx: Ctx, antes: Tarefa, depois: Tarefa, acao: string) => Promise<void>;
   /** Campos a mais ao criar uma tarefa (ex.: project_id). Texto = erro para o dono. */
   aoCriarTarefa?: (ctx: Ctx, args: Record<string, unknown>) => Promise<Record<string, unknown> | string>;
+  /** Desfazer de um recibo cujo `entity_type` não é tabela do banco (ex.: "gmail"). Devolve o nome do item. */
+  desfazer?: Record<string, (ctx: Ctx, recibo: { before: unknown; after: unknown; action: string }) => Promise<string | null>>;
 }
 const EXTENSOES: Extensao[] = [];
 export function registrar(e: Extensao) {
