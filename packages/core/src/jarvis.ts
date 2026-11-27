@@ -994,11 +994,33 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     },
   };
 
+  // ---------- conexões (Google): o app só lê; conectar/desconectar passa pela Edge Function ----------
+  const conexoes = {
+    async google(): Promise<{ email: string | null; status: 'ativa' | 'expirada' | 'revogada'; escopos: string[] } | null> {
+      const { data, error } = await sb.from('integrations').select('account_email, status, scopes')
+        .eq('provider', 'google').is('deleted_at', null).maybeSingle();
+      if (error) throw new Error(error.message);
+      return data ? { email: data.account_email as string | null, status: data.status, escopos: data.scopes ?? [] } : null;
+    },
+    /** URL do Google para o dono permitir o acesso (o app abre no navegador). */
+    async iniciarGoogle(): Promise<string> {
+      const { data, error } = await sb.functions.invoke('google_conectar', { body: { acao: 'iniciar' } });
+      if (error) throw new Error(await mensagemDeErro(error));
+      return data.url as string;
+    },
+    /** Revoga no Google e apaga o acesso guardado. */
+    async desconectarGoogle(): Promise<void> {
+      const { error } = await sb.functions.invoke('google_conectar', { body: { acao: 'desconectar' } });
+      if (error) throw new Error(await mensagemDeErro(error));
+    },
+  };
+
   return {
     iniciar,
     auth,
     avisos,
     feedback,
+    conexoes,
     tarefas,
     projetos,
     lembretes,

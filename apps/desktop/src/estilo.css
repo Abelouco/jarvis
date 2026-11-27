@@ -233,6 +233,13 @@ input { font: inherit; }
 .conta { background: none; border: 1px solid var(--borda); color: var(--texto-2); border-radius: 999px; padding: 6px 12px; font-size: 12px; }
 .conta:hover { border-color: var(--borda-forte); color: var(--texto); }
 .conta.tema { padding: 4px 10px; font-size: 14px; line-height: 1; margin-right: 6px; }
+.conta.google { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; }
+.conta.google .ponto { width: 7px; height: 7px; border-radius: 50%; background: var(--apagado); transition: background 0.3s; }
+.conta.google[data-estado='conectado'] .ponto { background: var(--baixa); box-shadow: 0 0 6px var(--baixa); }
+.conta.google[data-estado='esperando'] .ponto { background: var(--media); animation: piscar 1.2s ease-in-out infinite; }
+.conta.google[data-estado='expirado'] .ponto, .conta.google[data-estado='armado'] .ponto { background: var(--erro); }
+.conta.google[data-estado='armado'] { color: var(--erro); border-color: var(--erro); }
+@keyframes piscar { 50% { opacity: 0.3; } }
 
 .corpo { display: grid; grid-template-columns: minmax(0, 1fr) 400px; min-height: 0; }
 .principal { overflow-y: auto; padding: 36px 48px 0; }

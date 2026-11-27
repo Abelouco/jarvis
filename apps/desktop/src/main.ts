@@ -20,6 +20,7 @@ import { ligarAvisos } from './avisos';
 import { htmlAvisos, ligarAbaAvisos } from './abaAvisos';
 import { aplicarTema, ligarBotaoTema, temaSalvo } from './tema';
 import { criarAvaliacao } from './avaliacao';
+import { ligarBotaoGoogle } from './conexoes';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 aplicarTema(temaSalvo());
@@ -197,6 +198,7 @@ async function montarPainel() {
         <span class="nome" data-tauri-drag-region>J.A.R.V.I.S.</span>
         <span class="espaco" data-tauri-drag-region></span>
         <span class="estado" id="estado"><i></i><span></span></span>
+        <button class="conta google" id="google" type="button"></button>
         <button class="conta tema" id="tema" type="button"></button>
         <button class="conta" id="sair" title="${esc(email)}">Sair</button>
       </header>
@@ -256,6 +258,7 @@ async function montarPainel() {
     </section>`;
 
   ligarBotaoTema($<HTMLButtonElement>('#tema'));
+  ligarBotaoGoogle($<HTMLButtonElement>('#google'), (t) => { $<HTMLParagraphElement>('#erro-chat').textContent = t; });
   $<HTMLButtonElement>('#sair').onclick = () => void jarvis.auth.sair();
 
   const formTarefa = ligarFormTarefa($<HTMLFormElement>('#nova'));
