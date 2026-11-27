@@ -28,6 +28,7 @@ Assistente de IA pessoal do dono deste repositório, no PC (Windows) e no celula
 - Referências aceitam "nome ou id".
 - Datas `AAAA-MM-DD`, horas `HH:MM`, fuso `America/Sao_Paulo`.
 - Respostas das ferramentas em camadas: resumo, fatos estruturados, texto pronto, ids.
+- Canal do Realtime sempre com nome único (`canalUnico` no core): nome repetido quebra a montagem da tela (foi o que juntou as abas na v0.2.0). O teste `packages/core/src/canais.test.ts` barra nome fixo; fichas do Cursor devem repetir esta regra.
 
 ## Como rodar e publicar
 - PC (dev): `pnpm desktop` (Tauri + Vite na porta 1420).

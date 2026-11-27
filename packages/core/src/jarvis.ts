@@ -1075,11 +1075,15 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     },
   };
 
+  // Nome de canal Realtime repetido devolve o canal já assinado, e o `.on` depois do `subscribe` lança erro
+  // (foi o que quebrou as abas na v0.2.0). Cada ouvinte ganha o próprio canal.
+  const canalUnico = (base: string) => `${base}-${crypto.randomUUID()}`;
+
   // Computador (Fase 4 · etapa 7): o servidor grava o pedido; o PC executa e devolve o resultado.
   const computador = {
     /** INSERT de pedido pendente. Devolve a função que solta o canal. */
     ouvir(f: (cmd: PcComando) => void) {
-      const canal = sb.channel('pc-commands')
+      const canal = sb.channel(canalUnico('pc-commands'))
         .on('postgres_changes', {
           event: 'INSERT', schema: 'public', table: 'pc_commands', filter: 'status=eq.pendente',
         }, (m) => {
@@ -1175,7 +1179,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     },
     /** INSERT e UPDATE de pc_sessions (a faixa abre e fecha com isso). */
     ouvirSessoes(f: () => void) {
-      const canal = sb.channel('pc-sessions')
+      const canal = sb.channel(canalUnico('pc-sessions'))
         .on('postgres_changes', { event: '*', schema: 'public', table: 'pc_sessions' }, () => f())
         .subscribe();
       return () => { void sb.removeChannel(canal); };

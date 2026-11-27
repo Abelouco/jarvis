@@ -23,7 +23,7 @@ export function criarCliente(storage?: ArmazenamentoSessao): SupabaseClient {
 /** Escuta a tabela `events` em tempo real (alimenta o sync e o cérebro). */
 export function ouvirEventos(sb: SupabaseClient, aoChegar: (e: JarvisEvent) => void) {
   return sb
-    .channel('events')
+    .channel(`events-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'events' }, (m) =>
       aoChegar(m.new as JarvisEvent),
     )
