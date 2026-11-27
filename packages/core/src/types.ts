@@ -77,6 +77,8 @@ export interface Message extends Base {
   sensitive: boolean;
   /** Fontes da pesquisa na web (só nas respostas que pesquisaram). */
   sources: Fonte[] | null;
+  /** Como foi respondida; 'interrompido' = o dono apertou "Parar". */
+  route?: 'rapido' | 'inteligente' | 'pesquisa' | 'acao' | 'interrompido' | null;
 }
 
 /** Algo que o J.A.R.V.I.S. aprendeu sobre o dono. */

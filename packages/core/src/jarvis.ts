@@ -571,6 +571,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
   }
 
   // ---------- conversa (chat) ----------
+  const TEXTO_INTERROMPIDO = 'Interrompido pelo dono.';
   const TABELA_MSG = TABELAS_SYNC.find((t) => t.nome === 'messages')!;
   /** undefined = ainda não decidiu; null = conversa nova, criada no primeiro envio. */
   let conversaAtual: string | null | undefined;
@@ -635,8 +636,14 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
   const porVoz = new Set<string>();
   const ouvintesResposta = new Set<(m: Message, voz: boolean, fala: string | null) => void>();
 
+  /** Pergunta esperando resposta agora (o botão "Parar" interrompe esta). */
+  let emAndamento: Pick<Message, 'id' | 'conversation_id'> | null = null;
+  /** Perguntas que o dono interrompeu: a resposta que ainda chegar é ignorada. */
+  const interrompidas = new Set<string>();
+
   async function pedirResposta(m: Pick<Message, 'id' | 'conversation_id' | 'content'>): Promise<boolean> {
     pensando = true;
+    emAndamento = { id: m.id, conversation_id: m.conversation_id };
     erroChat = null;
     avisar();
     try {
@@ -647,6 +654,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
           app: versaoApp ? await Promise.resolve(versaoApp()).catch(() => '') : '',
         },
       });
+      if (interrompidas.has(m.id)) return true;
       if (error) throw error;
       if (data?.mensagem) {
         await gravarDoServidor(TABELA_MSG, data.mensagem as Record<string, unknown>);
@@ -659,6 +667,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
       falhasAqui.delete(m.id);
       return true;
     } catch (e) {
+      if (interrompidas.has(m.id)) return true;
       const n = (falhasAqui.get(m.id) ?? 0) + 1;
       falhasAqui.set(m.id, n);
       const espera = ESPERAS_RETENTATIVA[Math.min(n - 1, ESPERAS_RETENTATIVA.length - 1)]!;
@@ -666,7 +675,11 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
       agendarRetomada(espera);
       return false;
     } finally {
-      pensando = false;
+      // Interrompida: o "Parar" já liberou o chat (e talvez outra pergunta já esteja em andamento).
+      if (emAndamento?.id === m.id) {
+        emAndamento = null;
+        pensando = false;
+      }
       avisar();
       agendarSync(300);
     }
@@ -698,6 +711,34 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
       return linhas.map((m) => ({ ...m, sensitive: !!m.sensitive, sources: lerFontes(m.sources) }));
     },
     estado: () => ({ pensando, erro: erroChat }),
+    /**
+     * "Parar": interrompe a resposta em andamento. Grava uma resposta curta marcada como
+     * 'interrompido' (o servidor vê e descarta a dele, sem salvar nem executar ações) e libera o
+     * chat na hora: a próxima mensagem do dono completa ou corrige o pedido.
+     */
+    async interromper(): Promise<boolean> {
+      const m = emAndamento;
+      const s = await auth.sessao();
+      if (!m || !s) return false;
+      interrompidas.add(m.id);
+      porVoz.delete(m.id);
+      emAndamento = null;
+      pensando = false;
+      pensandoRemotoAte = 0;
+      pesquisandoAte = 0;
+      if (relogioPendente) clearTimeout(relogioPendente);
+      relogioPendente = null;
+      falhasAqui.delete(m.id);
+      const t = agora();
+      await db.executar(
+        `insert into messages (id, user_id, conversation_id, role, content, route, created_at, updated_at, dirty)
+         values (?, ?, ?, 'assistant', ?, 'interrompido', ?, ?, 1)`,
+        [novoId(), s.user.id, m.conversation_id, TEXTO_INTERROMPIDO, t, t],
+      );
+      avisar();
+      agendarSync(0);
+      return true;
+    },
     novaConversa() {
       conversaAtual = null;
       erroChat = null;

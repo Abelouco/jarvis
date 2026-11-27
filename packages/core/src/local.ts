@@ -28,7 +28,7 @@ export const COLUNAS_CONVERSATIONS = ['id', 'user_id', 'title', 'created_at', 'u
 
 export const COLUNAS_MESSAGES = [
   'id', 'user_id', 'conversation_id', 'role', 'content', 'provider', 'model', 'latency_ms',
-  'sensitive', 'sources', 'created_at', 'updated_at', 'deleted_at',
+  'sensitive', 'sources', 'route', 'created_at', 'updated_at', 'deleted_at',
 ] as const;
 
 export const COLUNAS_MEMORIES = [
@@ -140,6 +140,7 @@ export const SCHEMA_LOCAL = [
     latency_ms integer,
     sensitive integer not null default 0,
     sources text,
+    route text,
     created_at text not null,
     updated_at text not null,
     deleted_at text,
@@ -168,6 +169,7 @@ export const SCHEMA_LOCAL = [
 /** Colunas acrescentadas depois que o banco local já existia nos aparelhos. */
 const COLUNAS_NOVAS: [tabela: string, coluna: string, tipo: string][] = [
   ['messages', 'sources', 'text'],
+  ['messages', 'route', 'text'],
   ['tasks', 'recurrence', 'text'],
   ['tasks', 'board_column', "text not null default 'a_fazer'"],
   ['reminders', 'task_id', 'text'],

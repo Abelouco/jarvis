@@ -230,7 +230,7 @@ async function montarPainel() {
                   <input name="m" placeholder="Fale com o J.A.R.V.I.S." autocomplete="off" maxlength="4000" />
                   <button type="button" class="nova-conversa" id="nova-conversa" title="Começar outra conversa">nova</button>
                   <button type="button" class="microfone" id="microfone" title="Falar (Ctrl+Espaço)"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
-                  <button class="adicionar" title="Enviar (Enter)">↑</button>
+                  <button class="adicionar" id="enviar-chat" title="Enviar (Enter)">↑</button>
                 </form>
               </div>
             </div>
@@ -297,13 +297,32 @@ async function montarPainel() {
   falar.onsubmit = (e) => {
     e.preventDefault();
     const texto = campoFala.value.trim();
-    if (!texto || jarvis.chat.estado().pensando) return;
+    // Pensando: o botão é "Parar". Com texto no campo, para e já manda o complemento
+    // (a resposta interrompida some e a IA lê as duas mensagens juntas).
+    if (jarvis.chat.estado().pensando) {
+      void jarvis.chat.interromper().then((parou) => {
+        if (!parou || !texto) return;
+        campoFala.value = '';
+        void jarvis.chat.enviar(texto).then((ok) => {
+          if (!ok && !campoFala.value) campoFala.value = texto;
+        });
+      });
+      return;
+    }
+    if (!texto) return;
     campoFala.value = '';
     // Se não deu para enviar (havia uma pergunta em aberto e ela falhou), o texto volta.
     void jarvis.chat.enviar(texto).then((ok) => {
       if (!ok && !campoFala.value) campoFala.value = texto;
     });
   };
+  // Esc no campo enquanto ele pensa = Parar.
+  campoFala.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && jarvis.chat.estado().pensando) {
+      e.preventDefault();
+      void jarvis.chat.interromper();
+    }
+  });
   avaliacao.ligar($<HTMLDivElement>('#chat'));
   $<HTMLDivElement>('#chat').onclick = async (e) => {
     const alvo = e.target as HTMLElement;
@@ -584,6 +603,9 @@ function itemMensagem(m: Message, nova: boolean, ultima: boolean) {
   if (m.role === 'user') {
     return `<div class="${classe}" data-r="user"><div class="texto">${esc(m.content)}</div></div>`;
   }
+  if (m.route === 'interrompido') {
+    return `<div class="${classe} interrompida" data-r="assistant"><span>■ Interrompido</span></div>`;
+  }
   // O botão fica fora da mensagem, logo abaixo dela.
   return `<div class="${classe}" data-r="assistant"><div class="md">${respostaHtml(m.content, ultima, m.sources ?? [])}</div>${fontesHtml(m)}</div>`
     + `<div class="msg-acoes${nova ? ' nova' : ''}${avaliacao.avaliada(m.id) ? ' avaliada' : ''}">${botaoCopiarResposta(m.content)}${avaliacao.html(m)}</div>`;
@@ -594,6 +616,13 @@ async function desenharChat() {
   if (tela !== 'painel') return;
   void avaliacao.carregar(msgs[0]?.conversation_id ?? null);
   const { pensando, erro } = jarvis.chat.estado();
+  // O botão de enviar vira "Parar" enquanto ele pensa.
+  const botaoEnviar = document.querySelector<HTMLButtonElement>('#enviar-chat');
+  if (botaoEnviar) {
+    botaoEnviar.classList.toggle('parar', pensando);
+    botaoEnviar.textContent = pensando ? '■' : '↑';
+    botaoEnviar.title = pensando ? 'Parar (Esc). Com texto no campo, para e manda o complemento.' : 'Enviar (Enter)';
+  }
   const assinatura = `${pensando}|${jarvis.ia.estado()}|${erro}|${avaliacao.assinatura()}|` + msgs.map((m) => `${m.id}:${m.content.length}:${m.sources?.length ?? 0}`).join(',');
   if (assinatura === assinaturaChat) return;
   assinaturaChat = assinatura;

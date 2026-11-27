@@ -221,6 +221,16 @@ Deno.serve(async (req) => {
   if (jaRespondida.data) return responder(200, { mensagem: jaRespondida.data, repetida: true });
 
   const inicioAcao = Date.now();
+  // O dono apertou "Parar": o app gravou uma resposta 'interrompido' depois da pergunta.
+  // Aí esta resposta é descartada (nada é salvo nem executado).
+  const convId = corpo.conversation_id;
+  const desdeA = pergunta.data.created_at;
+  const interrompida = async () => {
+    const { data } = await sb.from('messages').select('id').eq('conversation_id', convId)
+      .eq('role', 'assistant').is('deleted_at', null).gt('created_at', desdeA).limit(1);
+    return !!data?.length;
+  };
+  const descartada = () => responder(200, { interrompida: true });
   // Pulso de "pensando" no cérebro.
   await sb.from('events').insert({ kind: 'thinking', payload: { conversation_id: corpo.conversation_id } });
 
@@ -271,6 +281,7 @@ Deno.serve(async (req) => {
       await sb.from('events').insert({
         kind: 'tool_call', payload: { conversation_id: corpo.conversation_id, ferramentas: plano.acoes.map((a) => a.ferramenta) },
       });
+      if (await interrompida()) return descartada();
       const resultados = await executar(sb, plano.acoes, hoje);
       const conteudo = textoFinal(resultados) || 'Feito.';
       const falaPronta = corpo.voz ? pronunciasEnsinadas(sb).catch(() => []).then((p) => resumoFalado(texto, conteudo, p)).catch(() => null) : Promise.resolve(null);
@@ -434,6 +445,8 @@ Deno.serve(async (req) => {
   if (semVerificar) {
     resposta.texto = `> **Não consegui pesquisar na internet agora**, então esta resposta não foi verificada em fontes. Confira antes de confiar.\n\n${resposta.texto}`;
   }
+
+  if (await interrompida()) return descartada();
 
   // Pergunta feita por voz: além da resposta completa (tela), um resumo curto para falar.
   const falaPronta = corpo.voz ? pronunciasEnsinadas(sb).catch(() => []).then((p) => resumoFalado(texto, resposta!.texto, p)).catch(() => null) : Promise.resolve(null);
