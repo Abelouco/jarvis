@@ -504,6 +504,8 @@ test('computador: o detector manda para o planejador (e o pedido fica sensível)
   assert.ok(pareceComputador('tira um print'));
   assert.ok(!pareceComputador('qual a capital da França?'));
   assert.ok(!pareceComputador('amanhã tenho reunião'));
+  assert.ok(!pareceComputador('você acha que vai chover?'));
+  assert.ok(!pareceComputador('arquiva os e-mails não importantes'));
 });
 
 test('computador: alvo vira site, pasta ou programa', () => {

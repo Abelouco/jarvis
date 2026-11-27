@@ -27,4 +27,4 @@ xcap = "0.9"
 
 [target."cfg(windows)".dependencies]
 tauri-winrt-notification = "0.8"
-windows-sys = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+windows-sys = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }

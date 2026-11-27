@@ -108,15 +108,19 @@ fn expandir(caminho: &str) -> String {
 
 #[cfg(windows)]
 fn iniciar(alvo: &str) -> Result<(), String> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    // O alvo vai como argumento separado: o cmd não recebe uma string montada por nós.
-    std::process::Command::new("cmd.exe")
-        .args(["/c", "start", "", alvo])
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("Não consegui abrir: {e}"))
+    // ShellExecuteW abre URL, pasta, atalho ou programa sem passar por shell nenhum
+    // (o `cmd /c start` interpretava `&` e `|` no alvo vindo da IA).
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    let largo = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let (verbo, arquivo) = (largo("open"), largo(alvo));
+    let r = unsafe {
+        ShellExecuteW(std::ptr::null_mut(), verbo.as_ptr(), arquivo.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL)
+    };
+    if (r as isize) <= 32 {
+        return Err(format!("Não consegui abrir (código {}).", r as isize));
+    }
+    Ok(())
 }
 
 #[cfg(windows)]

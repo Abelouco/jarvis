@@ -6,7 +6,7 @@ import { normalizar } from './sensivel.ts';
 import { falha, recibo, registrar, type Ctx, type ResultadoFerramenta } from './tarefas.ts';
 
 const DETECTOR =
-  /\b(abre|abrir|abra|abrindo|pausa|despausa|musicas?|volume|proxima musica|acha\w*|encontra\w*|arquivos?|minha tela|na tela|prints?)\b/;
+  /\b(abre|abrir|abra|abrindo|pausa|despausa|musicas?|volume|proxima musica|(?:acha|achar|encontra|encontrar|procura) (?:o|a|os|as|meu|minha|meus|minhas|um|uma|arquivo|pdf)|arquivos? (?:do|da|de|no|na|chamado)|minha tela|na tela|prints?)\b/;
 
 export const pareceComputador = (texto: string) => DETECTOR.test(normalizar(texto));
 
@@ -77,6 +77,8 @@ const FRASE_MIDIA: Record<(typeof ACOES_MIDIA)[number], string> = {
 
 const ABERTO_MS = 2 * 60_000;
 const ESPERA_MS = 8_000;
+/** Print + upload + visão do Groq passam fácil de 8 s. */
+const ESPERA_TELA_MS = 25_000;
 
 const ok = (
   ferramenta: string, resumo: string, texto: string, fatos: Record<string, unknown> = {}, ids: string[] = [],
@@ -91,8 +93,8 @@ async function pcAberto(sb: SupabaseClient): Promise<boolean> {
   return data.some((d) => agora - new Date(d.seen_at as string).getTime() < ABERTO_MS);
 }
 
-async function esperar(sb: SupabaseClient, id: string): Promise<{ status: string; result: Record<string, unknown> | null } | null> {
-  const prazo = Date.now() + ESPERA_MS;
+async function esperar(sb: SupabaseClient, id: string, espera: number): Promise<{ status: string; result: Record<string, unknown> | null } | null> {
+  const prazo = Date.now() + espera;
   while (Date.now() < prazo) {
     await new Promise((r) => setTimeout(r, 500));
     const { data, error } = await sb.from('pc_commands').select('status, result').eq('id', id).maybeSingle();
@@ -124,7 +126,7 @@ async function pedir(
   if (!aberto) {
     return ok(ferramenta, 'PC fechado', 'O PC está fechado; faço assim que ele abrir.', { id }, [id]);
   }
-  const fim = await esperar(ctx.sb, id);
+  const fim = await esperar(ctx.sb, id, kind === 'ver_tela' ? ESPERA_TELA_MS : ESPERA_MS);
   if (!fim) return ok(ferramenta, 'pedido no PC', 'Mandei para o PC; a resposta não chegou a tempo.', { id }, [id]);
   if (fim.status === 'falhou' || fim.status === 'cancelado') {
     const msg = typeof fim.result?.erro === 'string' ? fim.result.erro
