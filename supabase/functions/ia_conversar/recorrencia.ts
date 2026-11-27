@@ -130,3 +130,21 @@ export function partesSP(iso: string): { data: string; hora: string } {
   const d = new Date(iso);
   return { data: hojeSP(d), hora: agoraHHMM(d) };
 }
+
+/** Lembrete de uma tarefa: `antes` minutos antes do prazo (data + hora). Prazo sem hora: null. */
+export function lembreteDaTarefa(data: string | null, hora: string | null, antes: number): string | null {
+  if (!data || !hora) return null;
+  const t = Date.parse(instanteSP(data, hora.slice(0, 5))) - Math.max(0, Math.round(antes)) * 60_000;
+  return new Date(t).toISOString();
+}
+
+type Prazo = { data: string | null; hora: string | null };
+
+/** A tarefa mudou de prazo: o lembrete anda o mesmo tanto (mantém a antecedência). Sem mudança ou sem prazo: null. */
+export function deslocarLembrete(remindAt: string, antes: Prazo, depois: Prazo): string | null {
+  if (!antes.data || !depois.data) return null;
+  const de = Date.parse(instanteSP(antes.data, (antes.hora ?? '00:00').slice(0, 5)));
+  const para = Date.parse(instanteSP(depois.data, (depois.hora ?? antes.hora ?? '00:00').slice(0, 5)));
+  if (de === para) return null;
+  return new Date(Date.parse(remindAt) + para - de).toISOString();
+}

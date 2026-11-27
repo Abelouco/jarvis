@@ -211,6 +211,26 @@ test('lembretes: hora calculada no servidor', () => {
   assert.equal(proximoInstante(l, new Date('2026-11-30T23:05:00Z')), '2026-12-07T23:00:00.000Z');
 });
 
+import { instanteDaTarefa } from './lembretes.ts';
+import { deslocarLembrete, lembreteDaTarefa } from './recorrencia.ts';
+
+test('lembrete da tarefa: antecedência e prazo que muda', () => {
+  assert.equal(lembreteDaTarefa('2026-11-27', '14:00', 60), '2026-11-27T16:00:00.000Z');
+  assert.equal(lembreteDaTarefa('2026-11-27', '14:00', 0), '2026-11-27T17:00:00.000Z');
+  assert.equal(lembreteDaTarefa('2026-11-27', null, 30), null);
+  // Prazo andou um dia e uma hora: o lembrete anda o mesmo tanto.
+  assert.equal(deslocarLembrete('2026-11-27T16:00:00.000Z', { data: '2026-11-27', hora: '14:00' }, { data: '2026-11-28', hora: '15:00' }),
+    '2026-11-28T17:00:00.000Z');
+  assert.equal(deslocarLembrete('2026-11-27T16:00:00.000Z', { data: '2026-11-27', hora: '14:00' }, { data: '2026-11-27', hora: '14:00' }), null);
+  const hoje = '2026-11-25';
+  const t = { due_date: '2026-11-27', due_time: '14:00', recurrence: null };
+  assert.deepEqual(instanteDaTarefa(t, { antes_minutos: 60 }, hoje, QUARTA), { iso: '2026-11-27T16:00:00.000Z', rec: null });
+  assert.deepEqual(instanteDaTarefa(t, { hora: '09:00' }, hoje, QUARTA), { iso: '2026-11-27T12:00:00.000Z', rec: null }); // no dia do prazo
+  assert.deepEqual(instanteDaTarefa(t, { quando: 'amanha', hora: '09:00' }, hoje, QUARTA), { iso: '2026-11-26T12:00:00.000Z', rec: null });
+  assert.equal(typeof instanteDaTarefa({ ...t, due_time: null }, { antes_minutos: 10 }, hoje, QUARTA), 'string'); // sem hora
+  assert.equal(typeof instanteDaTarefa({ ...t, due_date: '2026-11-25', due_time: '12:00' }, {}, hoje, QUARTA), 'string'); // já passou
+});
+
 import './projetos.ts';
 
 test('projetos: o detector local chama o planejador', () => {

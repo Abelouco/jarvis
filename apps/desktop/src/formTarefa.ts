@@ -1,9 +1,9 @@
-// Formulário de tarefa (criar e editar): título, quando, hora, repetição, prioridade e notas.
+// Formulário de tarefa (criar e editar): título, quando, hora, repetição, prioridade, notas e "me lembrar" (só ao criar).
 // Mostra embaixo uma prévia em palavras ("toda segunda às 20:00 · próxima: seg 30/11") calculada com
 // as mesmas regras do servidor (@jarvis/core/recorrencia), para nunca sair uma data diferente da dita.
 import {
   descreverRecorrencia, normalizarRecorrencia, primeiraData, proximaData, somarDias, hojeSP,
-  type Frequencia, type Prioridade, type Recorrencia, type Task,
+  type Frequencia, type LembrarTarefa, type Prioridade, type Recorrencia, type Task,
 } from '@jarvis/core';
 import { jarvis } from './jarvis';
 
@@ -14,6 +14,10 @@ const CURTO = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 
 type Quando = '' | 'hoje' | 'amanha' | 'data';
 type Repetir = '' | Frequencia;
+/** '' = não lembrar; número = minutos antes do prazo; 'outra' = data e hora certas. */
+type Lembrar = '' | number | 'outra';
+const ANTES: [number, string][] = [[0, 'Na hora'], [15, '15 min antes'], [60, '1 h antes'], [1440, '1 dia antes']];
+const NOME_ANTES = (m: number) => (m === 0 ? 'na hora' : m < 60 ? `${m} min antes` : m < 1440 ? `${m / 60} h antes` : `${m / 1440} dia antes`);
 
 interface Rascunho {
   id: string | null;
@@ -24,10 +28,12 @@ interface Rascunho {
   dias: number[];
   diaMes: number;
   prioridade: Prioridade;
+  lembrar: Lembrar;
+  alarme: boolean;
 }
 
 const novoRascunho = (): Rascunho => ({
-  id: null, quando: '', data: '', hora: '', repetir: '', dias: [], diaMes: 1, prioridade: 'media',
+  id: null, quando: '', data: '', hora: '', repetir: '', dias: [], diaMes: 1, prioridade: 'media', lembrar: '', alarme: false,
 });
 
 export function htmlFormTarefa() {
@@ -75,6 +81,20 @@ export function htmlFormTarefa() {
               .map((p) => `<button type="button" class="prio" data-p="${p}">${NOME_PRIO[p]}</button>`).join('')}
           </div>
         </div>
+        <div class="ft-campo" data-campo="lembrar">
+          <span class="rotulo">Me lembrar</span>
+          <div class="chips" data-grupo="lembrar">
+            <button type="button" data-v="">Não</button>
+            ${ANTES.map(([m, n]) => `<button type="button" data-v="${m}">${n}</button>`).join('')}
+            <button type="button" data-v="outra">Outra hora</button>
+          </div>
+          <label class="ft-alarme" title="Toca até você desligar"><input type="checkbox" name="alarme" /> alarme</label>
+        </div>
+        <div class="ft-campo sub" data-lembrar="outra">
+          <span class="rotulo"></span>
+          <input type="date" name="ldata" title="Dia do aviso (vazio = dia da tarefa)" />
+          <input type="time" name="lhora" title="Hora do aviso" />
+        </div>
         <div class="ft-campo">
           <span class="rotulo">Notas</span>
           <textarea name="notas" rows="2" placeholder="Detalhes, links, o que lembrar (opcional)"></textarea>
@@ -95,6 +115,9 @@ export function ligarFormTarefa(form: HTMLFormElement) {
   const campoHora = form.hora as HTMLInputElement;
   const campoDiaMes = form.diames as HTMLInputElement;
   const notas = form.notas as HTMLTextAreaElement;
+  const campoAlarme = form.alarme as HTMLInputElement;
+  const campoLData = form.ldata as HTMLInputElement;
+  const campoLHora = form.lhora as HTMLInputElement;
   const previa = form.querySelector<HTMLSpanElement>('#previa')!;
   const salvar = form.querySelector<HTMLButtonElement>('.salvar')!;
   let r = novoRascunho();
@@ -125,6 +148,12 @@ export function ligarFormTarefa(form: HTMLFormElement) {
       b.classList.toggle('ativa', r.dias.includes(Number(b.dataset.dia))));
     form.querySelectorAll<HTMLButtonElement>('.prio').forEach((b) => b.classList.toggle('ativa', b.dataset.p === r.prioridade));
     form.querySelectorAll<HTMLElement>('[data-mostrar]').forEach((el) => { el.hidden = el.dataset.mostrar !== r.repetir; });
+    // "Me lembrar" só ao criar (o lembrete de uma tarefa que já existe se edita na aba Lembretes).
+    form.querySelector<HTMLElement>('[data-campo="lembrar"]')!.hidden = !!r.id;
+    form.querySelector<HTMLElement>('[data-lembrar="outra"]')!.hidden = !!r.id || r.lembrar !== 'outra';
+    form.querySelectorAll<HTMLButtonElement>('[data-grupo="lembrar"] button').forEach((b) =>
+      b.classList.toggle('ativa', b.dataset.v === String(r.lembrar)));
+    form.querySelector<HTMLElement>('.ft-alarme')!.hidden = r.lembrar === '';
     campoData.classList.toggle('ativa', r.quando === 'data');
     if (r.quando !== 'data') campoData.value = '';
     salvar.textContent = r.id ? 'Salvar' : 'Adicionar';
@@ -141,7 +170,13 @@ export function ligarFormTarefa(form: HTMLFormElement) {
       texto = `${descreverRecorrencia(rec)}${hora}${primeira ? ` · próxima: ${rotulo(primeira)}` : ''}`;
     } else if (data) texto = `${rotulo(data)}${hora}`;
     else texto = r.hora ? `hoje${hora}` : 'sem data';
+    if (!r.id && typeof r.lembrar === 'number') {
+      texto += r.hora ? ` · aviso ${NOME_ANTES(r.lembrar)}` : ' · para avisar antes, escolha a hora';
+    } else if (!r.id && r.lembrar === 'outra') {
+      texto += campoLHora.value ? ` · aviso ${campoLData.value ? rotulo(campoLData.value) : 'no dia'} às ${campoLHora.value}` : ' · escolha a hora do aviso';
+    }
     previa.textContent = texto;
+    previa.classList.remove('erro');
   }
 
   const rotulo = (data: string) => {
@@ -158,6 +193,9 @@ export function ligarFormTarefa(form: HTMLFormElement) {
     campoHora.value = '';
     campoDiaMes.value = '1';
     notas.value = '';
+    campoAlarme.checked = false;
+    campoLData.value = '';
+    campoLHora.value = '';
     form.classList.remove('aberta');
     desenhar();
   }
@@ -177,6 +215,10 @@ export function ligarFormTarefa(form: HTMLFormElement) {
     if (!b || b.type === 'submit' || b.classList.contains('cancelar')) return;
     const grupo = b.closest<HTMLElement>('[data-grupo]')?.dataset.grupo;
     if (grupo === 'quando') r.quando = b.dataset.v as Quando;
+    else if (grupo === 'lembrar') {
+      const v = b.dataset.v ?? '';
+      r.lembrar = v === '' || v === 'outra' ? v : Number(v);
+    }
     else if (grupo === 'repetir') {
       r.repetir = b.dataset.v as Repetir;
       // Semanal sem dias: começa pelo dia da data escolhida (ou de hoje).
@@ -202,6 +244,8 @@ export function ligarFormTarefa(form: HTMLFormElement) {
     r.hora = campoHora.value;
     desenhar();
   };
+  campoAlarme.onchange = () => { r.alarme = campoAlarme.checked; };
+  campoLData.oninput = campoLHora.oninput = () => desenhar();
   campoDiaMes.oninput = () => {
     r.diaMes = Math.min(31, Math.max(1, Number(campoDiaMes.value) || 1));
     desenhar();
@@ -224,7 +268,20 @@ export function ligarFormTarefa(form: HTMLFormElement) {
         titulo: t, prioridade: r.prioridade, data, hora, repetir: rec, notas: notas.value,
       });
     } else {
-      await jarvis.tarefas.criar(t, r.prioridade, data, hora, { repetir: rec, notas: notas.value });
+      let lembrar: LembrarTarefa | null = null;
+      if (typeof r.lembrar === 'number') lembrar = { antes_minutos: r.lembrar, alarme: r.alarme };
+      else if (r.lembrar === 'outra') {
+        if (!campoLHora.value) return campoLHora.focus();
+        lembrar = { data: campoLData.value || null, hora: campoLHora.value, alarme: r.alarme };
+      }
+      try {
+        await jarvis.tarefas.criar(t, r.prioridade, data, hora, { repetir: rec, notas: notas.value, lembrar });
+      } catch (err) {
+        // Lembrete impossível (sem hora, hora passada): nada foi criado; avisa e deixa corrigir.
+        previa.textContent = err instanceof Error ? err.message : String(err);
+        previa.classList.add('erro');
+        return;
+      }
     }
     limpar();
   };
@@ -243,6 +300,8 @@ export function ligarFormTarefa(form: HTMLFormElement) {
         dias: t.recurrence?.dias ?? [],
         diaMes: t.recurrence?.dia_mes ?? 1,
         prioridade: t.priority,
+        lembrar: '',
+        alarme: false,
       };
       titulo.value = t.title;
       campoData.value = r.quando === 'data' ? r.data : '';

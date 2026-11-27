@@ -406,6 +406,8 @@ function rotuloData(data: string, hoje: string) {
 }
 
 let nomeProjeto = new Map<string, string>();
+/** Tarefas com lembrete ainda por avisar (sino na lista). */
+let comLembrete = new Set<string>();
 
 function itemTarefa(t: Task, hoje: string, novas: Set<string>) {
   const atrasada = !t.done_at && !!t.due_date && t.due_date < hoje;
@@ -414,11 +416,12 @@ function itemTarefa(t: Task, hoje: string, novas: Set<string>) {
     ? `<span class="quando ${atrasada ? 'atrasada' : ''}">${rotuloData(t.due_date, hoje)}${t.due_time ? ` · ${t.due_time.slice(0, 5)}` : ''}</span>`
     : '';
   const nota = t.notes ? `<span class="nota" title="${esc(t.notes)}">≡</span>` : '';
+  const sino = comLembrete.has(t.id) ? '<span class="sino" title="O J.A.R.V.I.S. vai avisar (aba Lembretes)">🔔</span>' : '';
   return `
     <li class="tarefa ${t.done_at ? 'feita' : ''} ${novas.has(t.id) ? 'recem' : ''}" data-id="${t.id}" data-p="${t.priority}">
       <button class="check" title="${t.done_at ? 'Reabrir' : 'Concluir'}">✓</button>
       <span class="titulo" title="Clique para editar">${esc(t.title)}</span>
-      ${nota}${t.project_id && nomeProjeto.has(t.project_id) ? `<span class="tag-projeto" title="Projeto">▣ ${esc(nomeProjeto.get(t.project_id)!)}</span>` : ''}${rep}${quando}
+      ${nota}${sino}${t.project_id && nomeProjeto.has(t.project_id) ? `<span class="tag-projeto" title="Projeto">▣ ${esc(nomeProjeto.get(t.project_id)!)}</span>` : ''}${rep}${quando}
       ${t.priority !== 'media' ? `<span class="tag">${NOME_PRIO[t.priority]}</span>` : ''}
       <button class="apagar" title="Apagar">×</button>
     </li>`;
@@ -441,7 +444,8 @@ function secao(titulo: string, lista: Task[], hoje: string, novas: Set<string>, 
 
 async function atualizarPainel() {
   if (tela !== 'painel') return;
-  const [lista, projetos] = await Promise.all([jarvis.tarefas.listar(), jarvis.projetos.listar()]);
+  const [lista, projetos, sinos] = await Promise.all([jarvis.tarefas.listar(), jarvis.projetos.listar(), jarvis.tarefas.comLembrete()]);
+  comLembrete = sinos;
   nomeProjeto = new Map(projetos.map((p) => [p.id, p.name]));
   // Cada projeto real é um nó dourado do cérebro; as tarefas dele, pontos em volta.
   nucleo?.definirProjetos(projetos.filter((p) => p.status !== 'concluido').map((p) => ({

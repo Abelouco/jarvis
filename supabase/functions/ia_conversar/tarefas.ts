@@ -172,7 +172,7 @@ export function acharPorNome<T extends Pick<Tarefa, 'id' | 'title'>>(ref: string
 // ---------- o planejador (Groq em JSON; Gemini só se não for sensível) ----------
 
 const FERRAMENTAS = `
-tarefas_criar {titulo, QUANDO?, hora?: "HH:MM", repetir?: REPETIR, prioridade?: "alta"|"media"|"baixa", notas?, projeto?: "nome do projeto"}
+tarefas_criar {titulo, QUANDO?, hora?: "HH:MM", repetir?: REPETIR, prioridade?: "alta"|"media"|"baixa", notas?, projeto?: "nome do projeto", lembrar?: LEMBRAR}
 tarefas_listar {filtro: "hoje"|"atrasadas"|"proximas"|"abertas"|"concluidas"|"periodo", de?: "AAAA-MM-DD", ate?: "AAAA-MM-DD", termo?}
 tarefas_concluir {refs: ["nome ou id", ...]}
 tarefas_reabrir {refs: ["nome ou id", ...]}
@@ -188,6 +188,7 @@ QUANDO = UM destes campos (você NUNCA calcula a data; o app calcula):
   daqui_dias: número   (ex.: "daqui a 3 dias" -> 3)
   dia_mes: número      (ex.: "dia 5" sem mês -> 5)
   data: "AAAA-MM-DD"   (só quando o dono disser dia E mês, ex.: "5 de dezembro")
+LEMBRAR (o J.A.R.V.I.S. avisa sobre a tarefa) = {antes_minutos: número} (0 = na hora do prazo; "1 hora antes" -> 60) OU {QUANDO?, hora: "HH:MM"} (numa hora certa); + alarme?: true
 REPETIR (tarefa fixa) = {freq: "diaria"|"dias_uteis"|"fim_de_semana"|"semanal"|"mensal", dias_semana?: ["seg", ...] (semanal), dia_mes?: número (mensal), ate?: "AAAA-MM-DD"}`;
 
 function promptPlanejador(hoje: string, abertas: Tarefa[], pendente: string | null, contexto: string) {
@@ -344,6 +345,8 @@ export async function atualizar(ctx: Ctx, t: Tarefa, mudanca: Partial<Tarefa>, a
     return null;
   }
   await recibo(ctx.sb, acao, t, data as Tarefa);
+  // Quem depende da tarefa acompanha (ex.: o lembrete dela conclui, some ou muda de hora junto).
+  for (const e of EXTENSOES) await e.aoAtualizarTarefa?.(ctx, t, data as Tarefa, acao).catch((err) => console.warn('extensão', err));
   return data as Tarefa;
 }
 
@@ -407,10 +410,13 @@ const EXECUTORES: Record<string, Executor> = {
     if (error) return falha('tarefas_criar', `Não consegui criar a tarefa (${error.message}).`);
     await recibo(ctx.sb, 'tarefas_criar', null, nova as Tarefa);
     const t = nova as Tarefa;
+    // Lembrete pedido junto (vem da extensão de lembretes): texto extra para a resposta.
+    let extra = '';
+    for (const e of EXTENSOES) if (e.depoisDeCriarTarefa) extra += await e.depoisDeCriarTarefa(ctx, t, a);
     const noProjeto = typeof vinculo.nome_projeto === 'string' ? ` · projeto **${vinculo.nome_projeto}**` : '';
     return {
       ferramenta: 'tarefas_criar', ok: true, resumo: `criada "${t.title}"`, fatos: { tarefa: t },
-      texto: `Anotado: **${t.title}** · ${quando(t, ctx.hoje)}${t.priority === 'alta' ? ' · prioridade alta' : ''}${noProjeto}.${rec ? ' Ao concluir, ela passa para a próxima data.' : ''}`,
+      texto: `Anotado: **${t.title}** · ${quando(t, ctx.hoje)}${t.priority === 'alta' ? ' · prioridade alta' : ''}${noProjeto}.${rec ? ' Ao concluir, ela passa para a próxima data.' : ''}${extra}`,
       ids: [t.id],
     };
   },
@@ -631,6 +637,10 @@ export interface Extensao {
   confirmar?: Record<string, (ctx: Ctx, ids: string[]) => Promise<ResultadoFerramenta>>;
   /** Texto extra para o planejador (ex.: nomes dos projetos abertos). */
   contexto?: (sb: SupabaseClient) => Promise<string>;
+  /** Depois de criar a tarefa (ex.: o lembrete pedido junto). Devolve texto a mais para a resposta. */
+  depoisDeCriarTarefa?: (ctx: Ctx, t: Tarefa, args: Record<string, unknown>) => Promise<string>;
+  /** Depois de qualquer mudança numa tarefa pela conversa (concluir, apagar, mudar o prazo...). */
+  aoAtualizarTarefa?: (ctx: Ctx, antes: Tarefa, depois: Tarefa, acao: string) => Promise<void>;
   /** Campos a mais ao criar uma tarefa (ex.: project_id). Texto = erro para o dono. */
   aoCriarTarefa?: (ctx: Ctx, args: Record<string, unknown>) => Promise<Record<string, unknown> | string>;
 }

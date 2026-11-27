@@ -4,10 +4,11 @@ import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { criarCliente, ouvirEventos, type ArmazenamentoSessao } from './supabase';
 import { novoId, prepararBanco, TABELAS_SYNC, type BancoLocal, type TabelaSync, type Valor } from './local';
 import type {
-  ColunaQuadro, Fonte, Notice, NoticeRule, NoticeSettings, JarvisEvent, Memory, Message, Prioridade, Project, Reminder, StatusProjeto, Task,
+  ColunaQuadro, Fonte, LembrarTarefa, Notice, NoticeRule, NoticeSettings, JarvisEvent, Memory, Message, Prioridade, Project, Reminder, StatusProjeto, Task,
 } from './types';
 import {
-  dataAposConcluir, hojeSP, instanteSP, normalizarRecorrencia, partesSP, primeiraData, proximaData, type Recorrencia,
+  dataAposConcluir, deslocarLembrete, hojeSP, instanteSP, lembreteDaTarefa, normalizarRecorrencia, partesSP, primeiraData,
+  proximaData, type Recorrencia,
 } from './recorrencia';
 
 export interface OpcoesJarvis {
@@ -134,7 +135,40 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     }
     return { ...t, archived: !!t.archived, recurrence };
   };
+  /**
+   * O lembrete nascido de uma tarefa anda com ela: concluir conclui, reabrir reabre (se ainda não passou),
+   * apagar apaga e mudar o prazo leva o lembrete o mesmo tanto. Tarefa fixa concluída: o lembrete fixo já anda sozinho.
+   */
+  const levarLembretes = async (antes: Task, depois: Pick<Task, 'due_date' | 'due_time' | 'done_at' | 'deleted_at'>,
+    concluiuFixa = false) => {
+    const t = agora();
+    const ls = await db.consultar<{ id: string; remind_at: string; recurrence: string | null; done_at: string | null }>(
+      `select id, remind_at, recurrence, done_at from reminders where task_id = ? and deleted_at is null`, [antes.id]);
+    for (const l of ls) {
+      if (depois.deleted_at && !antes.deleted_at) {
+        await db.executar(`update reminders set deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, l.id]);
+      } else if (depois.done_at && !antes.done_at) {
+        if (!l.done_at) await db.executar(`update reminders set done_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, l.id]);
+      } else if (!depois.done_at && antes.done_at) {
+        if (l.done_at && Date.parse(l.remind_at) > Date.now()) {
+          await db.executar(`update reminders set done_at = null, updated_at = ?, dirty = 1 where id = ?`, [t, l.id]);
+        }
+      } else if (!l.done_at && !(concluiuFixa && l.recurrence)) {
+        const novo = deslocarLembrete(l.remind_at, { data: antes.due_date, hora: antes.due_time },
+          { data: depois.due_date, hora: depois.due_time });
+        if (novo) await db.executar(`update reminders set remind_at = ?, updated_at = ?, dirty = 1 where id = ?`, [novo, t, l.id]);
+      }
+    }
+  };
+  const umaTarefa = async (id: string) =>
+    (await db.consultar<Parameters<typeof lerTarefa>[0]>(`select * from tasks where id = ?`, [id])).map(lerTarefa)[0];
   const tarefas = {
+    /** Ids das tarefas com lembrete ainda por avisar (o sino na lista). */
+    async comLembrete(): Promise<Set<string>> {
+      const linhas = await db.consultar<{ task_id: string }>(
+        `select distinct task_id from reminders where task_id is not null and deleted_at is null and done_at is null`);
+      return new Set(linhas.map((l) => l.task_id));
+    },
     async listar(): Promise<Task[]> {
       const linhas = await db.consultar<Parameters<typeof lerTarefa>[0]>(
         `select * from tasks where deleted_at is null and archived = 0
@@ -148,20 +182,41 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
      */
     async criar(titulo: string, prioridade: Prioridade = 'media', data: string | null = null, hora: string | null = null,
       extra: { repetir?: Recorrencia | null; notas?: string | null; projeto?: string | null;
-        coluna?: ColunaQuadro } = {}) {
+        coluna?: ColunaQuadro; lembrar?: LembrarTarefa | null } = {}) {
       const t = agora();
       const user = (await auth.sessao())?.user.id ?? null;
       const rec = extra.repetir ? normalizarRecorrencia(extra.repetir) : null;
       const dia = rec ? (data && proximaData(rec, data, true)) || primeiraData(rec, hora) : data;
+      // O lembrete é conferido antes de gravar a tarefa: se não der, nada é criado.
+      let aviso: string | null = null;
+      const l = extra.lembrar;
+      if (l) {
+        if ('antes_minutos' in l) {
+          aviso = lembreteDaTarefa(dia, dia ? hora : null, l.antes_minutos);
+          if (!aviso) throw new Error('Para avisar antes do prazo, a tarefa precisa de data e hora.');
+        } else {
+          aviso = instanteSP(l.data ?? dia ?? hojeSP(), l.hora);
+        }
+        if (!rec && Date.parse(aviso) <= Date.now()) throw new Error('A hora do lembrete já passou.');
+      }
+      const id = novoId();
       await db.executar(
         `insert into tasks (id, user_id, project_id, board_column, title, notes, priority, due_date, due_time,
          recurrence, created_at, updated_at, dirty)
          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-        [novoId(), user, extra.projeto ?? null, extra.coluna ?? 'a_fazer',
+        [id, user, extra.projeto ?? null, extra.coluna ?? 'a_fazer',
           titulo.trim(), extra.notas?.trim() || null, prioridade, dia, dia ? hora : null,
           rec ? JSON.stringify(rec) : null, t, t],
       );
+      if (l && aviso) {
+        await db.executar(
+          `insert into reminders (id, user_id, title, remind_at, priority, alarm, recurrence, task_id, created_at, updated_at, dirty)
+           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+          [novoId(), user, titulo.trim(), aviso, prioridade, l.alarme ? 1 : 0, rec ? JSON.stringify(rec) : null, id, t, t],
+        );
+      }
       mudouLocal();
+      return id;
     },
     /** Muda os campos dados (os ausentes ficam como estão). */
     async editar(id: string, m: { titulo?: string; prioridade?: Prioridade; data?: string | null; hora?: string | null;
@@ -178,6 +233,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
         [m.titulo?.trim() || atual.title, m.notas === undefined ? atual.notes : m.notas?.trim() || null,
           m.prioridade ?? atual.priority, data, data ? hora : null, rec ? JSON.stringify(rec) : null, agora(), id],
       );
+      await levarLembretes(atual, { ...atual, due_date: data, due_time: data ? hora : null });
       mudouLocal();
     },
     /** Concluir uma tarefa fixa passa ela para a próxima data (e ela continua aberta). */
@@ -189,6 +245,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
         const proxima = dataAposConcluir(atual.recurrence, atual.due_date);
         if (proxima) {
           await db.executar(`update tasks set due_date = ?, updated_at = ?, dirty = 1 where id = ?`, [proxima, t, id]);
+          await levarLembretes(atual, { ...atual, due_date: proxima }, true);
           mudouLocal();
           return;
         }
@@ -198,12 +255,15 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
          updated_at = ?, dirty = 1 where id = ?`,
         [t, t, id],
       );
+      await levarLembretes(atual, { ...atual, done_at: atual.done_at ? null : t });
       mudouLocal();
     },
-    /** Exclusão suave: nunca apaga de verdade. */
+    /** Exclusão suave: nunca apaga de verdade. O lembrete da tarefa vai junto. */
     async apagar(id: string) {
       const t = agora();
+      const atual = await umaTarefa(id);
       await db.executar(`update tasks set deleted_at = ?, updated_at = ?, dirty = 1 where id = ?`, [t, t, id]);
+      if (atual) await levarLembretes(atual, { ...atual, deleted_at: t });
       mudouLocal();
     },
     /**
@@ -226,6 +286,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
         `update tasks set project_id = ?, board_column = ?, done_at = ?, updated_at = ?, dirty = 1 where id = ?`,
         [projeto, coluna, done, t, id],
       );
+      await levarLembretes(atual, { ...atual, done_at: done });
       mudouLocal();
     },
   };

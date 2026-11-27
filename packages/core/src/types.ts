@@ -50,7 +50,12 @@ export interface Reminder extends Base {
   alarm: boolean;
   recurrence: import('./recorrencia').Recorrencia | null;
   done_at: string | null;
+  /** Tarefa de onde o lembrete nasceu: concluir, apagar ou mudar o prazo dela leva o lembrete junto. */
+  task_id: string | null;
 }
+
+/** "Me lembrar" ao criar uma tarefa: X minutos antes do prazo, ou numa data e hora certas. */
+export type LembrarTarefa = { antes_minutos: number; alarme?: boolean } | { data: string | null; hora: string; alarme?: boolean };
 
 export interface Conversation extends Base {
   title: string | null;

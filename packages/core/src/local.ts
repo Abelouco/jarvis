@@ -21,7 +21,7 @@ export const COLUNAS_TASKS = [
 
 export const COLUNAS_REMINDERS = [
   'id', 'user_id', 'title', 'notes', 'remind_at', 'channel', 'priority', 'alarm', 'recurrence',
-  'done_at', 'created_at', 'updated_at', 'deleted_at',
+  'done_at', 'created_at', 'updated_at', 'deleted_at', 'task_id',
 ] as const;
 
 export const COLUNAS_CONVERSATIONS = ['id', 'user_id', 'title', 'created_at', 'updated_at', 'deleted_at'] as const;
@@ -115,6 +115,7 @@ export const SCHEMA_LOCAL = [
     created_at text not null,
     updated_at text not null,
     deleted_at text,
+    task_id text,
     dirty integer not null default 0
   )`,
   `create index if not exists reminders_dirty_idx on reminders (dirty)`,
@@ -169,6 +170,7 @@ const COLUNAS_NOVAS: [tabela: string, coluna: string, tipo: string][] = [
   ['messages', 'sources', 'text'],
   ['tasks', 'recurrence', 'text'],
   ['tasks', 'board_column', "text not null default 'a_fazer'"],
+  ['reminders', 'task_id', 'text'],
 ];
 
 export async function prepararBanco(db: BancoLocal) {

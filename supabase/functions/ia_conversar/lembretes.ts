@@ -5,12 +5,12 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { normalizar } from './sensivel.ts';
 import {
-  acharPorNome, dataHumana, falha, normalizarHora, pedirConfirmacao, recibo, registrar, resolverQuando,
-  type Ctx, type ResultadoFerramenta,
+  acharPorNome, avisoReferencias, dataHumana, falha, normalizarHora, pedirConfirmacao, recibo, registrar, resolverQuando,
+  resolverTarefas, type Ctx, type ResultadoFerramenta, type Tarefa,
 } from './tarefas.ts';
 import {
-  agoraHHMM, descreverRecorrencia, instanteSP, normalizarRecorrencia, partesSP, primeiraData, proximaData,
-  somarDias, type Recorrencia,
+  agoraHHMM, descreverRecorrencia, deslocarLembrete, instanteSP, lembreteDaTarefa, normalizarRecorrencia, partesSP,
+  primeiraData, proximaData, somarDias, type Recorrencia,
 } from './recorrencia.ts';
 
 export interface Lembrete {
@@ -23,9 +23,41 @@ export interface Lembrete {
   recurrence: Recorrencia | null;
   done_at: string | null;
   deleted_at: string | null;
+  /** A tarefa de onde o lembrete nasceu (concluir/apagar/mudar o prazo dela leva o lembrete junto). */
+  task_id: string | null;
 }
 
-const CAMPOS = 'id, title, notes, remind_at, priority, alarm, recurrence, done_at, deleted_at';
+const CAMPOS = 'id, title, notes, remind_at, priority, alarm, recurrence, done_at, deleted_at, task_id';
+
+/**
+ * Instante do lembrete de uma tarefa a partir do LEMBRAR da IA: {antes_minutos} conta do prazo da tarefa;
+ * {QUANDO?, hora} é uma hora certa (sem QUANDO, no dia do prazo). Tarefa fixa: o lembrete repete junto.
+ * Devolve o instante e a repetição, ou um texto de erro.
+ */
+export function instanteDaTarefa(
+  t: Pick<Tarefa, 'due_date' | 'due_time' | 'recurrence'>, l: Record<string, unknown>, hoje: string, agora = new Date(),
+): { iso: string; rec: Recorrencia | null } | string {
+  const rec = (t.recurrence ?? null) as Recorrencia | null;
+  if (l.hora === undefined || l.hora === null) {
+    const antes = Number(l.antes_minutos ?? 0);
+    if (!Number.isFinite(antes) || antes < 0) return 'Quanto tempo antes devo avisar?';
+    if (!t.due_date) return 'A tarefa não tem data: quando devo avisar?';
+    if (!t.due_time) return 'A tarefa não tem hora: a que horas devo avisar?';
+    const iso = lembreteDaTarefa(t.due_date, t.due_time, antes)!;
+    if (!rec && Date.parse(iso) <= agora.getTime()) return 'Essa hora de aviso já passou.';
+    return { iso, rec };
+  }
+  const hora = normalizarHora(l.hora);
+  if (!hora) return 'A que horas devo avisar?';
+  const dia = resolverQuando(l, hoje) ?? t.due_date ?? (hora > agoraHHMM(agora) ? hoje : somarDias(hoje, 1));
+  return { iso: instanteSP(dia, hora), rec };
+}
+
+/** Lembretes (não apagados) ligados a uma tarefa. */
+async function daTarefa(sb: SupabaseClient, taskId: string): Promise<Lembrete[]> {
+  const { data } = await sb.from('reminders').select(CAMPOS).eq('task_id', taskId).is('deleted_at', null);
+  return (data ?? []) as Lembrete[];
+}
 
 /** "hoje às 15:00", "segunda, 30/11 às 08:00", "toda segunda às 20:00 (próximo: segunda, 30/11)". */
 export function quandoLembrete(l: Pick<Lembrete, 'remind_at' | 'recurrence'>, hoje: string): string {
@@ -113,7 +145,7 @@ async function concluirVarios(ctx: Ctx, alvo: Lembrete[]) {
 const linha = (l: Lembrete, hoje: string) => `- **${l.title}** · ${quandoLembrete(l, hoje)}${l.alarm ? ' · alarme' : ''}`;
 
 const FERRAMENTAS = `
-lembretes_criar {titulo, QUANDO?, hora?: "HH:MM", em_minutos?: número, em_horas?: número, repetir?: REPETIR, alarme?: true, prioridade?, notas?}
+lembretes_criar {titulo, QUANDO?, hora?: "HH:MM", em_minutos?: número, em_horas?: número, repetir?: REPETIR, alarme?: true, prioridade?, notas?, tarefa?: "nome ou id", antes_minutos?: número}   (tarefa = lembrete de uma tarefa que já existe)
 lembretes_listar {filtro?: "proximos"|"hoje"|"todos"}
 lembretes_concluir {refs: ["nome ou id", ...]}   (o dono já viu/fez; lembrete fixo passa para o próximo)
 lembretes_adiar {ref: "nome ou id", em_minutos?: número, QUANDO?, hora?}   (adiar/soneca)
@@ -124,17 +156,64 @@ const REGRAS = [
   '- LEMBRETE x TAREFA: "me lembra", "me avisa", "lembrete", "alarme", "desperta" = lembretes_*. "tarefa", "anota", "preciso fazer" sem pedir aviso = tarefas_*.',
   '- Lembrete: "daqui a 20 minutos" -> em_minutos:20; "em 2 horas" -> em_horas:2; "às 15h" -> hora:"15:00" (sem QUANDO); "amanhã às 9h" -> quando:"amanha", hora:"09:00". "todo dia às 7h tomar água" -> repetir:{freq:"diaria"}, hora:"07:00". "alarme"/"desperta"/"me acorda" -> alarme:true.',
   '- O título do lembrete é o que avisar (ex.: "Ligar para o dentista"), sem a hora.',
+  '- TAREFA COM LEMBRETE: se a mesma mensagem cria uma tarefa E pede aviso dela, é UMA ação: tarefas_criar com lembrar (nunca um lembretes_criar separado). "cria a tarefa X sexta às 14h e me lembra 1 hora antes" -> tarefas_criar {..., lembrar:{antes_minutos:60}}; "...e me avisa na hora" -> lembrar:{antes_minutos:0}; "...e me lembra amanhã às 9h" -> lembrar:{quando:"amanha", hora:"09:00"}. Para uma tarefa que JÁ existe ("me lembra da tarefa X 30 min antes") -> lembretes_criar {tarefa:"X", antes_minutos:30}.',
 ];
 
 registrar({
   ferramentas: FERRAMENTAS,
   regras: REGRAS,
   detector: /\b(lembr\w*|me avis\w*|avis[ae] (me|que)|alarme\w*|despert\w*|me acord\w*|soneca)\b/,
+
+  /** "cria a tarefa X ... e me lembra": a tarefa já foi criada; aqui nasce o lembrete ligado a ela. */
+  async depoisDeCriarTarefa(ctx, t, a) {
+    if (!a.lembrar) return '';
+    const l = (typeof a.lembrar === 'object' ? a.lembrar : {}) as Record<string, unknown>;
+    const r = instanteDaTarefa(t, l, ctx.hoje);
+    if (typeof r === 'string') return ` Não pus o lembrete: ${r.charAt(0).toLowerCase()}${r.slice(1)}`;
+    const { data, error } = await ctx.sb.from('reminders').insert({
+      title: t.title, remind_at: r.iso, recurrence: r.rec, alarm: l.alarme === true || a.alarme === true,
+      priority: t.priority, task_id: t.id,
+    }).select(CAMPOS).single();
+    if (error) return ` Não consegui pôr o lembrete (${error.message}).`;
+    // Mesma ação da tarefa: "desfaz" leva os dois juntos.
+    await recibo(ctx.sb, 'tarefas_criar', null, data as Lembrete, 'reminders');
+    return ` Vou avisar ${quandoLembrete(data as Lembrete, ctx.hoje)}.`;
+  },
+
+  /** Concluir/reabrir/apagar a tarefa leva o lembrete junto; mudar o prazo leva o lembrete junto (mesma antecedência). */
+  async aoAtualizarTarefa(ctx, antes, depois, acao) {
+    const ls = await daTarefa(ctx.sb, depois.id);
+    if (!ls.length) return;
+    const agora = new Date().toISOString();
+    for (const l of ls) {
+      let m: Partial<Lembrete> | null = null;
+      if (depois.deleted_at && !antes.deleted_at) m = { deleted_at: agora };
+      else if (depois.done_at && !antes.done_at) m = l.done_at ? null : { done_at: agora };
+      else if (!depois.done_at && antes.done_at) m = l.done_at && Date.parse(l.remind_at) > Date.now() ? { done_at: null } : null;
+      else if (l.done_at) m = null;
+      // Tarefa fixa concluída: o prazo anda, mas o lembrete fixo já anda sozinho.
+      else if ((!l.recurrence || acao !== 'tarefas_concluir')
+        && (antes.due_date !== depois.due_date || antes.due_time !== depois.due_time)) {
+        const novo = deslocarLembrete(l.remind_at, { data: antes.due_date, hora: antes.due_time },
+          { data: depois.due_date, hora: depois.due_time });
+        if (novo) m = { remind_at: novo };
+      }
+      if (m) await mudar(ctx, l, m, acao);
+    }
+  },
   executores: {
     async lembretes_criar(ctx, a) {
-      const titulo = String(a.titulo ?? '').trim().replace(/\s+/g, ' ').slice(0, 200);
+      let tarefa: Tarefa | null = null;
+      if (a.tarefa) {
+        const rt = await resolverTarefas(ctx.sb, a.tarefa);
+        if (rt.achadas.length !== 1) return falha('lembretes_criar', avisoReferencias(rt) || 'De qual tarefa?');
+        tarefa = rt.achadas[0]!;
+      }
+      const titulo = String(a.titulo ?? tarefa?.title ?? '').trim().replace(/\s+/g, ' ').slice(0, 200);
       if (!titulo) return falha('lembretes_criar', 'Do que devo lembrar?');
-      const r = resolverInstante(a, ctx.hoje);
+      const r = tarefa && (a.antes_minutos !== undefined || (!a.hora && !a.em_minutos && !a.em_horas))
+        ? instanteDaTarefa(tarefa, { antes_minutos: a.antes_minutos ?? 0 }, ctx.hoje)
+        : resolverInstante(a, ctx.hoje);
       if (typeof r === 'string') return falha('lembretes_criar', r);
       const ativos = await abertos(ctx.sb);
       const igual = ativos.find((l) => normalizar(l.title) === normalizar(titulo) && l.remind_at === r.iso);
@@ -146,7 +225,7 @@ registrar({
       }
       const prio = ['alta', 'media', 'baixa'].includes(String(a.prioridade)) ? String(a.prioridade) : 'media';
       const { data, error } = await ctx.sb.from('reminders').insert({
-        title: titulo, remind_at: r.iso, recurrence: r.rec, alarm: a.alarme === true, priority: prio,
+        title: titulo, remind_at: r.iso, recurrence: r.rec, alarm: a.alarme === true, priority: prio, task_id: tarefa?.id ?? null,
         notes: typeof a.notas === 'string' && a.notas.trim() ? a.notas.trim().slice(0, 2000) : null,
       }).select(CAMPOS).single();
       if (error) return falha('lembretes_criar', `Não consegui criar o lembrete (${error.message}).`);
