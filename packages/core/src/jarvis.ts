@@ -3,6 +3,7 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { criarCliente, ouvirEventos, type ArmazenamentoSessao } from './supabase';
 import { respostasDepoisDoParar } from './chatRegras';
+import { criarFinancas } from './financasApi';
 import { novoId, prepararBanco, TABELAS_SYNC, type BancoLocal, type TabelaSync, type Valor } from './local';
 import type {
   ColunaQuadro, Fonte, LembrarTarefa, Notice, NoticeRule, NoticeSettings, JarvisEvent, Memory, Message, Prioridade, Project, Reminder, StatusProjeto, Task,
@@ -936,6 +937,9 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     relogio = null;
   }
 
+  /** Finanças (Fase 4 · etapa 6): direto no Supabase, sem banco local. */
+  const financas = criarFinancas(sb, () => hojeSP());
+
   /** Avisos (Fase 3). O vigia roda no servidor; o aparelho só diz que está aberto. */
   const avisos = {
     /**
@@ -1075,6 +1079,7 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
     iniciar,
     auth,
     avisos,
+    financas,
     feedback,
     conexoes,
     tarefas,

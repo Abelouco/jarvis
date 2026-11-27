@@ -393,7 +393,8 @@ async function confirmarUma(ctx: Ctx, p: { action: string; preview?: { ids?: str
 export type Executor = (ctx: Ctx, args: Record<string, unknown>) => Promise<ResultadoFerramenta>;
 
 /** Tabelas que o "desfaz" da conversa alcança (memórias têm o próprio caminho). */
-const TIPOS_DESFAZER = ['tasks', 'reminders', 'projects', 'notice_rules', 'notice_settings', 'assistant_lessons'];
+const TIPOS_DESFAZER = ['tasks', 'reminders', 'projects', 'notice_rules', 'notice_settings', 'assistant_lessons',
+  'fin_accounts', 'fin_transactions', 'fin_recurring'];
 /** Mais os tipos que as extensões desfazem do jeito delas (ex.: e-mail no Gmail). */
 const tiposDesfazer = () => [...TIPOS_DESFAZER, ...EXTENSOES.flatMap((e) => Object.keys(e.desfazer ?? {}))];
 
@@ -639,8 +640,8 @@ const EXECUTORES: Record<string, Executor> = {
       const { error } = await ctx.sb.from(r.entity_type).update(mudanca).eq('id', r.entity_id);
       if (error) continue;
       await ctx.sb.from('undo_receipts').update({ undone_at: new Date().toISOString() }).eq('id', r.id);
-      const item = (antes ?? r.after) as { title?: string; name?: string; lesson?: string } | null;
-      desfeitas.push(item?.title ?? item?.name ?? item?.lesson ?? (r.entity_type.startsWith('notice_') ? 'ajuste dos avisos' : 'item'));
+      const item = (antes ?? r.after) as { title?: string; name?: string; lesson?: string; description?: string } | null;
+      desfeitas.push(item?.title ?? item?.name ?? item?.lesson ?? item?.description ??(r.entity_type.startsWith('notice_') ? 'ajuste dos avisos' : 'item'));
     }
     const nome: Record<string, string> = {
       tarefas_criar: 'criação', lembretes_criar: 'criação', lembretes_concluir: 'conclusão', lembretes_apagar: 'exclusão',
@@ -650,6 +651,9 @@ const EXECUTORES: Record<string, Executor> = {
       licoes_esquecer: 'exclusão da lição', licoes_ensinar: 'lição nova',
       email_arquivar: 'ação no e-mail (voltou para a caixa de entrada)', email_lixeira: 'ação no e-mail (saiu da lixeira)',
       email_marcar_lido: 'ação no e-mail (voltou a não lido)', email_rascunhar: 'criação do rascunho',
+      financas_registrar_lancamento: 'criação do lançamento', financas_registrar_transferencia: 'transferência',
+      financas_registrar_fixa: 'mudança na conta fixa', financas_marcar_pago: 'marcação de pago',
+      financas_corrigir_lancamento: 'correção', financas_apagar: 'exclusão', financas_salvar_conta_ou_cartao: 'mudança na conta',
     };
     return {
       ferramenta: 'jarvis_desfazer', ok: desfeitas.length > 0, resumo: `desfeita ${rec.action}`, fatos: { acao: rec.action, tarefas: desfeitas },

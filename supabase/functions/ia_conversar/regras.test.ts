@@ -389,3 +389,105 @@ test('e-mail: escolha por critério só aceita números da lista', () => {
   assert.deepEqual(escolhidosDe('não é json', es), []);
   assert.match(listaParaCriterio(es), /^1\. De: R1 <r1@x\.com> \| Assunto: A1/);
 });
+
+// ---------- finanças (Fase 4 · etapa 6) ----------
+import {
+  aVencer, centavos, faturaDaCompra, parcelar, periodoDaFatura, reais, resumoMes, saldo, somarMeses,
+  type ContaFin, type LancamentoFin,
+} from './financas_regras.ts';
+
+test('finanças: as cópias das regras são iguais à do core', () => {
+  const corpo = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8').replace(/\r/g, '').split('\n').slice(2).join('\n');
+  const core = corpo('../../../packages/core/src/financas.ts');
+  assert.equal(corpo('./financas_regras.ts'), core);
+  assert.equal(corpo('../avisos_vigia/financas_regras.ts'), core);
+});
+
+test('finanças: valores em centavos e em reais', () => {
+  assert.equal(centavos('45,90'), 4590);
+  assert.equal(centavos('R$ 1.234,56'), 123456);
+  assert.equal(centavos('1.200'), 120000);
+  assert.equal(centavos('45.9'), 4590);
+  assert.equal(centavos(30), 3000);
+  assert.equal(centavos('trinta'), null);
+  assert.equal(centavos('0'), null);
+  assert.equal(reais(123456), 'R$ 1.234,56');
+  assert.equal(reais(5), 'R$ 0,05');
+  assert.equal(reais(-1000), '-R$ 10,00');
+  assert.equal(somarMeses('2026-01-31', 1), '2026-02-28');
+  assert.equal(somarMeses('2026-12-10', 1), '2027-01-10');
+});
+
+test('finanças: fatura do cartão (fechamento e vencimento)', () => {
+  const c = { closing_day: 5, due_day: 12 };
+  assert.deepEqual(faturaDaCompra(c, '2026-11-04'), { fechamento: '2026-11-05', vencimento: '2026-11-12', mes: '2026-11' });
+  assert.deepEqual(faturaDaCompra(c, '2026-11-05'), { fechamento: '2026-12-05', vencimento: '2026-12-12', mes: '2026-12' });
+  // Vence antes do dia de fechamento: vencimento no mês seguinte ao fechamento.
+  assert.equal(faturaDaCompra({ closing_day: 25, due_day: 3 }, '2026-11-20').vencimento, '2026-12-03');
+  assert.deepEqual(periodoDaFatura(c, '2026-12'), { de: '2026-11-05', ate: '2026-12-05', vencimento: '2026-12-12' });
+  // A compra cai no período da fatura que ela mesma calcula.
+  const f = faturaDaCompra(c, '2026-11-20');
+  const p = periodoDaFatura(c, f.mes);
+  assert.ok('2026-11-20' >= p.de && '2026-11-20' < p.ate);
+});
+
+test('finanças: parcelas (resto na primeira, uma por mês)', () => {
+  const ps = parcelar(10000, 3, '2026-01-31');
+  assert.deepEqual(ps.map((p) => p.valor), [3334, 3333, 3333]);
+  assert.deepEqual(ps.map((p) => p.data), ['2026-01-31', '2026-02-28', '2026-03-31']);
+  assert.equal(ps.reduce((s, p) => s + p.valor, 0), 10000);
+});
+
+const L = (x: Partial<LancamentoFin>): LancamentoFin => ({
+  id: crypto.randomUUID(), kind: 'despesa', amount_cents: 1000, account_id: null, to_account_id: null,
+  occurred_on: '2026-11-10', paid: true, due_on: null, category: null, description: 'x', recurring_id: null, ...x,
+});
+
+test('finanças: saldo da conta e do cartão', () => {
+  const conta: ContaFin = { id: 'c', name: 'Nubank', kind: 'conta', opening_balance_cents: 100000, closing_day: null, due_day: null };
+  const cartao: ContaFin = { id: 'k', name: 'Inter', kind: 'cartao', opening_balance_cents: 0, closing_day: 5, due_day: 12 };
+  const ls = [
+    L({ account_id: 'c', amount_cents: 2000 }),
+    L({ account_id: 'c', kind: 'receita', amount_cents: 50000 }),
+    L({ account_id: 'c', amount_cents: 9999, paid: false }), // em aberto: não pesa na conta
+    L({ account_id: 'k', amount_cents: 3000, paid: false }), // compra no cartão: pesa
+    L({ kind: 'transferencia', account_id: 'c', to_account_id: 'k', amount_cents: 3000 }),
+  ];
+  assert.equal(saldo(conta, ls), 100000 - 2000 + 50000 - 3000);
+  assert.equal(saldo(cartao, ls), 0);
+});
+
+test('finanças: resumo do mês e o que vence', () => {
+  const ls = [
+    L({ amount_cents: 2000, category: 'Mercado' }),
+    L({ amount_cents: 500, category: 'Mercado' }),
+    L({ amount_cents: 1000 }),
+    L({ kind: 'receita', amount_cents: 9000 }),
+    L({ kind: 'transferencia', amount_cents: 7777, to_account_id: 'z' }),
+    L({ occurred_on: '2026-10-30', amount_cents: 4000 }),
+  ];
+  const r = resumoMes(ls, '2026-11');
+  assert.equal(r.receitas, 9000);
+  assert.equal(r.despesas, 3500);
+  assert.deepEqual(r.categorias, [{ categoria: 'Mercado', total: 2500 }, { categoria: 'Outros', total: 1000 }]);
+
+  const fixa = { id: 'f', description: 'Aluguel', kind: 'despesa' as const, amount_cents: 150000, day_of_month: 15, active: true, until: null, account_id: null, category: null };
+  const luz = { ...fixa, id: 'g', description: 'Luz', day_of_month: 20 };
+  const vs = aVencer([L({ paid: false, due_on: '2026-11-18', description: 'Boleto' }), L({ recurring_id: 'g', occurred_on: '2026-11-19' })],
+    [fixa, luz], '2026-11-14', '2026-11-30');
+  assert.deepEqual(vs.map((v) => v.descricao), ['Aluguel', 'Boleto']); // a luz já foi lançada no mês
+});
+
+
+import { pareceFinancas } from './financas.ts';
+
+test('finanças: o detector manda para o planejador (e o pedido fica sensível)', () => {
+  assert.ok(pareceFinancas('gastei 45 no mercado'));
+  assert.ok(pareceFinancas('Paguei a fatura do Nubank'));
+  assert.ok(pareceFinancas('quanto gastei esse mês?'));
+  assert.ok(pareceFinancas('recebi o salário'));
+  assert.ok(pareceFinancas('comprei um tênis de R$ 300 em 3x'));
+  assert.ok(pareceFinancas('qual meu saldo?'));
+  assert.ok(!pareceFinancas('qual a capital da França?'));
+  assert.ok(pareceTarefa('gastei 30 de uber', false));
+});

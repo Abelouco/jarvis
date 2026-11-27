@@ -102,7 +102,7 @@ export interface JarvisEvent {
 
 // ---------- avisos (Fase 3): só no servidor, a tela lê direto do Supabase ----------
 export type TipoAviso =
-  | 'tarefa_atrasada' | 'lembrete_hora' | 'prazo_projeto' | 'resumo_manha' | 'resumo_noite';
+  | 'tarefa_atrasada' | 'lembrete_hora' | 'prazo_projeto' | 'conta_vencer' | 'resumo_manha' | 'resumo_noite';
 
 /** Aviso que o vigia deu (ou segurou), com o motivo. */
 export interface Notice {

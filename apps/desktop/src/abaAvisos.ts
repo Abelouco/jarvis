@@ -9,6 +9,7 @@ const NOME_TIPO: Record<TipoAviso, string> = {
   tarefa_atrasada: 'Tarefa atrasada',
   lembrete_hora: 'Lembrete',
   prazo_projeto: 'Prazo de projeto',
+  conta_vencer: 'Conta a vencer',
   resumo_manha: 'Resumo da manhã',
   resumo_noite: 'Resumo da noite',
 };

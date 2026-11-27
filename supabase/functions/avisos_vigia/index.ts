@@ -7,10 +7,11 @@
 // Sem IA e sem segredo novo: usa só o service role que o Supabase já injeta.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
-  decidir, detectarAtrasadas, detectarLembretes, detectarPrazos, diaSP, escolherCanais,
+  decidir, detectarAtrasadas, detectarContas, detectarLembretes, detectarPrazos, diaSP, escolherCanais,
   horaDoResumo, instanteSP, juntar, resumoManha, resumoNaHora, resumoNoite, somarDias, textoPush,
   type AvisoPronto, type Candidato, type Preferencias, type Regra,
 } from './decisao.ts';
+import { aVencer, reais, type FixaFin, type LancamentoFin } from './financas_regras.ts'; // cópia do core (teste confere)
 
 const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -85,6 +86,7 @@ async function vigiar(cfg: Cfg, agora: Date) {
     ...detectarLembretes(ok(lembretes, 'lembretes') as never, agora),
     ...detectarAtrasadas(listaTarefas as never, agora),
     ...detectarPrazos(ok(projetos, 'projetos') as never, agora),
+    ...detectarContas(await contasAVencer(uid, hoje), agora),
   ];
   if (candidatos.length) {
     const vistos = ok(await sb.from('notices').select('dedupe_key').eq('user_id', uid)
@@ -131,7 +133,7 @@ async function vigiar(cfg: Cfg, agora: Date) {
     else mudancas.set(id, { ...(mudancas.get(id) ?? {}), ...campos });
   };
   const notificar: { id: string; titulo: string; corpo: string; prioridade: string }[] = [];
-  const pushes: { id: string; title: string; body: string; priority: string }[] = [];
+  const pushes: { id: string; title: string; body: string; priority: string; kind: string }[] = [];
 
   for (const a of adiar) mudar(a.id, { status: 'agendado', scheduled_for: a.ate });
   for (const id of dobrados) mudar(id, { status: 'juntado', group_id: manha!.id, sent_at: iso });
@@ -154,7 +156,7 @@ async function vigiar(cfg: Cfg, agora: Date) {
     if (canais.includes('pc')) {
       notificar.push({ id: e.principal.id, titulo: e.principal.title, corpo: e.principal.body, prioridade: e.principal.priority });
     }
-    if (canais.includes('push')) pushes.push({ id: e.principal.id, title: e.principal.title, body: e.principal.body, priority: e.principal.priority });
+    if (canais.includes('push')) pushes.push({ id: e.principal.id, title: e.principal.title, body: e.principal.body, priority: e.principal.priority, kind: e.principal.kind });
   }
 
   // 4. gravar: grupos primeiro (os filhos apontam para eles); a dedupe_key única protege de duas rodadas juntas
@@ -180,6 +182,45 @@ async function vigiar(cfg: Cfg, agora: Date) {
   const valeu = (id: string) => gravadas.has(id) || mudancas.has(id) || grupos.some((g) => g.id === id);
   const enviados = await enviarPush(pushes.filter((p) => valeu(p.id)), listaAparelhos);
   return { novos: gravadas.size, liberados: mudancas.size, grupos: grupos.length, notificados: entregar.length, push: enviados };
+}
+
+/**
+ * Contas a pagar de hoje a daqui a 2 dias: lançamentos em aberto, contas fixas do mês ainda sem lançamento
+ * e as compras do cartão somadas numa fatura só (uma por cartão e vencimento).
+ */
+async function contasAVencer(uid: string, hoje: string) {
+  const ate = somarDias(hoje, 2);
+  const [abertos, doMes, fixas, cartoes] = await Promise.all([
+    sb.from('fin_transactions').select('id, kind, amount_cents, account_id, to_account_id, occurred_on, paid, due_on, category, description, recurring_id')
+      .eq('user_id', uid).is('deleted_at', null).eq('paid', false).gte('due_on', hoje).lte('due_on', ate),
+    sb.from('fin_transactions').select('id, kind, amount_cents, account_id, to_account_id, occurred_on, paid, due_on, category, description, recurring_id')
+      .eq('user_id', uid).is('deleted_at', null).not('recurring_id', 'is', null).gte('occurred_on', somarDias(hoje, -31)),
+    sb.from('fin_recurring').select('id, description, kind, amount_cents, day_of_month, active, until, account_id, category')
+      .eq('user_id', uid).is('deleted_at', null).eq('active', true),
+    sb.from('fin_accounts').select('id, name').eq('user_id', uid).is('deleted_at', null).eq('kind', 'cartao'),
+  ]);
+  const lancs = [...(ok(abertos, 'fin abertos') as LancamentoFin[]), ...(ok(doMes, 'fin fixas lançadas') as LancamentoFin[])];
+  const porId = new Map(lancs.map((l) => [l.id, l])); // a mesma linha pode vir nas duas consultas
+  const nomeCartao = new Map((ok(cartoes, 'fin cartões') as { id: string; name: string }[]).map((c) => [c.id, c.name]));
+  const itens: { entity_type: string; id: string; descricao: string; valor: number; vence: string; valorTexto: string }[] = [];
+  const faturas = new Map<string, { id: string; nome: string; valor: number; vence: string }>();
+  for (const v of aVencer([...porId.values()], ok(fixas, 'fin fixas') as FixaFin[], hoje, ate)) {
+    if (v.kind !== 'despesa') continue;
+    const l = v.tipo === 'lancamento' ? porId.get(v.id) : undefined;
+    const cartao = l?.account_id ? nomeCartao.get(l.account_id) : undefined;
+    if (l && cartao) {
+      const k = `${l.account_id}:${v.vence}`;
+      const f = faturas.get(k) ?? { id: l.account_id!, nome: `Fatura ${cartao}`, valor: 0, vence: v.vence };
+      f.valor += v.valor;
+      faturas.set(k, f);
+      continue;
+    }
+    itens.push({ entity_type: v.tipo === 'fixa' ? 'fin_recurring' : 'fin_transactions', id: v.id, descricao: v.descricao, valor: v.valor, vence: v.vence, valorTexto: reais(v.valor) });
+  }
+  for (const f of faturas.values()) {
+    itens.push({ entity_type: 'fin_accounts', id: f.id, descricao: f.nome, valor: f.valor, vence: f.vence, valorTexto: reais(f.valor) });
+  }
+  return itens;
 }
 
 type TarefaBD = { id: string; title: string; due_date: string; due_time: string | null; priority: string };
@@ -232,7 +273,7 @@ async function dadosNoite(
  * Aparelho que saiu (app desinstalado, permissão tirada) volta `DeviceNotRegistered`: o token é apagado.
  */
 async function enviarPush(
-  avisos: { id: string; title: string; body: string; priority: string }[],
+  avisos: { id: string; title: string; body: string; priority: string; kind?: string }[],
   aparelhos: { id: string; platform: string; push_token: string | null }[],
 ) {
   const alvos = aparelhos.filter((d) => d.platform === 'android' && d.push_token);

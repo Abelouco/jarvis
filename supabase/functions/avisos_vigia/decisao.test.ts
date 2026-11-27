@@ -172,3 +172,16 @@ test('canal: PC aberto, senão celular; urgente nos dois; lembrete no PC é o av
   assert.deepEqual(escolherCanais({ kind: 'lembrete_hora', priority: 'normal' }, [pc], agora), ['pc_local']);
   assert.deepEqual(escolherCanais(t, [], agora), []);
 });
+
+import { detectarContas } from './decisao.ts';
+
+test('conta a vencer: 2 dias antes (normal) e no dia (urgente, só depois das 9:00); push reservado', () => {
+  const c = (id: string, vence: string) => ({ entity_type: 'fin_recurring', id, descricao: `Conta ${id}`, valor: 150000, vence, valorTexto: 'R$ 1.500,00' });
+  const lista = [c('a', '2026-11-28'), c('b', '2026-11-26'), c('c', '2026-11-27')];
+  const cedo = detectarContas(lista, em('2026-11-26T10:00:00Z')); // 07:00 em SP
+  assert.deepEqual(cedo.map((x) => x.dedupe_key), ['conta_vencer:a:2026-11-28:2']);
+  const tarde = detectarContas(lista, em('2026-11-26T15:00:00Z')); // 12:00
+  assert.deepEqual(tarde.map((x) => [x.entity_id, x.priority]), [['a', 'normal'], ['b', 'urgente']]);
+  assert.equal(tarde[1]!.body, 'R$ 1.500,00 a pagar hoje.');
+  assert.equal(textoPush({ ...tarde[0]!, kind: 'conta_vencer' }).body, 'Um aviso com conteúdo reservado. Abra o app para ver.');
+});

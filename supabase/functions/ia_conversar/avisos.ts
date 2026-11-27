@@ -8,12 +8,13 @@ import { acharPorNome, falha, normalizarHora, recibo, registrar, resolverQuando,
 import { instanteSP, partesSP } from './recorrencia.ts';
 
 export type TipoAviso =
-  | 'tarefa_atrasada' | 'lembrete_hora' | 'prazo_projeto' | 'resumo_manha' | 'resumo_noite';
+  | 'tarefa_atrasada' | 'lembrete_hora' | 'prazo_projeto' | 'conta_vencer' | 'resumo_manha' | 'resumo_noite';
 
 export const NOMES_TIPO: Record<TipoAviso, string> = {
   tarefa_atrasada: 'tarefas atrasadas',
   lembrete_hora: 'lembretes',
   prazo_projeto: 'prazo de projeto',
+  conta_vencer: 'contas a vencer',
   resumo_manha: 'resumo da manhã',
   resumo_noite: 'resumo da noite',
 };
@@ -27,6 +28,7 @@ export function tipoAviso(x: unknown): TipoAviso | null {
   if (/resumo.*noite|resumo do dia/.test(t)) return 'resumo_noite';
   if (/atrasad|tarefa/.test(t)) return 'tarefa_atrasada';
   if (/lembrete/.test(t)) return 'lembrete_hora';
+  if (/conta|fatura|boleto|pagar|vencer|financ/.test(t)) return 'conta_vencer';
   if (/prazo|projeto/.test(t)) return 'prazo_projeto';
   return null;
 }
@@ -36,6 +38,7 @@ const ITEM: Partial<Record<TipoAviso, { tabela: string; nome: string; filtro: (q
   tarefa_atrasada: { tabela: 'tasks', nome: 'title', filtro: (q) => q.is('done_at', null).eq('archived', false) },
   lembrete_hora: { tabela: 'reminders', nome: 'title', filtro: (q) => q.is('done_at', null) },
   prazo_projeto: { tabela: 'projects', nome: 'name', filtro: (q) => q.eq('archived', false) },
+  conta_vencer: { tabela: 'fin_recurring', nome: 'description', filtro: (q) => q.eq('active', true) },
 };
 
 /**
@@ -126,7 +129,7 @@ const hh = (t: string | null) => (t ? t.slice(0, 5) : '');
 /** Tipo + item (opcional) a partir dos argumentos; erro em texto. */
 async function alvo(ctx: Ctx, a: Record<string, unknown>, ferramenta: string) {
   const kind = tipoAviso(a.tipo);
-  if (!kind) return falha(ferramenta, 'De qual aviso? (tarefas atrasadas, lembretes, prazo de projeto, resumo da manhã ou da noite)');
+  if (!kind) return falha(ferramenta, 'De qual aviso? (tarefas atrasadas, lembretes, prazo de projeto, contas a vencer, resumo da manhã ou da noite)');
   const ref = typeof a.ref === 'string' ? a.ref.trim() : '';
   if (!ref) return { kind, item: null as { id: string; nome: string } | null };
   const item = await acharItem(ctx.sb, kind, ref);
@@ -143,7 +146,7 @@ avisos_desligar_todos {}   (para de avisar de tudo, até religar)
 avisos_horario {tipo: TIPO_AVISO, hora: "HH:MM"|null}   (avisar só nessa hora; null = na hora em que acontece. Resumos: muda a hora do resumo)
 avisos_configurar {silencio_inicio?: "HH:MM", silencio_fim?: "HH:MM", resumo_manha?: "HH:MM", resumo_noite?: "HH:MM"}
 avisos_listar {quantos?: número}   (últimos avisos com o motivo de cada um, e as regras que o dono pediu)
-TIPO_AVISO = "tarefa_atrasada"|"lembrete_hora"|"prazo_projeto"|"resumo_manha"|"resumo_noite"`;
+TIPO_AVISO = "tarefa_atrasada"|"lembrete_hora"|"prazo_projeto"|"conta_vencer"|"resumo_manha"|"resumo_noite"`;
 
 const REGRAS = [
   '- AVISOS (o que o J.A.R.V.I.S. manda sozinho: PC e celular) = avisos_*. "não me avisa mais do resumo da noite" -> avisos_silenciar {tipo:"resumo_noite"}; "silencia a tarefa Ler até amanhã" -> {tipo:"tarefa_atrasada", ref:"Ler", quando:"amanha"}; "silencia os avisos de tarefa por 2 horas" -> {tipo:"tarefa_atrasada", por_horas:2}.',

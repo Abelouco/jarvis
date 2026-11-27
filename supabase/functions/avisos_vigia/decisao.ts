@@ -5,7 +5,7 @@ import { avaliarSensibilidade } from './sensivel.ts'; // cópia de ia_conversar/
 export type Prioridade = 'urgente' | 'normal' | 'baixa';
 export type Status = 'enviado' | 'segurado_silencio' | 'juntado' | 'silenciado' | 'agendado';
 export type Tipo =
-  | 'tarefa_atrasada' | 'lembrete_hora' | 'prazo_projeto' | 'resumo_manha' | 'resumo_noite';
+  | 'tarefa_atrasada' | 'lembrete_hora' | 'prazo_projeto' | 'conta_vencer' | 'resumo_manha' | 'resumo_noite';
 
 /** Um aviso que o vigia quer dar (ainda sem decisão). */
 export interface Candidato {
@@ -165,6 +165,32 @@ export function detectarPrazos(projetos: ProjetoBD[], agora: Date): Candidato[] 
       reason: `O projeto vence ${quando} e não está concluído.`,
       priority: 'normal',
       dedupe_key: `prazo_projeto:${pr.id}:${pr.due_date}:${falta}`,
+    });
+  }
+  return out;
+}
+
+/** Algo a pagar (conta fixa, boleto, parcela, fatura do cartão já somada) com a data de vencimento. */
+export interface ContaBD { entity_type: string; id: string; descricao: string; valor: number; vence: string }
+
+/**
+ * Conta a vencer: 2 dias antes (normal) e no dia (urgente, mas só a partir das 9:00, para não acordar ninguém).
+ * Valor já formatado em reais ("R$ 1.500,00"). O texto é de finanças: no push sai como conteúdo reservado.
+ */
+export function detectarContas(itens: (ContaBD & { valorTexto: string })[], agora: Date): Candidato[] {
+  const hoje = diaSP(agora);
+  const out: Candidato[] = [];
+  for (const c of itens) {
+    const falta = c.vence === hoje ? 0 : c.vence === somarDias(hoje, 2) ? 2 : null;
+    if (falta === null || (falta === 0 && minutoSP(agora) < 9 * 60)) continue;
+    const quando = falta === 0 ? 'hoje' : `em 2 dias (${rotuloDia(c.vence, hoje)})`;
+    out.push({
+      kind: 'conta_vencer', entity_type: c.entity_type, entity_id: c.id,
+      title: `${c.descricao}: vence ${falta === 0 ? 'hoje' : 'em 2 dias'}`,
+      body: `${c.valorTexto} a pagar ${quando}.`,
+      reason: `Está nas finanças como a pagar ${quando} e ainda não foi marcada como paga.`,
+      priority: falta === 0 ? 'urgente' : 'normal',
+      dedupe_key: `conta_vencer:${c.id}:${c.vence}:${falta}`,
     });
   }
   return out;
@@ -360,6 +386,7 @@ export function tituloGrupo(kind: string, n: number): string {
   switch (kind) {
     case 'tarefa_atrasada': return `${n} tarefas atrasaram`;
     case 'prazo_projeto': return `${n} prazos de projeto chegando`;
+    case 'conta_vencer': return `${n} contas a pagar chegando`;
     default: return `${n} avisos`;
   }
 }
@@ -369,9 +396,9 @@ export function tituloGrupo(kind: string, n: number): string {
  * O push passa pelos servidores da Expo e do Google: sensível (saúde, documento, finanças, senha...)
  * nunca vai no texto. O aviso completo continua no banco e no app.
  */
-export function textoPush(a: { title: string; body: string }): { title: string; body: string } {
+export function textoPush(a: { title: string; body: string; kind?: string }): { title: string; body: string } {
   const sens = (t: string) => avaliarSensibilidade(t).sensivel;
-  if (sens(`${a.title}\n${a.body}`) && (sens(a.title) || !a.body.includes('\n'))) {
+  if (a.kind === 'conta_vencer' || sens(`${a.title}\n${a.body}`) && (sens(a.title) || !a.body.includes('\n'))) {
     return { title: 'J.A.R.V.I.S.', body: 'Um aviso com conteúdo reservado. Abra o app para ver.' };
   }
   // corpo com várias linhas (resumo, grupo): só a linha sensível some

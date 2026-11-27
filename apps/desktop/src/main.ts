@@ -18,6 +18,7 @@ import { htmlProjetos, ligarProjetos } from './projetos';
 import { htmlHoje, ligarHoje } from './hoje';
 import { ligarAvisos } from './avisos';
 import { htmlAvisos, ligarAbaAvisos } from './abaAvisos';
+import { htmlFinancas, ligarAbaFinancas } from './abaFinancas';
 import { aplicarTema, ligarBotaoTema, temaSalvo } from './tema';
 import { criarAvaliacao } from './avaliacao';
 import { ligarBotaoGoogle } from './conexoes';
@@ -143,17 +144,19 @@ let tarefasVistas: Set<string> | null = null;
 // Ids já desenhados: só os novos entram com animação.
 let atividadesVistas = new Set<number>();
 
-type Aba = 'hoje' | 'conversa' | 'tarefas' | 'projetos' | 'lembretes' | 'avisos' | 'memoria';
+type Aba = 'hoje' | 'conversa' | 'tarefas' | 'projetos' | 'lembretes' | 'avisos' | 'financas' | 'memoria';
 const lerAba = (): Aba => {
   try {
     const salva = localStorage.getItem('jarvis.aba');
-    return salva === 'hoje' || salva === 'tarefas' || salva === 'projetos' || salva === 'lembretes' || salva === 'avisos' || salva === 'memoria'
+    return salva === 'hoje' || salva === 'tarefas' || salva === 'projetos' || salva === 'lembretes' || salva === 'avisos' || salva === 'financas' || salva === 'memoria'
       ? salva : 'conversa';
   } catch {
     return 'conversa';
   }
 };
 let aba: Aba = lerAba();
+/** A aba Finanças recarrega quando chega evento de fin_* (mudou pela conversa ou noutro aparelho). */
+let recarregarFinancas: (() => void) | null = null;
 let qtdMensagensDesenhadas = -1;
 // Só redesenha quando algo mudou de verdade (redesenhar tudo a cada evento fazia a tela piscar).
 let assinaturaChat = '';
@@ -219,6 +222,7 @@ async function montarPainel() {
               <button type="button" data-aba="projetos">Projetos</button>
               <button type="button" data-aba="lembretes">Lembretes</button>
               <button type="button" data-aba="avisos">Avisos</button>
+              <button type="button" data-aba="financas">Finanças</button>
               <button type="button" data-aba="memoria">Memória</button>
             </nav>
             <div class="vista" id="vista-hoje">${htmlHoje()}</div>
@@ -241,6 +245,7 @@ async function montarPainel() {
             </div>
             <div class="vista" id="vista-lembretes">${htmlLembretes()}</div>
             <div class="vista" id="vista-avisos">${htmlAvisos()}</div>
+            <div class="vista" id="vista-financas">${htmlFinancas()}</div>
             <div class="vista" id="vista-projetos">${htmlProjetos()}</div>
             <div class="vista" id="vista-tarefas">
             ${htmlFormTarefa()}
@@ -268,6 +273,8 @@ async function montarPainel() {
     pulsar: () => nucleo?.pulsar(0.8, 'criado'),
     irPara: (destino) => $<HTMLElement>('#abas').querySelector<HTMLButtonElement>(`button[data-aba="${destino}"]`)?.click(),
   });
+  const abaFinancas = ligarAbaFinancas($<HTMLDivElement>('#vista-financas'), { pulsar: () => nucleo?.pulsar(0.8, 'criado') });
+  recarregarFinancas = () => { if (aba === 'financas') void abaFinancas.recarregar(); };
   const abaAvisos = ligarAbaAvisos($<HTMLDivElement>('#vista-avisos'), {
     selo: (n) => {
       const b = $<HTMLElement>('#abas').querySelector<HTMLButtonElement>('button[data-aba="avisos"]');
@@ -404,9 +411,11 @@ async function montarPainel() {
     $<HTMLDivElement>('#vista-tarefas').hidden = aba !== 'tarefas';
     $<HTMLDivElement>('#vista-lembretes').hidden = aba !== 'lembretes';
     $<HTMLDivElement>('#vista-avisos').hidden = aba !== 'avisos';
+    $<HTMLDivElement>('#vista-financas').hidden = aba !== 'financas';
     $<HTMLDivElement>('#vista-projetos').hidden = aba !== 'projetos';
     $<HTMLDivElement>('#vista-memoria').hidden = aba !== 'memoria';
     if (aba === 'avisos') abaAvisos.recarregar();
+    if (aba === 'financas') void abaFinancas.recarregar();
     if (aba === 'conversa') campoFala.focus();
   };
   $<HTMLElement>('#abas').onclick = (e) => {
@@ -873,6 +882,7 @@ function estadoDoNucleo() {
 }
 jarvis.aoEvento((e) => {
   if (e.entity_type === 'assistant_lessons') void atualizarLicoes();
+  if (e.entity_type?.startsWith('fin_')) recarregarFinancas?.();
   // Pergunta feita por voz que vai precisar de pesquisa: avisa antes de sumir pesquisando.
   if (e.kind === 'searching' && aguardandoVoz && !falandoAgora) {
     falandoAgora = true;
