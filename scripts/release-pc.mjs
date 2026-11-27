@@ -4,8 +4,9 @@
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const versao = process.argv[2];
-if (!/^\d+\.\d+\.\d+$/.test(versao ?? '')) {
+// Aceita "0.1.26" ou "v0.1.26".
+const versao = (process.argv[2] ?? '').replace(/^v/i, '');
+if (!/^\d+\.\d+\.\d+$/.test(versao)) {
   console.error('Uso: pnpm release:pc X.Y.Z');
   process.exit(1);
 }
