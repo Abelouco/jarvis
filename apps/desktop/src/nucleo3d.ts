@@ -12,6 +12,7 @@ export interface NucleoMontado {
 /** Monta o núcleo 3D dentro de `caixa` (ocupa o tamanho dela) e anima até destruir. */
 export function montarNucleo(caixa: HTMLElement, densidade = 1, distancia?: number): NucleoMontado {
   const canvas = document.createElement('canvas');
+  canvas.className = 'nucleo-tela';
   canvas.style.cssText = 'width:100%;height:100%;display:block';
   caixa.appendChild(canvas);
 

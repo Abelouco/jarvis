@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>J.A.R.V.I.S.</title>
+    <script>
+      // Tema antes da primeira pintura (o tema.ts assume depois).
+      (function () {
+        var t = localStorage.getItem('jarvis.tema');
+        var claro = t === 'claro' || (t === 'windows' && matchMedia('(prefers-color-scheme: light)').matches);
+        document.documentElement.dataset.tema = claro ? 'claro' : 'escuro';
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

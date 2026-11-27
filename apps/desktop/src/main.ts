@@ -18,8 +18,10 @@ import { htmlProjetos, ligarProjetos } from './projetos';
 import { htmlHoje, ligarHoje } from './hoje';
 import { ligarAvisos } from './avisos';
 import { htmlAvisos, ligarAbaAvisos } from './abaAvisos';
+import { aplicarTema, ligarBotaoTema, temaSalvo } from './tema';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
+aplicarTema(temaSalvo());
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const $ = <T extends HTMLElement>(sel: string) => app.querySelector<T>(sel)!;
@@ -176,6 +178,7 @@ async function montarPainel() {
         <span class="nome" data-tauri-drag-region>J.A.R.V.I.S.</span>
         <span class="espaco" data-tauri-drag-region></span>
         <span class="estado" id="estado"><i></i><span></span></span>
+        <button class="conta tema" id="tema" type="button"></button>
         <button class="conta" id="sair" title="${esc(email)}">Sair</button>
       </header>
       <div class="corpo">
@@ -233,6 +236,7 @@ async function montarPainel() {
       </div>
     </section>`;
 
+  ligarBotaoTema($<HTMLButtonElement>('#tema'));
   $<HTMLButtonElement>('#sair').onclick = () => void jarvis.auth.sair();
 
   const formTarefa = ligarFormTarefa($<HTMLFormElement>('#nova'));
