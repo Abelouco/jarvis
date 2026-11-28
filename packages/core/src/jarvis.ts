@@ -1080,11 +1080,33 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
       return data as { rating: Avaliacao | null; licao?: string; frase?: string };
     },
     /** Lições ativas (o que ele aprendeu). */
-    async licoes(): Promise<{ id: string; lesson: string; kind: 'evitar' | 'manter'; scope: string; hits: number }[]> {
-      const { data, error } = await sb.from('assistant_lessons').select('id, lesson, kind, scope, hits')
+    async licoes(): Promise<{
+      id: string; lesson: string; kind: 'evitar' | 'manter'; scope: string;
+      hits: number; created_at: string; sensitive: boolean;
+    }[]> {
+      const { data, error } = await sb.from('assistant_lessons')
+        .select('id, lesson, kind, scope, hits, created_at, sensitive')
         .eq('active', true).is('deleted_at', null).order('created_at');
       if (error) throw new Error(error.message);
       return data ?? [];
+    },
+    /**
+     * Esquece uma lição (exclusão suave). O recibo é o mesmo de `licoes_esquecer`:
+     * "desfaz" no chat restaura a lição por 24 h.
+     */
+    async esquecerLicao(id: string) {
+      const campos = 'id, lesson, kind, scope, active, hits, sensitive, created_at, source_feedback_id, deleted_at';
+      const { data: antes, error: erroAntes } = await sb.from('assistant_lessons').select(campos)
+        .eq('id', id).is('deleted_at', null).maybeSingle();
+      if (erroAntes) throw new Error(erroAntes.message);
+      if (!antes) return;
+      const { data: depois, error } = await sb.from('assistant_lessons')
+        .update({ deleted_at: new Date().toISOString() }).eq('id', id).select(campos).single();
+      if (error) throw new Error(error.message);
+      const { error: erroRecibo } = await sb.from('undo_receipts').insert({
+        action: 'licoes_esquecer', entity_type: 'assistant_lessons', entity_id: id, before: antes, after: depois,
+      });
+      if (erroRecibo) console.warn('lições: recibo não gravado', erroRecibo.message);
     },
   };
 

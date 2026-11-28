@@ -163,9 +163,13 @@ let qtdMensagensDesenhadas = -1;
 let assinaturaChat = '';
 /** Nós das lições (o que ele aprendeu) no núcleo, junto com as memórias. */
 let nosLicoes: { id: string; importancia: number }[] = [];
+/** Lições ativas para a aba Memória (o núcleo usa só o id e o brilho). */
+let licoesAba: Awaited<ReturnType<typeof jarvis.feedback.licoes>> = [];
+let licaoConfirmando: string | null = null;
 async function atualizarLicoes() {
   try {
     const ls = await jarvis.feedback.licoes();
+    licoesAba = ls;
     nosLicoes = ls.map((l) => ({ id: l.id, importancia: Math.min(10, 4 + l.hits) }));
     void desenharMemorias();
   } catch {
@@ -240,8 +244,7 @@ async function montarPainel() {
               </div>
             </div>
             <div class="vista" id="vista-memoria">
-              <p class="memoria-intro">O que o J.A.R.V.I.S. aprendeu sobre você nas conversas. Ele usa isso para responder melhor.
-                Peça no chat para lembrar ou esquecer algo, ou esqueça por aqui.</p>
+              <p class="memoria-intro">O que o J.A.R.V.I.S. aprendeu sobre você e com as suas avaliações. Cada item aqui é um ponto ciano no núcleo. Peça no chat para lembrar ou esquecer algo, ou esqueça por aqui.</p>
               <div id="memorias"></div>
             </div>
             <div class="vista" id="vista-lembretes">${htmlLembretes()}</div>
@@ -388,7 +391,23 @@ async function montarPainel() {
   };
   // Esquecer pede confirmação: o primeiro clique arma, o segundo esquece.
   $<HTMLDivElement>('#memorias').onclick = (e) => {
-    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-esquecer]');
+    const alvo = e.target as HTMLElement;
+    const bLicao = alvo.closest<HTMLButtonElement>('[data-esquecer-licao]');
+    if (bLicao) {
+      const id = bLicao.dataset.esquecerLicao!;
+      if (licaoConfirmando === id) {
+        licaoConfirmando = null;
+        assinaturaMemoria = '';
+        void jarvis.feedback.esquecerLicao(id).then(() => atualizarLicoes()).catch(() => desenharMemorias());
+      } else {
+        licaoConfirmando = id;
+        memoriaConfirmando = null;
+        assinaturaMemoria = '';
+        void desenharMemorias();
+      }
+      return;
+    }
+    const b = alvo.closest<HTMLButtonElement>('[data-esquecer]');
     if (!b) return;
     const id = b.dataset.esquecer!;
     if (memoriaConfirmando === id) {
@@ -397,6 +416,7 @@ async function montarPainel() {
       void jarvis.memorias.esquecer(id);
     } else {
       memoriaConfirmando = id;
+      licaoConfirmando = null;
       assinaturaMemoria = '';
       void desenharMemorias();
     }
@@ -583,24 +603,48 @@ function itemMemoria(m: Memory) {
     </li>`;
 }
 
+function itemLicao(l: (typeof licoesAba)[number]) {
+  const confirmando = licaoConfirmando === l.id;
+  const selo = l.kind === 'evitar' ? 'evitar' : 'manter';
+  const imp = Math.min(10, 4 + l.hits);
+  return `
+    <li class="memoria" data-imp="${imp >= 8 ? 'alta' : imp >= 5 ? 'media' : 'baixa'}">
+      <div class="memoria-corpo">
+        <div class="memoria-titulo">${esc(l.lesson)}<span class="memoria-selo">${esc(selo)}</span>${l.sensitive ? '<span class="memoria-sens" title="Sensível: nunca vai para o Gemini">sensível</span>' : ''}</div>
+        <div class="memoria-quando">${quandoCurto(l.created_at)}</div>
+      </div>
+      <button class="memoria-esquecer${confirmando ? ' confirmar' : ''}" data-esquecer-licao="${esc(l.id)}" title="Esquecer">${confirmando ? 'Esquecer?' : '×'}</button>
+    </li>`;
+}
+
 async function desenharMemorias() {
   const lista = await jarvis.memorias.listar();
   if (tela !== 'painel') return;
   // Cada memória real é um nó do cérebro.
   // As lições do like/deslike também são nós (brilham mais conforme são usadas).
   nucleo?.definirMemorias([...lista.map((m) => ({ id: m.id, importancia: m.importance })), ...nosLicoes]);
-  const assinatura = `${memoriaConfirmando}|` + lista.map((m) => `${m.id}:${m.updated_at}`).join(',');
+  const assinatura = `${memoriaConfirmando}|${licaoConfirmando}|`
+    + lista.map((m) => `${m.id}:${m.updated_at}`).join(',')
+    + '|' + licoesAba.map((l) => `${l.id}:${l.created_at}:${l.kind}:${l.sensitive ? 1 : 0}:${l.lesson}`).join(',');
   if (assinatura === assinaturaMemoria) return;
   assinaturaMemoria = assinatura;
   const grupos = new Map<string, Memory[]>();
   for (const m of lista) grupos.set(m.kind, [...(grupos.get(m.kind) ?? []), m]);
-  $<HTMLDivElement>('#memorias').innerHTML = lista.length
+  const memorias = lista.length
     ? [...grupos.entries()].map(([tipo, itens]) => `
       <section class="secao">
         <h3>${NOME_TIPO[tipo] ?? tipo} <b>${itens.length}</b></h3>
         <ul class="lista">${itens.map(itemMemoria).join('')}</ul>
       </section>`).join('')
     : `<div class="vazio"><strong>Ainda não sei nada sobre você.</strong>Conte algo no chat, como seu nome, sua rotina ou do que você gosta.</div>`;
+  const licoes = licoesAba.length
+    ? `
+      <section class="secao">
+        <h3>Lições (o que aprendi com seus likes e deslikes) <b>${licoesAba.length}</b></h3>
+        <ul class="lista">${licoesAba.map(itemLicao).join('')}</ul>
+      </section>`
+    : '';
+  $<HTMLDivElement>('#memorias').innerHTML = memorias + licoes;
 }
 
 /** Fontes da pesquisa na web, embaixo da resposta. */

@@ -513,6 +513,7 @@ input { font: inherit; }
 .memoria-texto { margin-top: 2px; color: var(--texto-2); font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere; }
 .memoria-quando { margin-top: 4px; font-family: var(--mono); font-size: 10.5px; color: var(--apagado); }
 .memoria-sens { margin-left: 8px; padding: 1px 7px; border-radius: 999px; font-family: var(--mono); font-size: 10px; font-weight: 400; letter-spacing: 0.06em; text-transform: uppercase; color: var(--media); border: 1px solid rgba(255, 197, 107, 0.35); vertical-align: 1px; }
+.memoria-selo { margin-left: 8px; padding: 1px 7px; border-radius: 999px; font-family: var(--mono); font-size: 10px; font-weight: 400; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ciano); border: 1px solid rgba(var(--rgb-ciano), 0.45); vertical-align: 1px; }
 .memoria-esquecer { flex-shrink: 0; display: grid; place-items: center; min-width: 34px; height: 34px; border: 0; background: none; color: var(--apagado); font-size: 24px; line-height: 1; padding: 0 6px; opacity: 0; transition: 0.15s; border-radius: 9px; }
 .memoria-esquecer:hover { background: rgba(255, 107, 129, 0.12); }
 .memoria:hover .memoria-esquecer, .memoria-esquecer.confirmar { opacity: 1; }
