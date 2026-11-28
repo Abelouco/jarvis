@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { avaliarSensibilidade, normalizar } from './sensivel.ts';
 import { escolherRota } from './rota.ts';
+import { montarPedidoTela } from '../ia_tela/pedido.ts';
 
 const sens = (t: string) => avaliarSensibilidade(t);
 
@@ -584,4 +585,46 @@ test('comando de leitura no PC não pede confirmação', () => {
   assert.equal(comandoSeguro('Get-Content \\\\servidor\\pasta\\x.txt'), false);
   assert.equal(comandoSeguro('Test-Path //servidor/pasta'), false);
   assert.equal(comandoSeguro(''), false);
+});
+
+test('tela: OCR vazio não gera o bloco de citação', () => {
+  const vazio = montarPedidoTela({
+    produto: 'Medieval Dynasty',
+    processo: 'medievaldynasty-win64-shipping.exe',
+    titulo: '',
+    texto_tela: '',
+    pergunta: 'o que tem na minha tela?',
+  });
+  assert.equal(vazio.includes('"""'), false);
+  assert.equal(
+    vazio,
+    [
+      'Programa: Medieval Dynasty (medievaldynasty-win64-shipping.exe). Janela: .',
+      'Pergunta do dono: o que tem na minha tela?',
+    ].join('\n'),
+  );
+  const branco = montarPedidoTela({
+    produto: 'Medieval Dynasty',
+    processo: 'x.exe',
+    titulo: 'Mapa',
+    texto_tela: '  \n  ',
+    pergunta: '',
+  });
+  assert.equal(branco.includes('"""'), false);
+});
+
+test('tela: OCR de 5000 caracteres sai cortado em 3000', () => {
+  const texto = montarPedidoTela({
+    produto: 'Medieval Dynasty',
+    processo: 'x.exe',
+    titulo: 'Mapa',
+    texto_tela: 'á'.repeat(5000),
+    pergunta: 'o que tem?',
+  });
+  const inicio = texto.indexOf('"""\n');
+  const fim = texto.lastIndexOf('\n"""');
+  assert.ok(inicio >= 0 && fim > inicio);
+  const corpo = texto.slice(inicio + 4, fim);
+  assert.equal(Array.from(corpo).length, 3000);
+  assert.equal(corpo, 'á'.repeat(3000));
 });
