@@ -177,7 +177,9 @@ async function plano(cmd: PcComando, historico: { passo: Passo; ok: boolean; err
     altura_tela: number;
   }>('pc_arvore');
   let print: string | undefined;
-  if ((arvore.elementos?.length ?? 0) < 5) print = await invoke<string>('pc_print');
+  const arvoreCurta = (arvore.elementos?.length ?? 0) < 15;
+  const passoFalhou = historico.some((item) => item.ok === false);
+  if (arvoreCurta || passoFalhou) print = await invoke<string>('pc_print');
   const r = await fetch(`${SUPABASE_URL}/functions/v1/ia_controlar`, {
     method: 'POST',
     headers: {

@@ -5,9 +5,8 @@
 // Secret: GROQ_API_KEY (o mesmo de `ia_conversar`).
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { validarPlano, type Passo } from './regras.ts';
+import { chamarGroqVisao, MODELO_TEXTO_CONTROLE } from '../ia_conversar/modelos_groq.ts';
 
-const MODELO_TEXTO = 'openai/gpt-oss-120b';
-const MODELO_VISAO = 'meta-llama/llama-4-scout-17b-16e-instruct';
 const MAX_IMAGEM = 2_000_000;
 
 const SISTEMA = [
@@ -38,6 +37,15 @@ function textoDaResposta(corpo: unknown): string {
     return escolha.map((p) => (typeof p === 'string' ? p : (p as { text?: string })?.text ?? '')).join('').trim();
   }
   return '';
+}
+
+/** Visão com JSON. Se o modelo recusar response_format, tenta uma vez sem o campo. */
+async function pedirVisao(corpo: Record<string, unknown>): Promise<Response> {
+  const r = await chamarGroqVisao({ ...corpo, response_format: { type: 'json_object' } });
+  if (r.status !== 400) return r;
+  const msg = await r.clone().text();
+  if (!msg.includes('response_format')) return r;
+  return chamarGroqVisao(corpo);
 }
 
 function jsonDoModelo(texto: string): unknown {
@@ -139,33 +147,45 @@ Deno.serve(async (req) => {
     ]
     : pedido;
 
+  const corpoGroq: Record<string, unknown> = {
+    temperature: 0.1,
+    max_tokens: 700,
+    messages: [
+      { role: 'system', content: SISTEMA },
+      { role: 'user', content: conteudo },
+    ],
+  };
+
   let r: Response;
   try {
-    r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(25_000),
-      body: JSON.stringify({
-        model: print ? MODELO_VISAO : MODELO_TEXTO,
-        temperature: 0.1,
-        max_tokens: 700,
-        ...(print ? {} : { response_format: { type: 'json_object' } }),
-        messages: [
-          { role: 'system', content: SISTEMA },
-          { role: 'user', content: conteudo },
-        ],
-      }),
-    });
+    r = print
+      ? await pedirVisao(corpoGroq)
+      : await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(25_000),
+        body: JSON.stringify({
+          ...corpoGroq,
+          model: MODELO_TEXTO_CONTROLE,
+          response_format: { type: 'json_object' },
+        }),
+      });
   } catch (e) {
     console.warn('ia_controlar: groq não respondeu', e instanceof Error ? e.message : e);
     return responder(502, { erro: 'O plano não chegou a tempo.' });
   }
-  if (!r.ok) {
-    console.warn('ia_controlar: groq', r.status);
-    return responder(502, { erro: 'Não consegui decidir o próximo passo.' });
+  if (r.status !== 200) {
+    const bruto = await r.text().catch(() => '');
+    const trecho = /data:image|base64,/i.test(bruto.slice(0, 300)) ? '[corpo omitido]' : bruto.slice(0, 300);
+    console.error('ia_controlar: groq', r.status, trecho);
+    return responder(502, { erro: 'Não consegui decidir os passos (Groq ' + r.status + ').' });
   }
   const json = await r.json().catch(() => null);
   const plano = validarPlano(jsonDoModelo(textoDaResposta(json)), { largura, altura });
+  const unico = plano.passos[0];
+  if (plano.passos.length === 1 && unico?.acao === 'pedir_dono' && unico.motivo === 'Não entendi o que fazer na tela.') {
+    console.warn('ia_controlar: plano vazio', plano.pensamento.slice(0, 200));
+  }
   console.log('ia_controlar: passos', plano.passos.length);
 
   if (plano.perigo && corpo.liberado !== true) {

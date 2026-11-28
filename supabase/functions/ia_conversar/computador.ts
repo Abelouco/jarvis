@@ -198,6 +198,7 @@ computador_status {}`,
     '- "solta o PC" / "solta o computador" -> computador_soltar.',
     '- Com o modo ligado, "faz X no PC" -> computador_fazer {objetivo}. Sem o modo, chame mesmo assim: a ferramenta avisa que está desligado e não cria nada.',
     '- "escreva X no bloco de notas" / "digita X" / "clica em Y" -> computador_fazer {objetivo}. Se o modo controle estiver desligado, use computador_assumir {minutos:10} E computador_fazer {objetivo} na mesma resposta (o dono pediu a ação; não pergunte).',
+    '- computador_fazer: objetivo leva o pedido inteiro, com o programa e o texto exato (ex.: "Abra meu bloco de notas e escreva \'teste\'" -> computador_abrir {alvo:"bloco de notas"} E computador_fazer {objetivo:"No Bloco de notas aberto, clicar na área de texto e digitar exatamente: teste"}).',
     '- "roda o comando ... no PowerShell" -> computador_comando {comando, motivo}. O comando vai inteiro. Sempre pede confirmação, com ou sem modo controle.',
     '- "o que você está fazendo no PC?" -> computador_status.',
     '- "desfaz" NÃO desfaz ação no PC (abrir, mídia, achar arquivo, ver a tela, controle, comando). Diga isso ao dono. Não chame jarvis_desfazer para voltar atrás no computador.',
@@ -276,6 +277,7 @@ computador_status {}`,
     async computador_fazer(ctx, a) {
       const objetivo = String(a.objetivo ?? '').trim().slice(0, 500);
       if (!objetivo) return erro('computador_fazer', 'O que devo fazer no PC?');
+      if (objetivo.length < 12) return erro('computador_fazer', 'Diga o que fazer e em qual programa, Senhor.');
       const ativa = await sessaoControleAtiva(ctx.sb);
       if (!ativa) {
         return ok(

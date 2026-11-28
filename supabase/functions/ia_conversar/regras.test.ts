@@ -543,6 +543,25 @@ test('computador: ação na tela entra no detector', () => {
   assert.equal(pareceComputador('você acha que chove?'), false);
 });
 
+import { MODELOS_VISAO_BASE, ordenarModelos } from './modelos_groq.ts';
+
+test('visão: sem secret a lista começa pelo modelo conferido; com secret, ele vai na frente sem repetir', () => {
+  assert.equal(MODELOS_VISAO_BASE[0], 'qwen/qwen3.8-27b');
+  assert.deepEqual(ordenarModelos('', MODELOS_VISAO_BASE), [...MODELOS_VISAO_BASE]);
+  assert.deepEqual(ordenarModelos('   ', MODELOS_VISAO_BASE), [...MODELOS_VISAO_BASE]);
+  assert.deepEqual(
+    ordenarModelos('groq/modelo-extra', MODELOS_VISAO_BASE),
+    ['groq/modelo-extra', ...MODELOS_VISAO_BASE],
+  );
+  assert.deepEqual(ordenarModelos(MODELOS_VISAO_BASE[0], MODELOS_VISAO_BASE), [...MODELOS_VISAO_BASE]);
+  const reserva = MODELOS_VISAO_BASE[1];
+  assert.ok(reserva);
+  assert.deepEqual(
+    ordenarModelos(`  ${reserva}  `, MODELOS_VISAO_BASE),
+    [reserva, ...MODELOS_VISAO_BASE.filter((m) => m !== reserva)],
+  );
+});
+
 test('comando de leitura no PC não pede confirmação', () => {
   assert.equal(comandoSeguro('Get-Date'), true);
   assert.equal(comandoSeguro('get-process | sort-object CPU | select-object -first 5'), true);
