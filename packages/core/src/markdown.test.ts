@@ -83,6 +83,13 @@ test('citação', () => {
   assert.equal(b[0]!.t, 'citacao');
 });
 
+test('linha só com imagem https vira bloco; outro esquema continua texto', () => {
+  const b = lerMarkdown('![mapa](https://x.com/a.jpg)');
+  assert.deepEqual(b[0], { t: 'imagem', url: 'https://x.com/a.jpg', alt: 'mapa' });
+  const ruim = lerMarkdown('![x](javascript:alert(1))');
+  assert.equal(ruim[0]!.t, 'par');
+});
+
 // ---------- chat: resposta que chegou depois do "Parar" ----------
 import { respostasDepoisDoParar } from './chatRegras.ts';
 

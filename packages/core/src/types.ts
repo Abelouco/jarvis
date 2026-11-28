@@ -67,6 +67,12 @@ export interface Fonte {
   url: string;
 }
 
+/** Imagem da pesquisa, guardada no mesmo JSON de `sources`. */
+export interface Imagem {
+  url: string;
+  descricao: string;
+}
+
 export interface Message extends Base {
   conversation_id: string;
   role: 'user' | 'assistant';
@@ -77,6 +83,8 @@ export interface Message extends Base {
   sensitive: boolean;
   /** Fontes da pesquisa na web (só nas respostas que pesquisaram). */
   sources: Fonte[] | null;
+  /** Imagens da mesma pesquisa. No servidor ficam no JSON de `sources`. */
+  imagens?: Imagem[] | null;
   /** Como foi respondida; 'interrompido' = o dono apertou "Parar". */
   route?: 'rapido' | 'inteligente' | 'pesquisa' | 'acao' | 'interrompido' | null;
 }

@@ -91,17 +91,69 @@ function bloco(b: Bloco): string {
         + `<button type="button" class="md-btn" data-expandir="${n}" data-titulo="${esc(b.titulo)}" title="Expandir">${ICONE_EXPANDIR}</button>`
         + `</span></div><div class="md-texto-corpo">${b.texto.split(/\n{2,}/).map((p) => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('')}</div></div>`;
     }
+    case 'imagem':
+      return galeria([{ url: b.url, descricao: b.alt }]);
   }
 }
 
-/** HTML de uma resposta da IA. `ultima`: só a última resposta tem as opções clicáveis. */
-export function respostaHtml(texto: string, ultima = false, fontes: { titulo: string; url: string }[] = []): string {
+export interface ImagemChat {
+  url: string;
+  descricao: string;
+}
+
+/** `<img>` só depois do `esc`, e só com https. */
+function tagImagem(url: string, alt: string): string {
+  if (!url.startsWith('https://')) return '';
+  return `<img class="md-img" src="${esc(url)}" alt="${esc(alt)}" loading="lazy" referrerpolicy="no-referrer" decoding="async">`;
+}
+
+function galeria(imagens: ImagemChat[]): string {
+  const tags = imagens.slice(0, 4).map((img) => tagImagem(img.url, img.descricao)).filter(Boolean);
+  return tags.length ? `<div class="imgs">${tags.join('')}</div>` : '';
+}
+
+/** HTML de uma resposta da IA. `ultima`: só a última resposta tem as opções clicáveis. A galeria fica antes das fontes. */
+export function respostaHtml(
+  texto: string,
+  ultima = false,
+  fontes: { titulo: string; url: string }[] = [],
+  imagens: ImagemChat[] = [],
+): string {
   opcoesAtivas = ultima;
   fontesAtuais = fontes;
   const blocos = lerMarkdown(texto);
-  // O cartão de opções sempre vai no fim da resposta.
-  const ordenados = [...blocos.filter((b) => b.t !== 'opcoes'), ...blocos.filter((b) => b.t === 'opcoes')];
-  return ordenados.map(bloco).join('');
+  // O cartão de opções sempre vai no fim. A galeria da pesquisa fica antes das fontes.
+  const corpo = blocos.filter((b) => b.t !== 'opcoes');
+  const opcoes = blocos.filter((b) => b.t === 'opcoes');
+  return corpo.map(bloco).join('') + galeria(imagens) + opcoes.map(bloco).join('');
+}
+
+/** Imagem grande por cima da tela. Esc ou clique fora fecha. Não abre o navegador. */
+export function abrirImagem(url: string, alt: string) {
+  if (!url.startsWith('https://')) return;
+  const fundo = document.createElement('div');
+  fundo.className = 'md-sobreposto';
+  const janela = document.createElement('div');
+  janela.className = 'md-janela md-visor';
+  janela.setAttribute('role', 'dialog');
+  janela.setAttribute('aria-label', alt || 'Imagem');
+  const img = document.createElement('img');
+  img.src = url;
+  img.alt = alt;
+  img.referrerPolicy = 'no-referrer';
+  img.decoding = 'async';
+  janela.appendChild(img);
+  fundo.appendChild(janela);
+  const fechar = () => {
+    fundo.remove();
+    removeEventListener('keydown', tecla);
+  };
+  const tecla = (e: KeyboardEvent) => e.key === 'Escape' && fechar();
+  fundo.addEventListener('click', (e) => {
+    if (e.target === fundo) fechar();
+  });
+  addEventListener('keydown', tecla);
+  document.body.appendChild(fundo);
 }
 
 /** Pergunta antes de rodar um comando (mostra o comando inteiro). */

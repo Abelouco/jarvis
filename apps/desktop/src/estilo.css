@@ -543,6 +543,10 @@ input { font: inherit; }
 .md-opcoes.passada .md-opcao { cursor: default; }
 
 /* ---------- fontes da pesquisa ---------- */
+.imgs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 4px; }
+.imgs img { width: 100%; height: 180px; object-fit: cover; border-radius: 12px; border: 1px solid var(--borda); background: rgba(var(--rgb-recesso), 0.32); cursor: zoom-in; }
+.md-visor { width: min(920px, 100%); padding: 10px; background: rgba(var(--rgb-painel), 0.94); }
+.md-visor img { display: block; width: 100%; max-height: min(78vh, 820px); object-fit: contain; border-radius: 12px; background: rgba(var(--rgb-recesso), 0.45); }
 .md-fontes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--borda); }
 .md-fontes-rotulo { margin-right: 4px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--apagado); }
 .md-fonte { display: inline-flex; align-items: center; gap: 7px; max-width: 260px; height: 26px; padding: 0 10px 0 4px; border: 1px solid var(--borda); border-radius: 999px; background: rgba(var(--rgb-recesso), 0.25); color: var(--texto-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: 0.15s; }

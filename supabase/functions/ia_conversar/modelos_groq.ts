@@ -43,19 +43,39 @@ function modeloIndisponivel(status: number, mensagem: string): boolean {
   return m.includes('model');
 }
 
-/** POST no Groq, trocando de modelo de visão quando o atual não existe. Devolve a última resposta se todos falharem. */
-export async function chamarGroqVisao(corpo: Record<string, unknown>): Promise<Response> {
+async function postGroq(chave: string, corpo: Record<string, unknown>): Promise<Response> {
+  return fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(25_000),
+    body: JSON.stringify(corpo),
+  });
+}
+
+/**
+ * POST no Groq, trocando de modelo de visão quando o atual não existe.
+ * Com `semRaciocinio`, manda `reasoning_effort: 'none'`. Se o Groq devolver 400
+ * citando `reasoning`, repete uma vez sem o campo. Devolve a última resposta se todos falharem.
+ */
+export async function chamarGroqVisao(
+  corpo: Record<string, unknown>,
+  opcoes?: { semRaciocinio?: boolean },
+): Promise<Response> {
   const chave = Deno.env.get('GROQ_API_KEY') ?? '';
   const modelos = modelosVisao();
+  const semRaciocinio = opcoes?.semRaciocinio === true;
   let ultima: Response | null = null;
   for (const model of modelos) {
-    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(25_000),
-      body: JSON.stringify({ ...corpo, model }),
-    });
+    const pedido = { ...corpo, model, ...(semRaciocinio ? { reasoning_effort: 'none' } : {}) };
+    let r = await postGroq(chave, pedido);
     ultima = r;
+    if (semRaciocinio && r.status === 400) {
+      const mensagem = await mensagemGroq(r);
+      if (/reasoning/i.test(mensagem)) {
+        r = await postGroq(chave, { ...corpo, model });
+        ultima = r;
+      }
+    }
     if (r.status === 404 || r.status === 400) {
       const mensagem = await mensagemGroq(r);
       if (modeloIndisponivel(r.status, mensagem)) {

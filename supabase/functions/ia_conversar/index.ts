@@ -12,7 +12,7 @@ import {
   conversar, pesquisarGemini, pesquisarGroq, temChave, type Fonte, type MensagemIA, type NomeProvedor,
 } from './provedores.ts';
 import { aprender, blocoMemoria, lembrar } from './memoria.ts';
-import { blocoTrechos, buscar, fontesDe, temBusca, type PesquisaAnterior, type Trecho } from './busca.ts';
+import { blocoTrechos, buscar, fontesDe, lerResultados, temBusca, type Imagem, type PesquisaAnterior, type Trecho } from './busca.ts';
 import { pronunciasEnsinadas, resumoFalado } from './fala.ts';
 import './lembretes.ts'; // registra as ferramentas de lembretes no planejador
 import './projetos.ts'; // idem, projetos
@@ -67,6 +67,7 @@ function promptSistema(rota: Rota, pesquisando = false, nosDeMemoria = 0, app = 
         '- Se os resultados não responderem a pergunta, diga claramente que não encontrou nas fontes, em vez de chutar, e sugira como o dono pode verificar.',
         '- Para jogos e produtos, use os nomes exatos de itens, menus e materiais como aparecem nas fontes (e o nome em inglês entre parênteses quando o jogo for em inglês).',
         '- Não escreva lista de links nem seção de fontes: o app mostra as fontes embaixo da resposta.',
+        '- Se o dono pediu imagem, mapa ou foto, diga em uma frase o que as imagens abaixo mostram; elas aparecem sozinhas na tela. Nunca escreva URL de imagem nem bloco de código com link.',
       ]
       : rota === 'pesquisa'
         ? ['', 'Não foi possível pesquisar na web agora. Sobre fatos específicos, diga claramente o que não tem certeza em vez de afirmar.']
@@ -346,7 +347,7 @@ Deno.serve(async (req) => {
   const inicio = Date.now();
   const erros: string[] = [];
   let menorEspera = 0;
-  let resposta: { provedor: NomeProvedor; texto: string; modelo: string; fontes?: Fonte[] } | null = null;
+  let resposta: { provedor: NomeProvedor; texto: string; modelo: string; fontes?: Fonte[]; imagens?: Imagem[] } | null = null;
   let rotaUsada: Rota = rota;
   // O aviso "não consegui pesquisar" só sai quando a busca foi tentada de verdade e falhou.
   let pesquisaFalhou = false;
@@ -366,13 +367,13 @@ Deno.serve(async (req) => {
     const carregar = async (id: string) => {
       const { data } = await sb.from('web_searches').select('results, reused').eq('id', id).maybeSingle();
       if (data) await sb.from('web_searches').update({ reused: (data.reused ?? 0) + 1 }).eq('id', id);
-      return (data?.results as Trecho[] | undefined) ?? null;
+      return lerResultados(data?.results);
     };
-    const { trechos, creditos, consultas, reusada } = await buscar(conversa, (anteriores ?? []) as PesquisaAnterior[], carregar)
+    const { trechos, imagens, creditos, consultas, reusada } = await buscar(conversa, (anteriores ?? []) as PesquisaAnterior[], carregar)
       .catch((e) => {
         erros.push(`busca: ${e instanceof Error ? e.message : e}`);
         pesquisaFalhou = true;
-        return { trechos: [] as Trecho[], creditos: 0, consultas: [] as string[], reusada: null };
+        return { trechos: [] as Trecho[], imagens: [] as Imagem[], creditos: 0, consultas: [] as string[], reusada: null };
       });
     if (creditos) await registrarUso(sb, userId, 'tavily', creditos, creditos);
     if (reusada) console.log('ia_conversar: pesquisa reaproveitada', reusada);
@@ -385,12 +386,13 @@ Deno.serve(async (req) => {
         ], { temperatura: 0.2, maxTokens: 1800 });
         if (r.ok) {
           const { texto: comCitacoes, fontes } = fontesCitadas(r.texto, fontesDe(trechos));
-          resposta = { provedor, texto: comCitacoes, modelo: r.modelo, fontes };
+          // As imagens não entram no prompt: o modelo inventa URL. O app desenha as que o Tavily devolveu.
+          resposta = { provedor, texto: comCitacoes, modelo: r.modelo, fontes, imagens };
           await registrarUso(sb, userId, provedor, r.tokens);
           // Guarda a pesquisa nova só se ela serviu (a resposta citou as fontes).
           if (!reusada && /\[\d{1,2}\]/.test(comCitacoes)) {
             const { error } = await sb.from('web_searches').insert({
-              question: texto.slice(0, 1000), queries: consultas.join('\n'), results: trechos,
+              question: texto.slice(0, 1000), queries: consultas.join('\n'), results: { trechos, imagens },
             });
             if (error) console.warn('ia_conversar: não guardei a pesquisa', error.message);
           }
@@ -487,7 +489,9 @@ Deno.serve(async (req) => {
       provider: resposta.provedor, model: resposta.modelo, latency_ms: Date.now() - inicio,
       route: resposta.fontes?.length || (rotaUsada === 'pesquisa') ? 'pesquisa' : rotaUsada,
       sensitive: conversaSensivel,
-      sources: resposta.fontes?.length ? resposta.fontes : null,
+      sources: resposta.fontes?.length || resposta.imagens?.length
+        ? { fontes: resposta.fontes ?? [], imagens: resposta.imagens ?? [] }
+        : null,
     })
     .select()
     .single();

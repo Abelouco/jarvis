@@ -65,12 +65,23 @@ pub async fn pc_achar_arquivo(termo: String, tipo: Option<String>) -> Result<Vec
         .map_err(|e| format!("A busca falhou: {e}"))?
 }
 
+#[derive(Serialize)]
+pub struct PrintTela {
+    imagem: String,
+    processo: String,
+    titulo: String,
+}
+
 #[cfg(windows)]
 #[tauri::command]
-pub async fn pc_print() -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(capturar_jpeg)
-        .await
-        .map_err(|e| format!("Falha ao capturar a tela: {e}"))?
+pub async fn pc_print() -> Result<PrintTela, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let (processo, titulo) = crate::pilotar::janela_frente();
+        let imagem = capturar_jpeg()?;
+        Ok(PrintTela { imagem, processo, titulo })
+    })
+    .await
+    .map_err(|e| format!("Falha ao capturar a tela: {e}"))?
 }
 
 #[cfg(not(windows))]
@@ -96,7 +107,7 @@ pub async fn pc_achar_arquivo(termo: String, tipo: Option<String>) -> Result<Vec
 
 #[cfg(not(windows))]
 #[tauri::command]
-pub async fn pc_print() -> Result<String, String> {
+pub async fn pc_print() -> Result<PrintTela, String> {
     Err("Ver a tela ainda só funciona no Windows.".into())
 }
 

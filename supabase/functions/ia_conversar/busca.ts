@@ -11,13 +11,65 @@ export interface Trecho {
   conteudo: string;
 }
 
+/** Imagem da pesquisa. A descrição vira o texto alternativo; a URL não vai para o modelo. */
+export interface Imagem {
+  url: string;
+  descricao: string;
+}
+
+function imagemHttps(url: string): boolean {
+  return url.startsWith('https://') && url.length <= 500;
+}
+
+/** No máximo 4 imagens https. A descrição fica em 200 caracteres. */
+export function filtrarImagens(lista: unknown): Imagem[] {
+  if (!Array.isArray(lista)) return [];
+  const out: Imagem[] = [];
+  const vistas = new Set<string>();
+  for (const item of lista) {
+    if (out.length >= 4) break;
+    if (!item || typeof item !== 'object') continue;
+    const bruto = item as { url?: unknown; description?: unknown; descricao?: unknown };
+    const url = typeof bruto.url === 'string' ? bruto.url.trim() : '';
+    if (!imagemHttps(url) || vistas.has(url)) continue;
+    vistas.add(url);
+    const texto = typeof bruto.descricao === 'string' ? bruto.descricao
+      : typeof bruto.description === 'string' ? bruto.description : '';
+    out.push({ url, descricao: texto.slice(0, 200) });
+  }
+  return out;
+}
+
+function eTrecho(x: unknown): x is Trecho {
+  if (!x || typeof x !== 'object') return false;
+  const t = x as Trecho;
+  return typeof t.url === 'string' && typeof t.conteudo === 'string';
+}
+
+/**
+ * O que ficou em `web_searches.results`: lista antiga de trechos, ou `{ trechos, imagens }`.
+ * Pesquisa antiga, sem imagens, devolve `imagens: []`.
+ */
+export function lerResultados(results: unknown): { trechos: Trecho[]; imagens: Imagem[] } | null {
+  if (Array.isArray(results)) {
+    const trechos = results.filter(eTrecho);
+    return trechos.length ? { trechos, imagens: [] } : null;
+  }
+  if (results && typeof results === 'object' && Array.isArray((results as { trechos?: unknown }).trechos)) {
+    const trechos = (results as { trechos: unknown[] }).trechos.filter(eTrecho);
+    if (!trechos.length) return null;
+    return { trechos, imagens: filtrarImagens((results as { imagens?: unknown }).imagens) };
+  }
+  return null;
+}
+
 export function temBusca(): boolean {
   return !!Deno.env.get('TAVILY_API_KEY');
 }
 
-async function tavily(consulta: string): Promise<Trecho[]> {
+async function tavily(consulta: string): Promise<{ trechos: Trecho[]; imagens: Imagem[] }> {
   const chave = Deno.env.get('TAVILY_API_KEY');
-  if (!chave) return [];
+  if (!chave) return { trechos: [], imagens: [] };
   const r = await fetch('https://api.tavily.com/search', {
     method: 'POST',
     headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'application/json' },
@@ -27,18 +79,21 @@ async function tavily(consulta: string): Promise<Trecho[]> {
       max_results: 6,
       include_answer: false,
       include_raw_content: false,
+      include_images: true,
+      include_image_descriptions: true,
     }),
     signal: AbortSignal.timeout(15_000),
   });
   if (!r.ok) throw new Error(`tavily ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const json = await r.json();
-  return (json?.results ?? [])
+  const trechos = (json?.results ?? [])
     .filter((x: { url?: string; content?: string }) => x.url && x.content)
     .map((x: { title?: string; url: string; content: string }) => ({
       titulo: (x.title ?? '').slice(0, 140),
       url: x.url,
       conteudo: x.content.slice(0, 1400),
     }));
+  return { trechos, imagens: filtrarImagens(json?.images) };
 }
 
 /** Pesquisa já feita antes (tabela web_searches), candidata a ser reaproveitada. */
@@ -100,6 +155,8 @@ async function planejar(historico: MensagemIA[], anteriores: PesquisaAnterior[])
 
 export interface ResultadoBusca {
   trechos: Trecho[];
+  /** Até 4 imagens https. Pesquisa reaproveitada sem imagens devolve []. */
+  imagens: Imagem[];
   /** Créditos do Tavily gastos (0 quando reaproveitou). */
   creditos: number;
   consultas: string[];
@@ -109,36 +166,51 @@ export interface ResultadoBusca {
 
 /**
  * Pesquisa (ou reaproveita uma pesquisa anterior) e junta os trechos, sem repetir endereço.
- * `carregar` busca os trechos guardados de uma pesquisa anterior.
+ * `carregar` busca os trechos e as imagens guardados de uma pesquisa anterior.
  */
 export async function buscar(
   historico: MensagemIA[],
   anteriores: PesquisaAnterior[] = [],
-  carregar?: (id: string) => Promise<Trecho[] | null>,
+  carregar?: (id: string) => Promise<{ trechos: Trecho[]; imagens: Imagem[] } | null>,
 ): Promise<ResultadoBusca> {
   const plano = await planejar(historico, anteriores);
   if (plano.reusar !== null && carregar) {
     const anterior = anteriores[plano.reusar]!;
     const guardados = await carregar(anterior.id).catch(() => null);
-    if (guardados?.length) return { trechos: guardados, creditos: 0, consultas: plano.consultas, reusada: anterior.id };
+    if (guardados?.trechos.length) {
+      return {
+        trechos: guardados.trechos,
+        imagens: guardados.imagens,
+        creditos: 0,
+        consultas: plano.consultas,
+        reusada: anterior.id,
+      };
+    }
   }
   const qs = plano.consultas;
   const resultados = await Promise.allSettled(qs.map((q) => tavily(q)));
   const creditos = resultados.filter((r) => r.status === 'fulfilled').length;
   const vistos = new Set<string>();
   const trechos: Trecho[] = [];
+  const imagens: Imagem[] = [];
+  const vistasImg = new Set<string>();
   for (const r of resultados) {
     if (r.status !== 'fulfilled') {
       console.warn('busca: falhou', r.reason instanceof Error ? r.reason.message : r.reason);
       continue;
     }
-    for (const t of r.value) {
+    for (const t of r.value.trechos) {
       if (vistos.has(t.url)) continue;
       vistos.add(t.url);
       trechos.push(t);
     }
+    for (const img of r.value.imagens) {
+      if (imagens.length >= 4 || vistasImg.has(img.url)) continue;
+      vistasImg.add(img.url);
+      imagens.push(img);
+    }
   }
-  return { trechos: trechos.slice(0, 10), creditos, consultas: qs, reusada: null };
+  return { trechos: trechos.slice(0, 10), imagens, creditos, consultas: qs, reusada: null };
 }
 
 /** Bloco com os trechos numerados, para a IA responder só com base neles. */

@@ -39,13 +39,14 @@ function textoDaResposta(corpo: unknown): string {
   return '';
 }
 
-/** Visão com JSON. Se o modelo recusar response_format, tenta uma vez sem o campo. */
+/** Visão com JSON, sem raciocínio escondido. Se o modelo recusar response_format, tenta uma vez sem o campo. */
 async function pedirVisao(corpo: Record<string, unknown>): Promise<Response> {
-  const r = await chamarGroqVisao({ ...corpo, response_format: { type: 'json_object' } });
+  const opcoes = { semRaciocinio: true };
+  const r = await chamarGroqVisao({ ...corpo, response_format: { type: 'json_object' } }, opcoes);
   if (r.status !== 400) return r;
   const msg = await r.clone().text();
   if (!msg.includes('response_format')) return r;
-  return chamarGroqVisao(corpo);
+  return chamarGroqVisao(corpo, opcoes);
 }
 
 function jsonDoModelo(texto: string): unknown {

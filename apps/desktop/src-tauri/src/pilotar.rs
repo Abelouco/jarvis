@@ -588,6 +588,14 @@ mod win {
         unsafe { GetForegroundWindow() as isize }
     }
 
+    pub fn janela_frente() -> (String, String) {
+        let hwnd = unsafe { GetForegroundWindow() };
+        if hwnd.is_null() {
+            return (String::new(), String::new());
+        }
+        (nome_exe(hwnd), titulo_janela(hwnd))
+    }
+
     pub fn arvore() -> Result<ArvoreTela, String> {
         let (tx, rx) = mpsc::channel();
         pedir(Pedido::Arvore(tx), rx, Duration::from_secs(5), "A tela não respondeu a tempo.")
@@ -649,11 +657,16 @@ mod win {
 }
 
 #[cfg(windows)]
-pub use win::ligar;
+pub use win::{janela_frente, ligar};
 
 #[cfg(not(windows))]
 pub fn ligar(_app: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn janela_frente() -> (String, String) {
+    (String::new(), String::new())
 }
 
 #[tauri::command]

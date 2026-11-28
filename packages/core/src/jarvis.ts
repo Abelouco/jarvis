@@ -6,7 +6,7 @@ import { respostasDepoisDoParar } from './chatRegras';
 import { criarFinancas } from './financasApi';
 import { novoId, prepararBanco, TABELAS_SYNC, type BancoLocal, type TabelaSync, type Valor } from './local';
 import type {
-  ColunaQuadro, Fonte, LembrarTarefa, Notice, NoticeRule, NoticeSettings, JarvisEvent, Memory, Message, Prioridade, Project, Reminder, StatusProjeto, Task,
+  ColunaQuadro, Fonte, Imagem, LembrarTarefa, Notice, NoticeRule, NoticeSettings, JarvisEvent, Memory, Message, Prioridade, Project, Reminder, StatusProjeto, Task,
 } from './types';
 import {
   dataAposConcluir, deslocarLembrete, hojeSP, instanteSP, lembreteDaTarefa, normalizarRecorrencia, partesSP, primeiraData,
@@ -64,15 +64,44 @@ const somarDiasLocal = (data: string, dias: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-function lerFontes(bruto: string | null): Fonte[] | null {
-  if (!bruto) return null;
-  try {
-    const lista = JSON.parse(bruto);
-    return Array.isArray(lista) ? lista.filter((f) => f && typeof f.url === 'string') : null;
-  } catch {
-    return null;
-  }
+function fontesDe(lista: unknown): Fonte[] {
+  if (!Array.isArray(lista)) return [];
+  return lista.filter((f) => f && typeof f.url === 'string') as Fonte[];
 }
+
+function imagensDe(lista: unknown): Imagem[] {
+  if (!Array.isArray(lista)) return [];
+  const out: Imagem[] = [];
+  for (const item of lista) {
+    if (out.length >= 4) break;
+    const url = item && typeof item.url === 'string' ? item.url : '';
+    if (!url.startsWith('https://')) continue;
+    const descricao = item && typeof item.descricao === 'string' ? item.descricao : '';
+    out.push({ url, descricao });
+  }
+  return out;
+}
+
+/** Lista antiga de fontes, ou o JSON { fontes, imagens }. */
+function lerPesquisa(bruto: unknown): { sources: Fonte[] | null; imagens: Imagem[] | null } {
+  let valor = bruto;
+  if (typeof bruto === 'string') {
+    if (!bruto) return { sources: null, imagens: null };
+    try { valor = JSON.parse(bruto); } catch { return { sources: null, imagens: null }; }
+  }
+  if (Array.isArray(valor)) {
+    const sources = fontesDe(valor);
+    return { sources: sources.length ? sources : null, imagens: null };
+  }
+  if (valor && typeof valor === 'object') {
+    const o = valor as { fontes?: unknown; imagens?: unknown };
+    const sources = fontesDe(o.fontes);
+    const imagens = imagensDe(o.imagens);
+    return { sources: sources.length ? sources : null, imagens: imagens.length ? imagens : null };
+  }
+  return { sources: null, imagens: null };
+}
+
 const LOTE = 500;
 
 export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
@@ -660,7 +689,9 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
       if (error) throw error;
       if (data?.mensagem) {
         await gravarDoServidor(TABELA_MSG, data.mensagem as Record<string, unknown>);
-        const resposta = { ...(data.mensagem as Message), sources: (data.mensagem as Message).sources ?? null };
+        const bruto = data.mensagem as Message;
+        const pesquisa = lerPesquisa(bruto.sources);
+        const resposta: Message = { ...bruto, sources: pesquisa.sources, imagens: pesquisa.imagens };
         const voz = porVoz.delete(m.id);
         // Pergunta por voz: o servidor manda também um resumo curto para falar.
         const fala = typeof data.fala === 'string' && data.fala.trim() ? data.fala.trim() : null;
@@ -710,7 +741,10 @@ export function criarJarvis({ db, sessao, versaoApp }: OpcoesJarvis) {
         `select * from messages where conversation_id = ? and deleted_at is null order by created_at, rowid`,
         [id],
       );
-      const lista: Message[] = linhas.map((m) => ({ ...m, sensitive: !!m.sensitive, sources: lerFontes(m.sources) }));
+      const lista: Message[] = linhas.map((m) => {
+        const pesquisa = lerPesquisa(m.sources);
+        return { ...m, sensitive: !!m.sensitive, sources: pesquisa.sources, imagens: pesquisa.imagens };
+      });
       // Corrida do "Parar": a resposta já estava pronta no servidor quando o dono parou e chegou
       // depois. Ela some (exclusão suave, vale para todos os aparelhos). Resposta de ação fica:
       // a ação já aconteceu e o dono precisa ver (dá para "desfaz").

@@ -9,7 +9,7 @@ import { paraFala } from '@jarvis/core';
 import { invoke } from '@tauri-apps/api/core';
 import type { Shell } from '@jarvis/core';
 import {
-  abrirExpandido, botaoCopiarResposta, confirmarRodar, copiar, marcarCopiado, respostaHtml, textosCopiaveis,
+  abrirExpandido, abrirImagem, botaoCopiarResposta, confirmarRodar, copiar, marcarCopiado, respostaHtml, textosCopiaveis,
 } from './markdown';
 import { montarControlesJanela } from './janela';
 import { htmlFormTarefa, ligarFormTarefa } from './formTarefa';
@@ -334,9 +334,20 @@ async function montarPainel() {
     }
   });
   avaliacao.ligar($<HTMLDivElement>('#chat'));
-  $<HTMLDivElement>('#chat').onclick = async (e) => {
+  const chatEl = $<HTMLDivElement>('#chat');
+  chatEl.addEventListener('error', (e) => {
+    const img = e.target;
+    if (img instanceof HTMLImageElement && img.classList.contains('md-img')) img.remove();
+  }, true);
+  chatEl.onclick = async (e) => {
     const alvo = e.target as HTMLElement;
     if (avaliacao.clique(alvo)) return;
+    const img = alvo.closest('img.md-img');
+    if (img instanceof HTMLImageElement) {
+      e.preventDefault();
+      abrirImagem(img.currentSrc || img.src, img.alt);
+      return;
+    }
     const bCopiar = alvo.closest<HTMLButtonElement>('[data-copiar]');
     if (bCopiar) {
       const texto = textosCopiaveis[Number(bCopiar.dataset.copiar)];
@@ -619,7 +630,7 @@ function itemMensagem(m: Message, nova: boolean, ultima: boolean) {
     return `<div class="${classe} interrompida" data-r="assistant"><span>■ Interrompido</span></div>`;
   }
   // O botão fica fora da mensagem, logo abaixo dela.
-  return `<div class="${classe}" data-r="assistant"><div class="md">${respostaHtml(m.content, ultima, m.sources ?? [])}</div>${fontesHtml(m)}</div>`
+  return `<div class="${classe}" data-r="assistant"><div class="md">${respostaHtml(m.content, ultima, m.sources ?? [], m.imagens ?? [])}</div>${fontesHtml(m)}</div>`
     + `<div class="msg-acoes${nova ? ' nova' : ''}${avaliacao.avaliada(m.id) ? ' avaliada' : ''}">${botaoCopiarResposta(m.content)}${avaliacao.html(m)}</div>`;
 }
 
@@ -635,7 +646,7 @@ async function desenharChat() {
     botaoEnviar.textContent = pensando ? '■' : '↑';
     botaoEnviar.title = pensando ? 'Parar (Esc). Com texto no campo, para e manda o complemento.' : 'Enviar (Enter)';
   }
-  const assinatura = `${pensando}|${jarvis.ia.estado()}|${erro}|${avaliacao.assinatura()}|` + msgs.map((m) => `${m.id}:${m.content.length}:${m.sources?.length ?? 0}`).join(',');
+  const assinatura = `${pensando}|${jarvis.ia.estado()}|${erro}|${avaliacao.assinatura()}|` + msgs.map((m) => `${m.id}:${m.content.length}:${m.sources?.length ?? 0}:${m.imagens?.length ?? 0}`).join(',');
   if (assinatura === assinaturaChat) return;
   assinaturaChat = assinatura;
 

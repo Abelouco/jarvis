@@ -49,7 +49,13 @@ function horaSP(iso: string): string {
 
 const esperarMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function descreverTela(imagem: string, pergunta?: string): Promise<string> {
+interface PrintTela {
+  imagem: string;
+  processo: string;
+  titulo: string;
+}
+
+async function descreverTela(imagem: string, pergunta?: string, processo?: string, titulo?: string): Promise<string> {
   const sessao = await jarvis.auth.sessao();
   if (!sessao) throw new Error('Sem sessão para ver a tela.');
   const r = await fetch(`${SUPABASE_URL}/functions/v1/ia_tela`, {
@@ -59,7 +65,12 @@ async function descreverTela(imagem: string, pergunta?: string): Promise<string>
       apikey: SUPABASE_PUBLISHABLE_KEY,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ imagem, pergunta: pergunta || null }),
+    body: JSON.stringify({
+      imagem,
+      pergunta: pergunta || null,
+      processo: processo || null,
+      titulo: titulo || null,
+    }),
   });
   const corpo = await r.json().catch(() => ({} as { erro?: string; texto?: string }));
   if (!r.ok) throw new Error(corpo.erro || 'Não consegui descrever a tela.');
@@ -96,9 +107,9 @@ async function executar(cmd: PcComando): Promise<Record<string, unknown>> {
     return { arquivos };
   }
   if (cmd.kind === 'ver_tela') {
-    const imagem = await invoke<string>('pc_print');
+    const print = await invoke<PrintTela>('pc_print');
     const pergunta = typeof args.pergunta === 'string' ? args.pergunta : undefined;
-    const texto = await descreverTela(imagem, pergunta);
+    const texto = await descreverTela(print.imagem, pergunta, print.processo, print.titulo);
     return { texto };
   }
   if (cmd.kind === 'digitar') {
@@ -197,7 +208,7 @@ async function plano(cmd: PcComando, historico: { passo: Passo; ok: boolean; err
   let print: string | undefined;
   const arvoreCurta = (arvore.elementos?.length ?? 0) < 15;
   const passoFalhou = historico.some((item) => item.ok === false);
-  if (arvoreCurta || passoFalhou) print = await invoke<string>('pc_print');
+  if (arvoreCurta || passoFalhou) print = (await invoke<PrintTela>('pc_print')).imagem;
   const r = await fetch(`${SUPABASE_URL}/functions/v1/ia_controlar`, {
     method: 'POST',
     headers: {

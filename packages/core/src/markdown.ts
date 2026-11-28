@@ -36,7 +36,8 @@ export type Bloco =
   | { t: 'comando'; shell: Shell; texto: string }
   | { t: 'opcoes'; pergunta: string; itens: string[] }
   | { t: 'citacao'; filhos: Bloco[] }
-  | { t: 'linha' };
+  | { t: 'linha' }
+  | { t: 'imagem'; url: string; alt: string };
 
 /** Onde o comando roda: no Windows, bash/sh também vão para o PowerShell. */
 export type Shell = 'powershell' | 'cmd' | 'bash';
@@ -54,6 +55,7 @@ const RE_LINHA = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
 const RE_ITEM = /^(\s*)([-*+•]|\d{1,3}[.)])\s+(.*)$/;
 const RE_SEPARADOR = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 const RE_CITACAO = /^\s{0,3}>\s?(.*)$/;
+const RE_IMAGEM = /^\s{0,3}!\[([^\]\n]*)\]\((https:\/\/[^\s)]+)\)\s*$/;
 
 const recuo = (l: string) => (l.match(/^\s*/)?.[0] ?? '').replace(/\t/g, '    ').length;
 const vazia = (l: string) => !l.trim();
@@ -68,6 +70,7 @@ function celulas(linha: string): string[] {
 function iniciaBloco(linhas: string[], i: number): boolean {
   const l = linhas[i]!;
   return RE_CERCA.test(l) || RE_TITULO.test(l) || RE_LINHA.test(l) || RE_ITEM.test(l) || RE_CITACAO.test(l)
+    || RE_IMAGEM.test(l)
     || (l.includes('|') && i + 1 < linhas.length && RE_SEPARADOR.test(linhas[i + 1]!));
 }
 
@@ -86,6 +89,13 @@ function blocos(linhas: string[]): Bloco[] {
   while (i < linhas.length) {
     const l = linhas[i]!;
     if (vazia(l)) { i++; continue; }
+
+    const imagem = l.match(RE_IMAGEM);
+    if (imagem) {
+      out.push({ t: 'imagem', alt: imagem[1] ?? '', url: imagem[2]! });
+      i++;
+      continue;
+    }
 
     // ``` cerca de código (ou bloco para copiar). Se não fechar, vai até o fim.
     const cerca = l.match(RE_CERCA);
@@ -328,6 +338,7 @@ function falaBloco(b: Bloco, partes: string[]) {
     case 'opcoes':
       partes.push(`${b.pergunta || 'Escolha uma opção.'} ${b.itens.map((x, i) => `${i + 1}: ${x}`).join('; ')}.`);
       break;
+    case 'imagem': partes.push('Deixei a imagem na tela.'); break;
     case 'linha': break;
   }
 }
