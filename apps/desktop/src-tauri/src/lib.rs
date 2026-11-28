@@ -43,6 +43,9 @@ pub fn run() {
             pilotar::pc_arvore,
             pilotar::pc_passo,
             pilotar::pc_comando,
+            pilotar::pc_digitar,
+            pilotar::pc_hwnd_frente,
+            pilotar::pc_esperar_janela,
             pilotar::pc_parar,
             pilotar::pc_retomar,
             pilotar::pc_controle_ativo

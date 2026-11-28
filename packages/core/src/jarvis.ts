@@ -1224,7 +1224,7 @@ export type ProjetoResumo = Project & { total: number; feitas: number };
 /** Pedido para o PC executar (Fase 4 · etapa 7). */
 export interface PcComando {
   id: string;
-  kind: 'abrir' | 'midia' | 'achar_arquivo' | 'ver_tela' | 'controlar' | 'comando';
+  kind: 'abrir' | 'midia' | 'achar_arquivo' | 'ver_tela' | 'controlar' | 'comando' | 'digitar';
   args: Record<string, unknown>;
   status: string;
   result?: Record<string, unknown> | null;

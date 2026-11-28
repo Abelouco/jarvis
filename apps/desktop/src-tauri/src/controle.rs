@@ -354,15 +354,15 @@ fn capturar_jpeg() -> Result<String, String> {
     let (w, h) = (img.width(), img.height());
     if w == 0 || h == 0 { return Err("A tela veio vazia.".into()) }
     let mut nossa = image::RgbaImage::from_raw(w, h, img.into_raw()).ok_or("Imagem inválida.")?;
-    const MAX: u32 = 1280;
+    const MAX: u32 = 1024;
     if nossa.width() > MAX {
         let nh = ((nossa.height() as u64 * MAX as u64) / nossa.width() as u64).max(1) as u32;
-        nossa = image::imageops::resize(&nossa, MAX, nh, FilterType::Triangle);
+        nossa = image::imageops::resize(&nossa, MAX, nh, FilterType::Nearest);
     }
     let rgb: image::RgbImage = image::DynamicImage::ImageRgba8(nossa).to_rgb8();
     let (w, h) = rgb.dimensions();
     let mut buf = Cursor::new(Vec::new());
-    let mut enc = JpegEncoder::new_with_quality(&mut buf, 70);
+    let mut enc = JpegEncoder::new_with_quality(&mut buf, 60);
     enc.encode(rgb.as_raw(), w, h, ExtendedColorType::Rgb8).map_err(|e| format!("Não gerei o JPEG: {e}"))?;
     Ok(STANDARD.encode(buf.into_inner()))
 }

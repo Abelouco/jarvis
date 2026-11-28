@@ -46,6 +46,7 @@ pub struct ArvoreTela {
     titulo: String,
     largura_tela: i32,
     altura_tela: i32,
+    parcial: bool,
 }
 
 #[cfg(windows)]
@@ -60,13 +61,14 @@ mod win {
     use uiautomation::patterns::{UIInvokePattern, UIValuePattern};
     use uiautomation::types::Handle;
     use uiautomation::{UIAutomation, UIElement, UITreeWalker};
-    use windows_sys::Win32::Foundation::{CloseHandle, POINT};
+    use windows_sys::Win32::Foundation::{CloseHandle, HWND, POINT, RECT};
     use windows_sys::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetClassNameW, GetCursorPos, GetForegroundWindow, GetSystemMetrics, GetWindowThreadProcessId,
-        SM_CXSCREEN, SM_CYSCREEN,
+        GetClassNameW, GetCursorPos, GetForegroundWindow, GetSystemMetrics, GetWindowLongPtrW,
+        GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, GWL_STYLE,
+        SM_CXSCREEN, SM_CYSCREEN, WS_CAPTION,
     };
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -76,6 +78,7 @@ mod win {
     enum Pedido {
         Arvore(mpsc::Sender<Result<ArvoreTela, String>>),
         Passo(Value, mpsc::Sender<Result<(), String>>),
+        Digitar(String, Option<Value>, mpsc::Sender<Result<String, String>>),
     }
 
     pub fn ligar(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -109,11 +112,11 @@ mod win {
         });
     }
 
-    fn pedir<T>(pedido: Pedido, rx: mpsc::Receiver<Result<T, String>>) -> Result<T, String> {
+    fn pedir<T>(pedido: Pedido, rx: mpsc::Receiver<Result<T, String>>, espera: Duration, aviso: &str) -> Result<T, String> {
         garantir_fila();
         let fila = FILA.get().ok_or("O controle do PC não está pronto.")?;
         fila.lock().map_err(|_| "O controle do PC travou.")?.send(pedido).map_err(|_| "O controle do PC parou.")?;
-        rx.recv_timeout(Duration::from_secs(20)).map_err(|_| "A tela não respondeu a tempo.")?
+        rx.recv_timeout(espera).map_err(|_| aviso.to_string())?
     }
 
     fn loop_trabalho(rx: mpsc::Receiver<Pedido>) {
@@ -137,6 +140,14 @@ mod win {
                     };
                     let _ = ret.send(r);
                 }
+                Pedido::Digitar(texto, programa, ret) => {
+                    let r = match (&auto, enigo.as_mut()) {
+                        (Ok(a), Some(mouse)) => digitar_texto(a, mouse, &texto, programa.as_ref()),
+                        (Err(e), _) => Err(format!("Não abri a árvore da tela: {e}")),
+                        _ => Err("O controle do mouse não está pronto.".into()),
+                    };
+                    let _ = ret.send(r);
+                }
             }
         }
     }
@@ -145,31 +156,89 @@ mod win {
         s.chars().take(max).collect()
     }
 
+    fn titulo_janela(hwnd: HWND) -> String {
+        unsafe {
+            let mut buf = [0u16; 256];
+            let n = GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32);
+            if n <= 0 { return String::new() }
+            cortar(String::from_utf16_lossy(&buf[..n as usize]), 120)
+        }
+    }
+
+    fn janela_sem_uia(hwnd: HWND) -> bool {
+        let classe = nome_classe(hwnd);
+        const JOGOS: &[&str] = &[
+            "UnityWndClass", "UnrealWindow", "Valve001", "SDL_app", "GLFW30", "GLFW31",
+            "LWJGL", "POEWindowClass", "RCLIENT", "RiotWindowClass", "LaunchUnrealUWindowsClient",
+            "CryENGINE", "OgreD3D11Wnd", "OgreD3D9Wnd",
+        ];
+        if JOGOS.iter().any(|c| classe.eq_ignore_ascii_case(c)) { return true }
+        tela_cheia(hwnd)
+    }
+
+    fn tela_cheia(hwnd: HWND) -> bool {
+        unsafe {
+            let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+            if GetWindowRect(hwnd, &mut r) == 0 { return false }
+            let w = r.right - r.left;
+            let h = r.bottom - r.top;
+            let sw = GetSystemMetrics(SM_CXSCREEN);
+            let sh = GetSystemMetrics(SM_CYSCREEN);
+            if w < sw || h < sh { return false }
+            let estilo = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
+            (estilo & WS_CAPTION) == 0
+        }
+    }
+
     fn montar_arvore(auto: &UIAutomation, mapa: &mut HashMap<String, UIElement>) -> Result<ArvoreTela, String> {
         mapa.clear();
+        let inicio = Instant::now();
         let hwnd = unsafe { GetForegroundWindow() };
         if hwnd.is_null() {
             return Err("Não achei a janela da frente.".into());
         }
+        let (largura, altura) = unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
+        let vazia = |parcial: bool| ArvoreTela {
+            elementos: Vec::new(),
+            processo: nome_exe(hwnd),
+            titulo: titulo_janela(hwnd),
+            largura_tela: largura,
+            altura_tela: altura,
+            parcial,
+        };
+        if janela_sem_uia(hwnd) {
+            return Ok(vazia(false));
+        }
         let janela = auto.element_from_handle(Handle::from(hwnd as isize)).map_err(|e| format!("Não li a janela: {e}"))?;
         let walker = auto.get_control_view_walker().map_err(|e| format!("Não li a árvore: {e}"))?;
+        let t_filho = Instant::now();
+        let filho = walker.get_first_child(&janela);
+        if filho.is_err() || t_filho.elapsed() > Duration::from_millis(300) {
+            return Ok(vazia(false));
+        }
         let mut elementos = Vec::new();
         let mut n = 0i32;
-        visitar(&walker, &janela, 0, &mut n, &mut elementos, mapa);
-        let (largura, altura) = unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
+        let mut parcial = false;
+        visitar(&walker, &janela, 0, &mut n, &mut elementos, mapa, inicio, &mut parcial);
         Ok(ArvoreTela {
             elementos,
             processo: nome_exe(hwnd),
             titulo: cortar(janela.get_name().unwrap_or_default(), 120),
             largura_tela: largura,
             altura_tela: altura,
+            parcial,
         })
     }
 
     fn visitar(
         walker: &UITreeWalker, el: &UIElement, profundidade: u8, n: &mut i32,
         saida: &mut Vec<ElementoTela>, mapa: &mut HashMap<String, UIElement>,
+        inicio: Instant, parcial: &mut bool,
     ) {
+        if *parcial || inicio.elapsed() > Duration::from_millis(1500) {
+            *parcial = true;
+            return;
+        }
         if *n >= 300 || profundidade > 12 { return }
         let id = format!("e{n}");
         *n += 1;
@@ -193,7 +262,12 @@ mod win {
         if profundidade == 12 { return }
         let Ok(mut filho) = walker.get_first_child(el) else { return };
         loop {
-            visitar(walker, &filho, profundidade + 1, n, saida, mapa);
+            if inicio.elapsed() > Duration::from_millis(1500) {
+                *parcial = true;
+                return;
+            }
+            visitar(walker, &filho, profundidade + 1, n, saida, mapa, inicio, parcial);
+            if *parcial { return }
             match walker.get_next_sibling(&filho) {
                 Ok(prox) => filho = prox,
                 Err(_) => break,
@@ -437,14 +511,91 @@ mod win {
         }
     }
 
+
+    pub fn esperar_janela_nova(anterior: isize) -> Result<(), String> {
+        let anterior = anterior as HWND;
+        let inicio = Instant::now();
+        let mut ultima: Option<isize> = None;
+        let mut iguais = 0u8;
+        while inicio.elapsed() < Duration::from_secs(6) {
+            thread::sleep(Duration::from_millis(100));
+            let agora = unsafe { GetForegroundWindow() };
+            let mudou = !agora.is_null() && (agora as isize) != (anterior as isize);
+            let chave = agora as isize;
+            if mudou && ultima == Some(chave) {
+                iguais += 1;
+                if iguais >= 2 {
+                    thread::sleep(Duration::from_millis(300));
+                    return Ok(());
+                }
+            } else if mudou {
+                ultima = Some(chave);
+                iguais = 1;
+            } else {
+                ultima = None;
+                iguais = 0;
+            }
+        }
+        Err("O programa abriu, mas não veio para a frente.".into())
+    }
+
+    fn digitar_texto(auto: &UIAutomation, enigo: &mut Enigo, texto: &str, programa: Option<&Value>) -> Result<String, String> {
+        let mut nome = "janela da frente".to_string();
+        if let Some(p) = programa {
+            let valor = p.get("valor").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            let tipo = p.get("tipo").and_then(|v| v.as_str()).unwrap_or("programa").to_string();
+            if valor.is_empty() {
+                return Err("Não entendi o programa.".into());
+            }
+            let anterior = unsafe { GetForegroundWindow() as isize };
+            nome = crate::controle::pc_abrir(valor, tipo)?;
+            esperar_janela_nova(anterior)?;
+        }
+        // Fora do modo controle, pânico ou pausa de uma sessão já encerrada não bloqueiam a digitação.
+        if !EM_CURSO.load(Ordering::SeqCst) {
+            PARAR.store(false, Ordering::SeqCst);
+            PAUSADO.store(false, Ordering::SeqCst);
+        }
+        if travado() { return Err("parado".into()) }
+        recusar_shell()?;
+        recusar_senha(auto)?;
+        let chars: Vec<char> = texto.chars().collect();
+        if chars.is_empty() || chars.len() > 2000 {
+            return Err("O que devo digitar, Senhor?".into());
+        }
+        let mut i = 0;
+        while i < chars.len() {
+            if i > 0 && travado() { return Err("parado".into()) }
+            let fim = (i + 500).min(chars.len());
+            let pedaco: String = chars[i..fim].iter().collect();
+            enigo.text(&pedaco).map_err(|e| format!("Não digitei: {e}"))?;
+            i = fim;
+        }
+        Ok(nome)
+    }
+
+    pub fn digitar(texto: String, programa: Option<Value>) -> Result<String, String> {
+        let (tx, rx) = mpsc::channel();
+        pedir(
+            Pedido::Digitar(texto, programa, tx),
+            rx,
+            Duration::from_secs(10),
+            "Não consegui digitar a tempo.",
+        )
+    }
+
+    pub fn hwnd_frente() -> isize {
+        unsafe { GetForegroundWindow() as isize }
+    }
+
     pub fn arvore() -> Result<ArvoreTela, String> {
         let (tx, rx) = mpsc::channel();
-        pedir(Pedido::Arvore(tx), rx)
+        pedir(Pedido::Arvore(tx), rx, Duration::from_secs(5), "A tela não respondeu a tempo.")
     }
 
     pub fn passo(valor: Value) -> Result<(), String> {
         let (tx, rx) = mpsc::channel();
-        pedir(Pedido::Passo(valor, tx), rx)
+        pedir(Pedido::Passo(valor, tx), rx, Duration::from_secs(20), "A tela não respondeu a tempo.")
     }
 
     pub fn comando(comando: String) -> Result<String, String> {
@@ -547,5 +698,38 @@ pub fn pc_controle_ativo(ativo: bool) {
     if !ativo {
         PARAR.store(false, Ordering::SeqCst);
         PAUSADO.store(false, Ordering::SeqCst);
+    }
+}
+
+#[tauri::command]
+pub fn pc_digitar(texto: String, programa: Option<Value>) -> Result<String, String> {
+    #[cfg(windows)]
+    { return win::digitar(texto, programa) }
+    #[cfg(not(windows))]
+    {
+        let _ = (texto, programa);
+        Err("Digitar ainda só funciona no Windows.".into())
+    }
+}
+
+#[tauri::command]
+pub fn pc_hwnd_frente() -> String {
+    #[cfg(windows)]
+    { win::hwnd_frente().to_string() }
+    #[cfg(not(windows))]
+    { "0".into() }
+}
+
+#[tauri::command]
+pub fn pc_esperar_janela(anterior: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let anterior = anterior.parse::<isize>().map_err(|_| "Janela inválida.".to_string())?;
+        win::esperar_janela_nova(anterior)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = anterior;
+        Err("O modo controle ainda só funciona no Windows.".into())
     }
 }

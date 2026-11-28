@@ -6,7 +6,7 @@
 // Secrets: GROQ_API_KEY, GEMINI_API_KEY (opcionais um do outro), GROQ_MODEL e GEMINI_MODEL (opcionais).
 // Regra de ouro: conteúdo sensível nunca vai para o Gemini grátis (pode treinar com os dados).
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { avaliarSensibilidade } from './sensivel.ts';
+import { avaliarSensibilidade, normalizar } from './sensivel.ts';
 import { escolherRota, type Rota } from './rota.ts';
 import {
   conversar, pesquisarGemini, pesquisarGroq, temChave, type Fonte, type MensagemIA, type NomeProvedor,
@@ -19,7 +19,7 @@ import './projetos.ts'; // idem, projetos
 import './avisos.ts'; // idem, ajustes dos avisos (Fase 3)
 import { pareceEmail } from './email.ts'; // e e-mail pelo Gmail (Fase 4); importar já registra
 import { pareceFinancas } from './financas.ts'; // e finanças (Fase 4 · etapa 6)
-import { pareceComputador, sessaoControleAtiva } from './computador.ts'; // e o PC (Fase 4 · etapa 7); importar já registra
+import { pareceComputador, PEDE_TELA, sessaoControleAtiva, verTelaDireto } from './computador.ts'; // e o PC (Fase 4 · etapa 7); importar já registra
 import { blocoLicoes, licoesAtivas, registrarFeedback, type Licao } from './licoes.ts'; // e lições (Fase 4)
 import {
   carregarAbertas, confirmacaoPendente, contextoExtensoes, executar, pareceTarefa, planejar, textoFinal,
@@ -235,6 +235,28 @@ Deno.serve(async (req) => {
   const descartada = () => responder(200, { interrompida: true });
   // Pulso de "pensando" no cérebro.
   await sb.from('events').insert({ kind: 'thinking', payload: { conversation_id: corpo.conversation_id } });
+
+  // Pedido claro de ver a tela: não passa pelo planejador. Continua sensível.
+  if (PEDE_TELA.test(normalizar(texto))) {
+    if (!sens.sensivel) await sb.from('messages').update({ sensitive: true }).eq('id', corpo.message_id);
+    if (await interrompida()) return descartada();
+    await sb.from('events').insert({
+      kind: 'tool_call', payload: { conversation_id: corpo.conversation_id, ferramentas: ['computador_ver_tela'] },
+    });
+    const resultado = await verTelaDireto({ sb, hoje: hojeSP() }, texto);
+    if (await interrompida()) return descartada();
+    const resultados = [resultado];
+    const conteudo = textoFinal(resultados) || 'Feito.';
+    const falaPronta = corpo.voz ? pronunciasEnsinadas(sb).catch(() => []).then((p) => resumoFalado(texto, conteudo, p)).catch(() => null) : Promise.resolve(null);
+    const salva = await sb.from('messages').insert({
+      conversation_id: corpo.conversation_id, role: 'assistant', content: conteudo,
+      provider: 'groq', model: 'ferramentas', latency_ms: Date.now() - inicioAcao,
+      route: 'acao', sensitive: true,
+    }).select().single();
+    if (salva.error) return responder(500, { erro: salva.error.message });
+    console.log('ia_conversar: tela direta', resultado.ok ? 'ok' : 'falhou', resultado.resumo);
+    return responder(200, { mensagem: salva.data, fala: await falaPronta, ferramentas: resultados });
+  }
 
   // Histórico até a pergunta (inclusive): a resposta é sempre para ela, mesmo se chegou outra depois.
   const hist = await sb.from('messages')

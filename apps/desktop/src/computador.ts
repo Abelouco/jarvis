@@ -101,6 +101,13 @@ async function executar(cmd: PcComando): Promise<Record<string, unknown>> {
     const texto = await descreverTela(imagem, pergunta);
     return { texto };
   }
+  if (cmd.kind === 'digitar') {
+    const aberto = await invoke<string>('pc_digitar', {
+      texto: String(args.texto ?? ''),
+      programa: args.programa ?? null,
+    });
+    return { aberto };
+  }
   throw new Error('Pedido de computador desconhecido.');
 }
 
@@ -169,13 +176,24 @@ async function sincronizarSessao() {
 async function plano(cmd: PcComando, historico: { passo: Passo; ok: boolean; erro?: string }[], liberado = false): Promise<RespostaControle> {
   const sessao = await jarvis.auth.sessao();
   if (!sessao) throw new Error('Sem sessão para controlar o PC.');
-  const arvore = await invoke<{
+  let arvore: {
     elementos: unknown[];
     processo: string;
     titulo: string;
     largura_tela: number;
     altura_tela: number;
-  }>('pc_arvore');
+  } = {
+    elementos: [],
+    processo: '',
+    titulo: '',
+    largura_tela: window.screen.width,
+    altura_tela: window.screen.height,
+  };
+  try {
+    arvore = await invoke<typeof arvore>('pc_arvore');
+  } catch (e) {
+    console.warn('computador: árvore indisponível', e);
+  }
   let print: string | undefined;
   const arvoreCurta = (arvore.elementos?.length ?? 0) < 15;
   const passoFalhou = historico.some((item) => item.ok === false);
@@ -214,6 +232,7 @@ async function pilotar(cmd: PcComando) {
   const vivo = () => meu === geracao && !pedidoParar;
   let liberado = cmd.args?.liberado === true;
   try {
+    if (cmd.args?.programa) await abrirEEsperar(cmd.args.programa);
     for (let rodada = 0; rodada < 25 && vivo(); rodada++) {
       const sessao = await jarvis.computador.sessaoAtiva().catch(() => null);
       if (!sessao || !vivo()) {
@@ -274,13 +293,30 @@ async function pilotar(cmd: PcComando) {
       }
     }
     if (vivo()) {
-      await jarvis.computador.concluir(cmd.id, 'falhou', { erro: 'Parei depois de muitas tentativas.' }).catch(() => {});
+      const erro = 'Parei depois de muitas tentativas.';
+      await jarvis.computador.concluir(cmd.id, 'falhou', { erro }).catch(() => {});
+      notificar(erro);
     }
   } catch (e) {
-    await jarvis.computador.concluir(cmd.id, 'falhou', { erro: textoErro(e) }).catch(() => {});
+    const erro = textoErro(e);
+    await jarvis.computador.concluir(cmd.id, 'falhou', { erro }).catch(() => {});
+    notificar(erro);
   } finally {
     await invoke('pc_controle_ativo', { ativo: false }).catch(() => {});
+    if (cmd.args?.auto_sessao === true) await jarvis.computador.soltar('dono').catch(() => {});
   }
+}
+
+/** Abre o programa do pedido e espera a janela nova vir para a frente. */
+async function abrirEEsperar(programa: unknown): Promise<void> {
+  if (!programa || typeof programa !== 'object') return;
+  const p = programa as { tipo?: unknown; valor?: unknown };
+  const valor = typeof p.valor === 'string' ? p.valor : '';
+  const tipo = typeof p.tipo === 'string' ? p.tipo : 'programa';
+  if (!valor) return;
+  const anterior = await invoke<string>('pc_hwnd_frente');
+  await invoke('pc_abrir', { alvo: valor, tipo });
+  await invoke('pc_esperar_janela', { anterior });
 }
 
 async function rodar(cmd: PcComando, emCurso: Set<string>) {

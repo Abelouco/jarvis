@@ -1,7 +1,7 @@
 // Testes das regras locais (sensível e rota). Rodar: node --test supabase/functions/ia_conversar/regras.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { avaliarSensibilidade } from './sensivel.ts';
+import { avaliarSensibilidade, normalizar } from './sensivel.ts';
 import { escolherRota } from './rota.ts';
 
 const sens = (t: string) => avaliarSensibilidade(t);
@@ -492,11 +492,12 @@ test('finanças: o detector manda para o planejador (e o pedido fica sensível)'
   assert.ok(pareceTarefa('gastei 30 de uber', false));
 });
 
-import { classificarAlvo, duracaoControle, pareceComputador } from './computador.ts';
+import { classificarAlvo, duracaoControle, pareceComputador, PEDE_TELA } from './computador.ts';
 import { comandoSeguro } from './comando_seguro.ts';
 
 test('computador: o detector manda para o planejador (e o pedido fica sensível)', () => {
   assert.ok(pareceComputador('abre o bloco de notas'));
+  assert.ok(pareceComputador('abra o bloco de notas e escreva teste'));
   assert.ok(pareceComputador('Abre o Chrome'));
   assert.ok(pareceComputador('pausa a música'));
   assert.ok(pareceComputador('aumenta o volume'));
@@ -541,6 +542,12 @@ test('computador: ação na tela entra no detector', () => {
   assert.equal(pareceComputador('clica em salvar'), true);
   assert.equal(pareceComputador('digita meu nome'), true);
   assert.equal(pareceComputador('você acha que chove?'), false);
+});
+
+test('computador: pedido de ver a tela pula o planejador', () => {
+  assert.equal(PEDE_TELA.test(normalizar('o que tem na minha tela?')), true);
+  assert.equal(PEDE_TELA.test(normalizar('O que tem na minha tela principal?')), true);
+  assert.equal(PEDE_TELA.test(normalizar('qual a capital da França?')), false);
 });
 
 import { MODELOS_VISAO_BASE, ordenarModelos } from './modelos_groq.ts';
