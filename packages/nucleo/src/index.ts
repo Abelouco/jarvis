@@ -361,7 +361,6 @@ export function criarNucleo(renderer: THREE.WebGLRenderer, op: OpcoesNucleo): Nu
     criarCampo({ n: Math.round(22000 * dens), fios: 14, raio: 2.15, espessura: 0.2, amp: 0.075, freq: 1.4, tam: 3.4, opacidade: 1.0, rot: [0.18, -0.12, 0], giro: 0.035 }, uComuns),
     criarCampo({ n: Math.round(14000 * dens), fios: 9, raio: 1.98, espessura: 0.13, amp: 0.09, freq: 2.1, tam: 2.8, opacidade: 0.8, rot: [0.55, 0.35, 0.4], giro: -0.05 }, uComuns),
     criarCampo({ n: Math.round(8000 * dens), fios: 6, raio: 1.3, espessura: 0.07, amp: 0.06, freq: 2.6, tam: 2.4, opacidade: 0.6, rot: [-0.3, 0.6, 0], giro: 0.08, cor: CIANO }, uComuns),
-    criarCampo({ n: Math.round(6000 * dens), fios: 4, raio: 2.6, espessura: 0.06, amp: 0.05, freq: 1.1, tam: 2.2, opacidade: 0.45, rot: [1.15, 0.2, 0.9], giro: 0.02 }, uComuns),
   ];
   campos.forEach((c) => conjunto.add(c.pts));
 
