@@ -135,16 +135,21 @@ async function planejar(historico: MensagemIA[], anteriores: PesquisaAnterior[])
         'REUSAR: se uma das PESQUISAS ANTERIORES já buscou exatamente o mesmo assunto e a mesma dúvida (mesmo jogo/produto/tema, mesma coisa perguntada, mesmo que com outras palavras), ponha o número dela em "reusar".',
         'Só reuse informação que não muda com o tempo (como algo funciona num jogo, receitas, tutoriais, história, ciência). NUNCA reuse para notícias, preços, clima, placares, cotações, lançamentos, versões ou atualizações, a não ser que a pesquisa anterior seja de hoje.',
         'Se a pergunta pede algo a mais ou diferente do que a anterior buscou, não reuse. Na dúvida, "reusar": null.',
+        'Se a pergunta for sobre o próprio J.A.R.V.I.S. (o app, o núcleo, os nós, as abas), não pesquise: devolva consultas vazias.',
       ].join('\n'),
     },
     { role: 'user', content: `${contexto ? `Contexto:\n${contexto}\n\n` : ''}Pergunta: ${pergunta}${blocoAnteriores}` },
   ], { json: true, temperatura: 0, maxTokens: 250 });
   if (r.ok) {
     try {
-      const j = JSON.parse(r.texto.replace(/^```(?:json)?\s*|\s*```$/g, ''));
-      const lista = [j.pt, j.en].filter((x: unknown): x is string => typeof x === 'string' && x.trim().length > 2);
+      const j = JSON.parse(r.texto.replace(/^```(?:json)?\s*|\s*```$/g, '')) as { pt?: unknown; en?: unknown; reusar?: unknown };
+      const pt = typeof j.pt === 'string' ? j.pt.trim() : '';
+      const en = typeof j.en === 'string' ? j.en.trim() : '';
+      const lista = [pt, en].filter((x) => x.length > 2);
       const n = Number(j.reusar);
       const reusar = Number.isInteger(n) && n >= 1 && n <= anteriores.length ? n - 1 : null;
+      // O plano pediu para não pesquisar (pergunta sobre o próprio app): 0 crédito, sem Tavily.
+      if ('pt' in j && 'en' in j && pt === '' && en === '') return { consultas: [], reusar: null };
       return { consultas: lista.length ? lista : [pergunta], reusar };
     } catch {
       /* usa a pergunta como está */
@@ -174,6 +179,9 @@ export async function buscar(
   carregar?: (id: string) => Promise<{ trechos: Trecho[]; imagens: Imagem[] } | null>,
 ): Promise<ResultadoBusca> {
   const plano = await planejar(historico, anteriores);
+  if (!plano.consultas.length) {
+    return { trechos: [], imagens: [], creditos: 0, consultas: [], reusada: null };
+  }
   if (plano.reusar !== null && carregar) {
     const anterior = anteriores[plano.reusar]!;
     const guardados = await carregar(anterior.id).catch(() => null);

@@ -628,3 +628,21 @@ test('tela: OCR de 5000 caracteres sai cortado em 3000', () => {
   assert.equal(Array.from(corpo).length, 3000);
   assert.equal(corpo, 'á'.repeat(3000));
 });
+import { PERGUNTA_SOBRE_SI, SOBRE_O_NUCLEO } from './autoconhecimento.ts';
+
+test('autoconhecimento: pergunta sobre o próprio núcleo e o próprio app', () => {
+  const casa = (t: string) => PERGUNTA_SOBRE_SI.test(normalizar(t));
+  for (const t of [
+    'Novos nós surgiram no núcleo, o que são?',
+    'Além dos projetos, quais são os outros nós?',
+    'o que são esses pontos dourados?',
+    'você consegue ver minha tela?',
+  ]) assert.equal(casa(t), true, t);
+  for (const t of [
+    'como dar nó de gravata',
+    'qual a capital da França?',
+    'o que é um nó em navegação?',
+  ]) assert.equal(casa(t), false, t);
+  assert.ok(SOBRE_O_NUCLEO.length <= 900, String(SOBRE_O_NUCLEO.length));
+});
+

@@ -21,6 +21,7 @@ import { pareceEmail } from './email.ts'; // e e-mail pelo Gmail (Fase 4); impor
 import { pareceFinancas } from './financas.ts'; // e finanças (Fase 4 · etapa 6)
 import { pareceComputador, PEDE_TELA, sessaoControleAtiva, verTelaDireto } from './computador.ts'; // e o PC (Fase 4 · etapa 7); importar já registra
 import { blocoLicoes, licoesAtivas, registrarFeedback, type Licao } from './licoes.ts'; // e lições (Fase 4)
+import { contagemDoNucleo, PERGUNTA_SOBRE_SI, SOBRE_O_NUCLEO } from './autoconhecimento.ts';
 import {
   carregarAbertas, confirmacaoPendente, contextoExtensoes, executar, pareceTarefa, planejar, textoFinal,
 } from './tarefas.ts';
@@ -95,10 +96,10 @@ function promptSistema(rota: Rota, pesquisando = false, nosDeMemoria = 0, app = 
     'Seu núcleo (o "cérebro" 3D que aparece no app). Explique quando o dono perguntar, com estes fatos (é tudo real, nada é enfeite):',
     '- Esfera geodésica no centro: é você. Gira mais rápido e brilha mais quando você trabalha.',
     '- Anéis de filamentos de partículas em volta: o seu campo de atividade. Ondulam o tempo todo e se abrem e aceleram quando você pensa, pesquisa ou age.',
-    '- Pontos de luz presos à esfera por linhas finas: as memórias que você guardou sobre o dono, um nó por memória. Os mais importantes brilham mais e ficam mais perto do centro; a posição de cada nó é fixa (vem da própria memória). Quando o dono esquece uma memória, o nó some.',
-    '- Pontos dourados mais afastados: os projetos do dono, um nó por projeto aberto (brilha mais conforme o progresso); os pontinhos dourados em volta de cada um são as tarefas abertas daquele projeto.',
+    '- Pontos ciano presos à esfera por linhas finas: memórias e lições juntas. Um nó por memória (os mais importantes brilham mais e ficam mais perto do centro; a posição é fixa). Lições do like/deslike são da mesma cor: nascem com importância 4 e brilham mais conforme são usadas. Não são projetos. Quando o dono esquece uma memória, o nó some.',
+    '- Pontos dourados mais afastados: os projetos abertos, um nó por projeto (brilha mais conforme o progresso). Projeto concluído ou arquivado não aparece. Os pontinhos em volta são as tarefas: dourado = a fazer, azul = fazendo, verde = concluída.',
     '- Partículas soltas no fundo: só ambiente.',
-    '- Pulsos (descargas rápidas): cada um é um evento real no banco de dados. Verde = algo foi criado (tarefa, memória...); vermelho = algo foi apagado; branco/neutro = uma mudança ou você começando a pensar.',
+    '- Pulsos (descargas rápidas): cada um é um evento real no banco de dados. Verde = algo foi criado (tarefa, memória...); vermelho = algo foi apagado; na cor do estado = uma mudança ou você começando a pensar.',
     '- Cor contínua do núcleo = seu estado: verde-água em repouso; azul pulsando como um coração = pensando; violeta = pesquisando na internet ou agindo; âmbar com respiração lenta = esperando a permissão do dono; vermelho apagado = deu erro.',
     '- O dono pode girar o núcleo em qualquer direção, arrastando com o mouse ou com o dedo.',
     `- Agora o seu núcleo tem ${nosDeMemoria} ${nosDeMemoria === 1 ? 'nó' : 'nós'} de memória.`,
@@ -328,14 +329,32 @@ Deno.serve(async (req) => {
 
   const { count: nosDeMemoria } = await sb.from('memories')
     .select('id', { count: 'exact', head: true }).is('deleted_at', null);
-  const sistemaPara = (provedor: NomeProvedor, pesquisando = false) => {
+  const donos = historico.filter((m) => m.role === 'user');
+  const msgAnterior = donos.length >= 2 ? donos[donos.length - 2]!.content : '';
+  const sobreSi = PERGUNTA_SOBRE_SI.test(normalizar(texto))
+    || (msgAnterior !== '' && PERGUNTA_SOBRE_SI.test(normalizar(msgAnterior)));
+  // Pergunta sobre o próprio app: o prompt não fala em busca que falhou.
+  const rotaPrompt: Rota = sobreSi && rota === 'pesquisa' ? 'inteligente' : rota;
+  const contagens = new Map<boolean, Promise<string>>();
+  const sistemaPara = async (provedor: NomeProvedor, pesquisando = false) => {
     const bloco = blocoMemoria(memorias, provedor === 'gemini' || pesquisando);
-    const ensinou = blocoLicoes(licoes, pesquisando || rota === 'pesquisa' ? ['geral', 'pesquisa'] : ['geral'], provedor === 'gemini');
+    const ensinou = blocoLicoes(licoes, pesquisando || rotaPrompt === 'pesquisa' ? ['geral', 'pesquisa'] : ['geral'], provedor === 'gemini');
     ensinou.ids.forEach((id) => usadas.add(id));
-    return promptSistema(rota, pesquisando, nosDeMemoria ?? 0, app) + (bloco ? `\n\n${bloco}` : '') + (ensinou.texto ? `\n\n${ensinou.texto}` : '');
+    let base = promptSistema(rotaPrompt, pesquisando, nosDeMemoria ?? 0, app)
+      + (bloco ? `\n\n${bloco}` : '') + (ensinou.texto ? `\n\n${ensinou.texto}` : '');
+    if (sobreSi) {
+      const semSensivel = provedor === 'gemini';
+      let conta = contagens.get(semSensivel);
+      if (!conta) {
+        conta = contagemDoNucleo(sb, semSensivel);
+        contagens.set(semSensivel, conta);
+      }
+      base += `\n\n${SOBRE_O_NUCLEO}\n${await conta}\nPergunta sobre você mesmo: responda só com o que está acima e no histórico. Se não souber, diga que não sabe. Nunca pesquise na internet sobre você.`;
+    }
+    return base;
   };
-  const mensagensPara = (provedor: NomeProvedor): MensagemIA[] => [
-    { role: 'system', content: sistemaPara(provedor) },
+  const mensagensPara = async (provedor: NomeProvedor): Promise<MensagemIA[]> => [
+    { role: 'system', content: await sistemaPara(provedor) },
     ...conversa,
   ];
 
@@ -356,7 +375,7 @@ Deno.serve(async (req) => {
   if (await interrompida()) return descartada();
 
   // Pesquisa na web pelo Tavily (nunca com assunto sensível: a pergunta iria para a busca).
-  if (rota === 'pesquisa' && !conversaSensivel && temBusca()) {
+  if (rota === 'pesquisa' && !conversaSensivel && temBusca() && !sobreSi) {
     // Avisa os aparelhos: o chat mostra "Pesquisando na internet…" e o núcleo fica violeta.
     await sb.from('events').insert({ kind: 'searching', payload: { conversation_id: corpo.conversation_id } });
     // Memória de pesquisas: se algo igual já foi pesquisado, reaproveita (rápido e sem crédito).
@@ -381,7 +400,7 @@ Deno.serve(async (req) => {
       for (const provedor of ['groq', 'gemini'] as NomeProvedor[]) {
         if (!temChave(provedor) || bloqueadoAte.get(provedor)) continue;
         const r = await conversar(provedor, [
-          { role: 'system', content: `${sistemaPara(provedor, true)}\n\n${blocoTrechos(trechos)}` },
+          { role: 'system', content: `${await sistemaPara(provedor, true)}\n\n${blocoTrechos(trechos)}` },
           ...conversa,
         ], { temperatura: 0.2, maxTokens: 1800 });
         if (r.ok) {
@@ -413,10 +432,10 @@ Deno.serve(async (req) => {
     if (trechos.length && !resposta) pesquisaFalhou = true;
   }
   // Sem Tavily: tenta a busca embutida dos provedores (hoje indisponível no plano grátis).
-  if (!resposta && rota === 'pesquisa' && !conversaSensivel && !temBusca()) {
+  if (!resposta && rota === 'pesquisa' && !conversaSensivel && !temBusca() && !sobreSi) {
     const tentativas: [NomeProvedor, () => Promise<import('./provedores.ts').Resultado>][] = [
-      ['gemini', () => pesquisarGemini(sistemaPara('gemini', true), conversa)],
-      ['groq', () => pesquisarGroq(sistemaPara('groq', true), conversa)],
+      ['gemini', async () => pesquisarGemini(await sistemaPara('gemini', true), conversa)],
+      ['groq', async () => pesquisarGroq(await sistemaPara('groq', true), conversa)],
     ];
     for (const [provedor, pesquisar] of tentativas) {
       if (!temChave(provedor) || bloqueadoAte.get(provedor)) continue;
@@ -448,7 +467,7 @@ Deno.serve(async (req) => {
       erros.push(`${provedor} sem cota por mais ${seg} s`);
       continue;
     }
-    const r = await conversar(provedor, mensagensPara(provedor));
+    const r = await conversar(provedor, await mensagensPara(provedor));
     if (r.ok) {
       resposta = { provedor, texto: r.texto, modelo: r.modelo };
       await registrarUso(sb, userId, provedor, r.tokens);
