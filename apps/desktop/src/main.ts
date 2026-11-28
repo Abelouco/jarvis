@@ -17,7 +17,7 @@ import { htmlLembretes, ligarLembretes } from './lembretes';
 import { htmlProjetos, ligarProjetos } from './projetos';
 import { htmlHoje, ligarHoje } from './hoje';
 import { ligarAvisos } from './avisos';
-import { ligarBotaoControle, ligarComputador } from './computador';
+import { ligarComputador } from './computador';
 import { htmlAvisos, ligarAbaAvisos } from './abaAvisos';
 import { htmlFinancas, ligarAbaFinancas } from './abaFinancas';
 import { aplicarTema, ligarBotaoTema, temaSalvo } from './tema';
@@ -202,7 +202,6 @@ async function montarPainel() {
         <span class="nome" data-tauri-drag-region>J.A.R.V.I.S.</span>
         <span class="espaco" data-tauri-drag-region></span>
         <span class="estado" id="estado"><i></i><span></span></span>
-        <button class="conta" id="controle" type="button">Controle</button>
         <button class="conta google" id="google" type="button"></button>
         <button class="conta tema" id="tema" type="button"></button>
         <button class="conta" id="sair" title="${esc(email)}">Sair</button>
@@ -265,7 +264,6 @@ async function montarPainel() {
     </section>`;
 
   ligarBotaoTema($<HTMLButtonElement>('#tema'));
-  ligarBotaoControle($<HTMLButtonElement>('#controle'), (t) => { $<HTMLParagraphElement>('#erro-chat').textContent = t; });
   ligarBotaoGoogle($<HTMLButtonElement>('#google'), (t) => { $<HTMLParagraphElement>('#erro-chat').textContent = t; });
   $<HTMLButtonElement>('#sair').onclick = () => void jarvis.auth.sair();
 

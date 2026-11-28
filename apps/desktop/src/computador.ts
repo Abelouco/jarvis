@@ -380,34 +380,6 @@ async function rodar(cmd: PcComando, emCurso: Set<string>) {
   }
 }
 
-/** Botão Controle no topo: desligado pede 30 minutos; ligado solta o PC. */
-export function ligarBotaoControle(botao: HTMLButtonElement, avisarErro: (texto: string) => void) {
-  let ligado = false;
-  function mostrar() {
-    botao.textContent = ligado ? 'Soltar PC' : 'Controle';
-    botao.style.color = ligado ? '#c62828' : '';
-    botao.style.borderColor = ligado ? '#c62828' : '';
-    botao.title = ligado ? 'Soltar o PC' : 'Assumir o PC por 30 minutos';
-  }
-  async function atualizar() {
-    const s = await jarvis.computador.sessaoAtiva().catch(() => null);
-    ligado = !!s;
-    mostrar();
-  }
-  botao.onclick = async () => {
-    try {
-      if (ligado) await jarvis.computador.soltar('dono');
-      else await jarvis.computador.assumir(30);
-    } catch (e) {
-      avisarErro(textoErro(e));
-    }
-    await atualizar();
-  };
-  mostrar();
-  void atualizar();
-  jarvis.computador.ouvirSessoes(() => { void atualizar(); });
-}
-
 /** Escuta os pedidos e, ao abrir, tira os que ficaram pendentes. */
 export function ligarComputador() {
   const emCurso = new Set<string>();
